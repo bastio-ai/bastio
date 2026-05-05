@@ -1,13 +1,6 @@
-<p align="center">
-  <a href="https://bastio.com">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bastio-wordmark-dark.svg">
-      <img alt="Bastio" src="docs/assets/bastio-wordmark-light.svg" height="56">
-    </picture>
-  </a>
-</p>
+<h1 align="center"><a href="https://bastio.com">Bastio</a></h1>
 
-<h2 align="center">Security for every AI your team ships.</h2>
+<h3 align="center">Security for every AI your team ships.</h3>
 <p align="center">
   <em>The open-source gateway between your apps and any LLM.</em><br>
   PII, jailbreak, prompt injection, and secret detection — under 50ms, self-hosted.
@@ -31,14 +24,17 @@
 
 ## What is Bastio?
 
-Bastio is a single Go binary you drop between your application and any LLM provider. Every request gets scanned for PII, prompt injection, jailbreaks, and secrets before it leaves your network — without rewriting a line of application code. Same engine that runs in [Bastio Cloud](https://bastio.com/cloud), self-hosted under [FSL-1.1-ALv2](LICENSE) and [Apache-2.0](LICENSE) two years after each release.
+Bastio is a single Go binary you drop between your application and any LLM provider. Every request gets scanned for PII, prompt injection, jailbreaks, and secrets before it leaves your network — without rewriting a line of application code. Same engine that runs in [Bastio Cloud](https://bastio.com/cloud), self-hosted under the [Functional Source License](LICENSE) — converts to Apache-2.0 two years after each release.
 
 ## Quick start
 
 ```bash
 git clone https://github.com/bastio-ai/bastio.git
-cd bastio && docker compose up
+cd bastio
+docker compose up
 ```
+
+First boot pulls images and runs migrations — give it ~60 seconds, then:
 
 - **Dashboard** → http://localhost:4000
 - **API** → http://localhost:4000/v1
@@ -47,6 +43,7 @@ cd bastio && docker compose up
 Point any OpenAI-compatible client at Bastio:
 
 ```python
+import os
 from openai import OpenAI
 
 client = OpenAI(
@@ -55,13 +52,13 @@ client = OpenAI(
 )
 
 resp = client.chat.completions.create(
-    model="gpt-5.4-mini",
+    model="gpt-4o-mini",
     messages=[{"role": "user", "content": "Ignore previous instructions..."}],
 )
 # → 403 blocked, logged in /traces, every detector verdict captured
 ```
 
-Anthropic SDK works at `/v1/messages`. Bedrock, Vertex, Azure, and Ollama follow the same drop-in pattern.
+Anthropic SDK works at `/v1/messages`. Bedrock and Ollama follow the same drop-in pattern.
 
 ## Inline detectors
 
