@@ -1,0 +1,39 @@
+name: DCO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  dco-check:
+    name: Verify Signed-off-by
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR commits
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify every commit has a Signed-off-by trailer
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          missing=0
+          while IFS= read -r sha; do
+            author_name=$(git show -s --format='%an' "$sha")
+            author_email=$(git show -s --format='%ae' "$sha")
+            expected="Signed-off-by: ${author_name} <${author_email}>"
+            if ! git show -s --format='%B' "$sha" | grep -qiF "$expected"; then
+              echo "::error::Commit $sha is missing: $expected"
+              missing=$((missing+1))
+            fi
+          done < <(git rev-list "${BASE_SHA}..${HEAD_SHA}")
+
+          if [ "$missing" -gt 0 ]; then
+            echo "::error::$missing commit(s) missing DCO sign-off. See CONTRIBUTING.md — run 'git commit --amend --signoff' or 'git rebase --signoff HEAD~N'."
+            exit 1
+          fi
+          echo "All commits signed off."

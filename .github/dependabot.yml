@@ -1,0 +1,53 @@
+version: 2
+updates:
+  # Go modules
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Copenhagen
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "go"]
+    groups:
+      go-minor:
+        update-types: ["minor", "patch"]
+
+  # Dashboard npm deps
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Copenhagen
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "javascript"]
+    groups:
+      npm-minor:
+        update-types: ["minor", "patch"]
+
+  # JS SDK
+  - package-ecosystem: npm
+    directory: /sdk/js
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "sdk"]
+
+  # Python SDK
+  - package-ecosystem: pip
+    directory: /sdk/python
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "sdk"]
+
+  # GitHub Actions versions themselves
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "ci"]

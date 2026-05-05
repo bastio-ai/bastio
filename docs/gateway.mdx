@@ -1,0 +1,149 @@
+---
+title: Gateway
+description: Proxy your existing LLM client through Bastio with zero code changes.
+---
+
+The gateway is the simplest way to put Bastio in the request path.
+Point your existing OpenAI / Anthropic / Bedrock client at Bastio's
+URL, and every prompt + response is scanned before it leaves your
+network.
+
+## Two integration patterns
+
+Bastio supports two ways to insert security into the LLM call:
+
+| Pattern | What you do | When |
+|---|---|---|
+| **Gateway** (this page) | Change `baseURL` on your existing LLM client | Zero code changes, works with any OpenAI-compatible client |
+| [**SDK**](/docs/sdks) | Add a Bastio middleware around your model | More control, keep your direct provider connection |
+
+Both end up at the same security engine. Choose the gateway when
+you want a drop-in install; choose the SDK when you need finer
+control over the response (custom block UI, retry on mask, etc.).
+
+## How it works
+
+```
+your client ──▶ Bastio ──▶ provider
+                  │
+            scan prompt
+            scan response
+            emit trace
+```
+
+A request through the gateway:
+
+1. Bastio authenticates the request via API key.
+2. Maps the API key to a **proxy** — a stored binding of
+   `(provider, provider API key, security profile)`.
+3. Runs the security scan against the user message.
+4. If allowed: forwards the request to the resolved provider,
+   stripping internal headers, optionally rewriting redacted
+   content.
+5. Streams the response back. Streaming chunks are scanned in
+   flight; redactions are restored before the chunk reaches the
+   client.
+6. Records a trace row (PostgreSQL + ClickHouse).
+
+## Set up a proxy
+
+A proxy is the binding between an API key your app uses and a
+provider account Bastio relays to.
+
+```bash
+curl -X POST http://localhost:4000/api/v1/proxies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "prod-openai",
+    "provider": "openai",
+    "provider_api_key": "sk-..."
+  }'
+```
+
+The response includes:
+
+- `id` — the proxy's UUID, used in URLs / dashboard.
+- `gateway_api_key` — the key your application passes to Bastio.
+  Treat this like any other API key. It cannot be retrieved
+  again — copy it now.
+
+## Send a request
+
+OpenAI-compatible:
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+Anthropic-compatible:
+
+```bash
+curl http://localhost:4000/v1/messages \
+  -H "x-api-key: $BASTIO_GATEWAY_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+The OpenAI route accepts every request shape OpenAI's `/v1/chat/completions`
+accepts (streaming, tool calls, multimodal). The Anthropic route
+mirrors `/v1/messages`.
+
+## Provider routing
+
+Bastio infers the provider from the model name when possible
+(`gpt-*` → OpenAI, `claude-*` → Anthropic, `meta.llama*` → Bedrock).
+When the model is ambiguous, the proxy's stored `provider` wins.
+
+You can also force a provider by setting an explicit field in the
+request body:
+
+```json
+{
+  "model": "gpt-4o",
+  "messages": [...],
+  "bastio_provider": "azure"
+}
+```
+
+This lets one Bastio key fan out to many providers in your account
+— a common pattern for fallback strategies.
+
+## Streaming
+
+`stream: true` works without extra config. Bastio passes through
+SSE chunks, scans content as it arrives, and rewrites in-flight
+when the security profile chooses `mask` or `tokenize`.
+
+The `bastio` envelope lands as a final SSE event after the
+provider's `[DONE]`, so existing clients that only consume
+`choices[].delta.content` keep working.
+
+## Auth + rate limit
+
+API keys are SHA-256-hashed in the database. Bastio looks them up
+in Redis (cached) on every request. Rate limits are per-key,
+per-minute, configurable via the `rate_limit_rpm` field on
+the proxy.
+
+## Self-hosted vs. cloud
+
+OSS gateway runs in single-tenant mode — every request maps to the
+default customer, the dashboard has no auth. Bastio Cloud
+adds a multi-tenant layer that maps API keys to customers and
+gates every query with the right `customer_id`.
+
+## Next
+
+- [Threats](/docs/threats) — what gets scanned and how to tune it.
+- [SDKs](/docs/sdks) — alternative integration pattern.

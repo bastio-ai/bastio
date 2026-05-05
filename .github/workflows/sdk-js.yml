@@ -1,0 +1,113 @@
+# SDK JS CI + release pipeline.
+#
+# Runs typecheck/test/build on every PR touching sdk/js/. The release
+# job is intentionally gated behind a repo variable so this workflow
+# can be merged ahead of the first publish without accidentally
+# shipping a half-baked package.
+#
+# To activate releases:
+#   1. Follow sdk/js/NOTES.md §2 (npm scope bootstrap + NPM_TOKEN).
+#   2. In GitHub → Settings → Secrets and variables → Actions →
+#      Variables, set BASTIO_ENABLE_SDK_RELEASE=true.
+#   3. Ensure main branch allows the changesets bot to push PRs.
+
+name: sdk-js
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/js/**"
+      - ".github/workflows/sdk-js.yml"
+  pull_request:
+    paths:
+      - "sdk/js/**"
+      - ".github/workflows/sdk-js.yml"
+
+concurrency:
+  group: sdk-js-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: sdk/js
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Changesets needs full history for its analysis.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: sdk/js/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  release:
+    name: Release
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.BASTIO_ENABLE_SDK_RELEASE == 'true'
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: sdk/js/pnpm-lock.yaml
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Opens a "Version Packages" PR when changesets are pending, or
+      # publishes to npm when the version PR is merged back to main.
+      - name: Changesets — version or publish
+        uses: changesets/action@v1
+        with:
+          cwd: sdk/js
+          version: pnpm changeset version
+          publish: pnpm changeset publish
+          commit: "chore: release @bastio/*"
+          title: "chore: release @bastio/*"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,19 @@
+{
+  "title": "Docs",
+  "pages": [
+    "index",
+    "getting-started",
+    "architecture",
+    "---Gateway---",
+    "gateway",
+    "providers",
+    "---Security---",
+    "threats",
+    "---Operations---",
+    "observability",
+    "---Integrations---",
+    "sdks",
+    "---Reference---",
+    "api-reference"
+  ]
+}

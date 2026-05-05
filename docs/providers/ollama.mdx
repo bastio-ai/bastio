@@ -1,0 +1,164 @@
+---
+title: Ollama
+description: Route local Ollama models through Bastio for self-hosted or on-prem AI.
+---
+
+[Ollama](https://ollama.com) runs LLMs on your own hardware —
+laptops, servers, on-prem clusters. Bastio in front of Ollama
+gives you the same security scanning and audit trail you get for
+OpenAI / Anthropic, without any data ever leaving your network.
+
+This is the right setup for:
+
+- Air-gapped or regulated environments
+- Cost-sensitive prototyping (no token bills)
+- Latency-critical edge deployments
+- Anyone who wants to evaluate Bastio without provider account
+  setup
+
+## Prerequisites
+
+- An Ollama install running somewhere reachable from your Bastio
+  gateway. Default port: 11434.
+- At least one model pulled (`ollama pull llama3.3`,
+  `ollama pull mistral-small`).
+- A running Bastio gateway ([Getting started](/docs/getting-started)).
+
+## No API key needed
+
+Ollama doesn't authenticate. The proxy just needs the URL.
+
+## Create the proxy
+
+```bash
+curl -X POST http://localhost:4000/api/v1/proxies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "local-ollama",
+    "provider": "ollama",
+    "provider_endpoint": "http://localhost:11434"
+  }'
+```
+
+For a remote Ollama, use that host: `http://ollama.internal:11434`
+or `https://ollama.your-vpn.example`.
+
+## Send a request
+
+The model name matches what `ollama list` shows on your install.
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama3.3:70b",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+### Python
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4000/v1",
+    api_key=os.environ["BASTIO_GATEWAY_KEY"],
+)
+
+resp = client.chat.completions.create(
+    model="llama3.3:70b",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+## Supported features
+
+- **Chat completions** — full surface that Ollama exposes.
+- **Streaming** — `stream: true` works.
+- **Tool calling** — supported on models that advertise it
+  (Llama 3.1+, Mistral Large, Qwen 2.5+). Bastio passes the
+  `tools` field through; Ollama returns `tool_calls` in the
+  same OpenAI-compatible shape.
+- **Multimodal** — vision models (`llava`, `llama3.2-vision`)
+  accept `image_url` blocks.
+- **Embeddings** — `POST /v1/embeddings` is proxied; pick a
+  small embedding model (`nomic-embed-text`,
+  `mxbai-embed-large`).
+
+## Models
+
+Ollama's catalog is huge — anything in
+[ollama.com/library](https://ollama.com/library) works. Common
+picks:
+
+| Use case | Model |
+|---|---|
+| General chat (large) | `llama3.3:70b`, `qwen2.5:72b` |
+| General chat (small) | `llama3.2:3b`, `phi-4` |
+| Code | `qwen2.5-coder:32b`, `deepseek-coder-v2` |
+| Embeddings | `nomic-embed-text`, `mxbai-embed-large` |
+| Vision | `llama3.2-vision:11b`, `llava:34b` |
+
+Run `ollama pull <name>` to fetch; the model becomes available
+to Bastio immediately on the next request.
+
+## Hardware sizing
+
+| Model size | Min VRAM | Notes |
+|---|---|---|
+| 3B / 7B | 8 GB | Fits a desktop GPU or a Mac with unified memory |
+| 13B | 16 GB | Mid-range workstation |
+| 33B / 34B | 24 GB | RTX 3090 / 4090, M2 Max+ |
+| 70B+ | 48 GB+ | Dual GPU, M2 Ultra, or H100 |
+
+Ollama runs on CPU when there's no GPU, but a 70B model on CPU
+takes ~5-10s per token — fine for batch jobs, painful
+interactively.
+
+## Gotchas
+
+- **Cold-start delay.** First request after a restart loads the
+  model into memory — can take 30+ seconds for a 70B. Bastio
+  doesn't time out (default Bastio timeout is 60s, configurable
+  via `BASTIO_PROVIDER_TIMEOUT`), but your client might.
+- **Concurrent requests are serialized per-model.** Ollama's
+  default config holds one model at a time per GPU. Multiple
+  proxies can hit different models, but the same model handles
+  one inference at a time. Set `OLLAMA_NUM_PARALLEL` and
+  `OLLAMA_MAX_LOADED_MODELS` if you need concurrency.
+- **No native rate limits.** Ollama doesn't reject excess
+  traffic — it just queues. Bastio's per-proxy
+  `rate_limit_rpm` is the only ceiling. Set it conservatively
+  for shared GPUs.
+- **Model names include the tag.** `llama3.3` and `llama3.3:70b`
+  resolve to different things if you have multiple tags pulled.
+  Be explicit about the tag in production.
+- **Tool-calling format varies by model.** Llama 3.x uses one
+  format, Qwen another. Test before relying on tools across
+  models.
+
+## Pairing with Bastio Cloud
+
+Even if you run inference on Ollama, you can still send the
+trace metadata up to Bastio Cloud for centralized observability —
+the gateway emits the same trace records regardless of where
+the model lives. Set `CLICKHOUSE_URL` to your cloud endpoint
+and analytics flow up; your prompts and responses can stay
+fully on-prem.
+
+## Where the request shows up in traces
+
+Ollama requests land in Traces with `provider: ollama`. Cost is
+recorded as 0 — Ollama is unmetered. Token counts come from
+Ollama's response metadata. See [Observability](/docs/observability).
+
+## Next
+
+- [Threats](/docs/threats) — local models still benefit from
+  prompt-injection + secret scanning, especially for
+  code-generation workflows.
+- [Architecture](/docs/architecture) — Bastio + Ollama runs
+  fully on-prem; the only off-host traffic is what you
+  intentionally send to ClickHouse for analytics.

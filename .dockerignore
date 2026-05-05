@@ -1,0 +1,60 @@
+# Keep the production image lean. Multi-stage Dockerfile compiles
+# Go + builds the dashboard, then copies only the resulting binary
+# into a distroless runtime — but the build context is still the
+# whole repo by default, which slows COPY and balloons builder
+# image cache. Excluding everything below cuts the build context
+# from ~600MB to <20MB on a clean checkout.
+
+# Node ecosystem (workspace-app + dashboard build their own outputs)
+**/node_modules
+**/dist
+**/build
+**/.cache
+**/.parcel-cache
+**/.next
+**/.turbo
+**/.vite
+
+# Go build outputs
+**/*.test
+**/*.out
+**/coverage.out
+**/coverage.html
+**/bin
+
+# Editor + OS noise
+**/.DS_Store
+**/.idea
+**/.vscode
+**/*.swp
+**/*.swo
+
+# Version control + CI
+.git
+.gitignore
+.github
+
+# Local env + secrets — defense in depth even though .env should
+# never be in the repo to begin with.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Docs + planning artifacts (the dashboard embeds its own runtime
+# docs at /docs via go:embed; .work/ is local notes only).
+.work
+docs
+**/*.md
+!README.md
+
+# Test fixtures + E2E artifacts
+**/testdata
+**/__tests__
+**/__fixtures__
+**/e2e
+**/playwright-report
+**/playwright/.cache
+
+# Misc
+**/.eslintcache
+**/tsconfig.tsbuildinfo

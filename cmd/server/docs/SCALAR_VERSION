@@ -1,0 +1,8 @@
+1.52.3
+
+# Vendored @scalar/api-reference bundle (docs/scalar.standalone.js).
+# To upgrade, pick a version and re-download:
+#   VERSION=1.52.3
+#   curl -sL "https://cdn.jsdelivr.net/npm/@scalar/api-reference@${VERSION}/dist/browser/standalone.js" \
+#     -o scalar.standalone.js
+#   printf '%s\n' "$VERSION" > SCALAR_VERSION

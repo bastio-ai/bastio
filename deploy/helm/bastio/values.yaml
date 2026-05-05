@@ -1,0 +1,156 @@
+# Bastio Helm chart values.
+#
+# This chart deploys the all-in-one binary: server + worker + ingest
+# fused into one process. PostgreSQL, Redis, and ClickHouse are
+# expected to exist outside the chart (managed services in cloud,
+# bitnami subcharts for self-host). Splitting them into deps would
+# give us less control over backups, version pinning, and HA.
+
+image:
+  # GHCR repository — released on tag push by .github/workflows/release.yml.
+  # Multi-arch (linux/amd64, linux/arm64) since v2.0.
+  repository: ghcr.io/bastio-ai/bastio
+  pullPolicy: IfNotPresent
+  # Override per environment. Pin to a digest for production.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Single replica is the default. The all-in-one binary holds in-memory
+# rate-limit + provider-key caches; running >1 replica is fine
+# horizontally because Redis is the source of truth for both, but the
+# worker's River queue assumes "at most one" semantics aren't shared
+# across replicas — they are, via PG advisory locks, so 2+ replicas
+# are safe. For evaluation: 1. For prod: 2-3 behind a load balancer.
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+# Sensible-default security context. Distroless-leaning: drop all
+# capabilities, run as non-root, read-only root filesystem. The
+# binary itself doesn't write to disk in all-in-one mode unless
+# DataDir is set; if you're using local-disk blob storage you'll
+# need to disable readOnlyRootFilesystem and add a mount.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop: ["ALL"]
+
+service:
+  type: ClusterIP
+  port: 80
+  # The container listens on BASTIO_PORT (default 4000).
+  targetPort: 4000
+
+# Optional ingress. Disabled by default — most operators front Bastio
+# with a separate ingress controller, ALB, or Traefik they already
+# manage. When enabled, defaults assume cert-manager + nginx.
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: bastio.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - bastio.example.com
+      secretName: bastio-tls
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# Liveness + readiness map directly to the binary's /health and /ready
+# endpoints (see pkg/server/server.go). /ready checks Postgres + Redis;
+# /health additionally checks ClickHouse. Failing /ready takes the pod
+# out of rotation; failing /health restarts it.
+probes:
+  liveness:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Non-secret config that lands in a ConfigMap. Override per env.
+config:
+  # server | worker | ingest | all-in-one
+  mode: all-in-one
+  port: "4000"
+  logLevel: info
+  logFormat: json
+  # Set to a server-side classifier URL when you want PII detection
+  # backed by Microsoft Presidio. Leave empty to use the OSS
+  # regex+entropy fallback.
+  presidioURL: ""
+  # Public-facing URL the dashboard knows about (used for invite
+  # email links). Set to your customer-facing host.
+  publicURL: ""
+
+# Secrets land in a Kubernetes Secret. Set externalSecret.name to use
+# an existing secret (e.g. one managed by external-secrets-operator)
+# instead of creating one from these values.
+secrets:
+  # If externalSecret.name is set, the chart binds env vars to that
+  # secret instead of creating one from the inline values below.
+  externalSecret:
+    name: ""
+  # Inline values — only used when externalSecret.name is empty.
+  # Override these via --set or a values file at deploy time. Never
+  # commit real values.
+  databaseURL: ""
+  redisURL: ""
+  # Optional. ClickHouse missing = analytics disabled, gateway still
+  # functions.
+  clickhouseURL: ""
+  # Optional provider keys, only set if you're not relying on
+  # per-customer keys stored in Postgres.
+  openaiAPIKey: ""
+  anthropicAPIKey: ""
+
+# Extra env vars passed verbatim. Use this for cloud-overlay knobs
+# (BASTIO_WORKSPACE_URL, AUTH_COOKIE_DOMAIN) and any future settings
+# without waiting for a chart update.
+extraEnv: []
+# - name: BASTIO_WORKSPACE_URL
+#   value: https://workspace.bastio.com
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

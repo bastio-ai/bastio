@@ -1,0 +1,5348 @@
+openapi: "3.1.0"
+info:
+  title: Bastio API
+  description: AI Security Gateway API
+  version: "0.1.0"
+  license:
+    name: FSL-1.1-ALv2
+    url: https://fsl.software/FSL-1.1-ALv2.template.md
+
+servers:
+  - url: http://localhost:4000
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      tags: [System]
+      responses:
+        "200":
+          description: All services healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: One or more services unhealthy
+
+  /v1:
+    get:
+      operationId: getVersion
+      summary: API version info
+      tags: [System]
+      responses:
+        "200":
+          description: API info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+
+  # Gateway proxy endpoints (Phase 2)
+  /v1/chat/completions:
+    post:
+      operationId: chatCompletions
+      summary: OpenAI-compatible chat completions proxy
+      tags: [Gateway]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: Chat completion response
+        "403":
+          description: Request blocked by security policy
+        "429":
+          description: Rate limited
+
+  /v1/guard/{proxyId}/v1/messages:
+    post:
+      operationId: anthropicMessages
+      summary: Anthropic Messages API proxy with security scanning
+      tags: [Gateway]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: proxyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Anthropic messages response
+        "403":
+          description: Request blocked by security policy
+
+  # Management API
+  /v1/proxies:
+    get:
+      operationId: listProxies
+      summary: List proxies
+      tags: [Proxies]
+      responses:
+        "200":
+          description: List of proxies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Proxy"
+    post:
+      operationId: createProxy
+      summary: Create a proxy
+      tags: [Proxies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProxyRequest"
+      responses:
+        "201":
+          description: Proxy created
+
+  /v1/api-keys:
+    get:
+      operationId: listApiKeys
+      summary: List API keys
+      tags: [API Keys]
+      responses:
+        "200":
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/APIKey"
+    post:
+      operationId: createApiKey
+      summary: Create an API key
+      tags: [API Keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequest"
+      responses:
+        "201":
+          description: API key created (key shown only once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyWithSecret"
+
+  /v1/api-keys/{id}:
+    delete:
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      tags: [API Keys]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Revoked
+
+  /v1/config:
+    get:
+      operationId: getAppConfig
+      summary: Runtime configuration of the Bastio server
+      tags: [System]
+      responses:
+        "200":
+          description: App config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppConfig"
+
+  /v1/provider-keys:
+    get:
+      operationId: listProviderKeys
+      summary: List stored LLM provider API keys (masked)
+      tags: [Provider Keys]
+      responses:
+        "200":
+          description: Masked provider keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderKey"
+    post:
+      operationId: createProviderKey
+      summary: Store a new provider API key (encrypted at rest)
+      tags: [Provider Keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProviderKeyRequest"
+      responses:
+        "201":
+          description: Provider key stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderKey"
+
+  /v1/provider-keys/{id}:
+    delete:
+      operationId: deleteProviderKey
+      summary: Delete a stored provider key
+      tags: [Provider Keys]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/proxies/{id}:
+    get:
+      operationId: getProxy
+      summary: Get a single proxy
+      tags: [Proxies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Proxy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Proxy"
+        "404":
+          description: Proxy not found
+    put:
+      operationId: updateProxy
+      summary: Update a proxy
+      tags: [Proxies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProxyRequest"
+      responses:
+        "200":
+          description: Updated proxy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Proxy"
+    delete:
+      operationId: deleteProxy
+      summary: Delete a proxy
+      tags: [Proxies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/proxies/{id}/provider-keys:
+    get:
+      operationId: listProviderKeysForProxy
+      summary: Provider keys available to a proxy
+      tags: [Proxies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Provider keys for this proxy (defaults + proxy-scoped)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderKey"
+
+  /v1/security/profiles/{id}:
+    put:
+      operationId: updateSecurityProfile
+      summary: Update individual fields on a security profile
+      tags: [Security]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSecurityProfileRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+
+  /v1/traces:
+    get:
+      operationId: listTraces
+      summary: List traces with filters
+      tags: [Observability]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: provider
+          in: query
+          schema:
+            type: string
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+        - name: proxy_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          description: Case-insensitive substring match on path.
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: environment
+          in: query
+          schema:
+            type: string
+        - name: release
+          in: query
+          schema:
+            type: string
+        - name: trace_name
+          in: query
+          schema:
+            type: string
+        - name: tag
+          in: query
+          description: key:value pair; repeat for multiple AND-ed tag filters.
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        "200":
+          description: Paginated traces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trace"
+
+  /v1/traces/{id}:
+    get:
+      operationId: getTrace
+      summary: Get a trace with span hierarchy
+      tags: [Observability]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Trace detail with ordered spans
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceDetail"
+        "404":
+          description: Trace not found
+
+  /v1/traces/{id}/scores:
+    get:
+      operationId: listTraceScores
+      summary: List scores attached to a trace
+      tags: [Observability]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Scores for the trace (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TraceScore"
+    post:
+      operationId: createTraceScore
+      summary: Attach a post-hoc score or label to a trace
+      tags: [Observability]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTraceScoreRequest"
+      responses:
+        "201":
+          description: Score recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceScore"
+
+  /v1/traces/{id}/threats:
+    get:
+      operationId: listTraceThreats
+      summary: Per-detector threat detections for a single trace
+      tags: [Observability]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Threat detections ordered by severity then score.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TraceThreatDetection"
+
+  /v1/sessions:
+    get:
+      operationId: listSessions
+      summary: List sessions (groups of traces sharing session_id)
+      tags: [Observability]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: end_user_id
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: environment
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sessions ordered by most recent activity.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+
+  /v1/sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Session aggregates plus all traces in the session
+      tags: [Observability]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+        "404":
+          description: Session not found
+
+  /v1/prompts:
+    get:
+      operationId: listPrompts
+      summary: List prompts (OSS registry)
+      tags: [Prompts]
+      responses:
+        "200":
+          description: Prompts with their latest version metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Prompt"
+    post:
+      operationId: createPrompt
+      summary: Create a prompt and its first version
+      tags: [Prompts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePromptRequest"
+      responses:
+        "201":
+          description: Prompt created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptDetail"
+        "409":
+          description: A prompt with that name already exists.
+
+  /v1/prompts/{name}:
+    get:
+      operationId: getPrompt
+      summary: Fetch a prompt (latest version, or ?version=N / ?label=X)
+      tags: [Prompts]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+        - name: version
+          in: query
+          schema: { type: integer }
+        - name: label
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Prompt detail (with the resolved version inline)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptDetail"
+        "404":
+          description: Prompt not found
+    delete:
+      operationId: deletePrompt
+      summary: Delete a prompt (only when it has no versions)
+      tags: [Prompts]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Deleted
+        "409":
+          description: Prompt still has versions.
+
+  /v1/prompts/{name}/versions:
+    get:
+      operationId: listPromptVersions
+      summary: List every version of a prompt
+      tags: [Prompts]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Versions, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PromptVersion"
+    post:
+      operationId: createPromptVersion
+      summary: Append a new immutable version
+      tags: [Prompts]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePromptVersionRequest"
+      responses:
+        "201":
+          description: Version created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptVersion"
+
+  /v1/prompts/{name}/versions/{version}/labels:
+    put:
+      operationId: setPromptVersionLabels
+      summary: Replace labels on a specific version
+      tags: [Prompts]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPromptLabelsRequest"
+      responses:
+        "200":
+          description: Updated version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptVersion"
+
+  /v1/prompts/{name}/usage:
+    get:
+      operationId: getPromptUsage
+      summary: Traces and spans that referenced this prompt
+      tags: [Prompts]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Per-version summary + recent-trace list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptUsage"
+
+  /v1/users:
+    get:
+      operationId: listUsers
+      summary: List end-users with activity rollups
+      tags: [Observability]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [cost, requests, threats, latency]
+            default: cost
+      responses:
+        "200":
+          description: Aggregated per-end-user metrics.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserAnalytics"
+
+  /v1/users/{id}:
+    get:
+      operationId: getUser
+      summary: End-user detail (sessions, recent traces, threat breakdown)
+      tags: [Observability]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDetail"
+        "404":
+          description: User has no traces in this tenant.
+
+  /v1/analytics/users:
+    get:
+      operationId: listUserAnalytics
+      summary: Per-end-user cost / latency / threat rollups
+      tags: [Analytics]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [cost, requests, threats, latency]
+            default: cost
+      responses:
+        "200":
+          description: Aggregated per-end-user metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserAnalytics"
+
+  /v1/threats:
+    get:
+      operationId: listThreats
+      summary: List security threat events
+      tags: [Security]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: severity
+          in: query
+          description: Exact-match severity (critical, high, medium, low).
+          schema: { type: string }
+        - name: threat_type
+          in: query
+          description: Exact-match threat category (jailbreak, pii, injection, bot, rate_anomaly, custom_pattern). Comma-separated for multi-value.
+          schema: { type: string }
+        - name: threat_subtype
+          in: query
+          description: Exact-match dotted sub-category (e.g. persona.dan, extraction.meta, structural.many_shot). Comma-separated for multi-value.
+          schema: { type: string }
+        - name: detector_name
+          in: query
+          description: Exact-match detector name that fired.
+          schema: { type: string }
+        - name: action_taken
+          in: query
+          description: Exact-match enforcement outcome (block, redact, warn, pass).
+          schema: { type: string }
+        - name: end_user_id
+          in: query
+          schema: { type: string }
+        - name: ip_address
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: search
+          in: query
+          description: Case-insensitive substring match across matched_pattern and matched_content.
+          schema: { type: string }
+        - name: sort
+          in: query
+          description: Sort column. Unknown values fall back to detected_at.
+          schema:
+            type: string
+            enum: [detected_at, severity, score, confidence]
+            default: detected_at
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Threat events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ThreatEvent"
+
+  /v1/threats/{id}:
+    get:
+      operationId: getThreat
+      summary: Get a single security threat event
+      tags: [Security]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Threat event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatEvent"
+        "404":
+          description: Threat not found or belongs to another tenant
+
+  /v1/analytics/overview:
+    get:
+      operationId: getAnalyticsOverview
+      summary: Dashboard overview metrics
+      tags: [Analytics]
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Overview metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsOverview"
+
+  /v1/security/profiles:
+    get:
+      operationId: listSecurityProfiles
+      summary: List security profiles
+      tags: [Security]
+      responses:
+        "200":
+          description: Security profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SecurityProfile"
+
+  /v1/detect:
+    post:
+      operationId: detect
+      summary: Run the profile's step list against ad-hoc messages
+      description: >
+        Used by TypeScript SDKs (Mastra processor, Vercel AI middleware)
+        and the dashboard playground. Does not call an upstream LLM — it
+        returns the per-step decisions and the sanitized content produced
+        by the profile's input/output pipeline.
+      tags: [Security]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetectRequest"
+      responses:
+        "200":
+          description: Detection outcome per message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetectResponse"
+        "400":
+          description: Invalid request body
+
+  /v1/playground/runs:
+    get:
+      operationId: listPlaygroundRuns
+      summary: List recent Playground run history
+      description: >
+        Returns the customer's most-recent playground runs in reverse
+        chronological order. Populated only when /v1/detect is called
+        with source=playground (the dashboard does this automatically).
+        Deliberately separate from traces — playground activity does
+        not pollute production observability.
+      tags: [Playground]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Recent playground runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaygroundRun"
+
+  /v1/playground/runs/{id}:
+    delete:
+      operationId: deletePlaygroundRun
+      summary: Delete a single playground run
+      tags: [Playground]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  # Custom Policies (tenant-owned overlays layered on top of the core security profile).
+  /v1/overlays:
+    get:
+      operationId: listOverlays
+      summary: List custom policies for this customer
+      tags: [CustomPolicies]
+      responses:
+        "200":
+          description: Overlays
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayList"
+    post:
+      operationId: createOverlay
+      summary: Create a custom policy and its first draft version
+      tags: [CustomPolicies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOverlayRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayCreateResult"
+
+  /v1/overlays/from-template:
+    post:
+      operationId: createOverlayFromTemplate
+      summary: Create a custom policy seeded from a built-in template
+      tags: [CustomPolicies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverlayFromTemplateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayCreateResult"
+        "404":
+          description: Template not found
+
+  /v1/overlays/{id}:
+    get:
+      operationId: getOverlay
+      summary: Fetch a custom policy with its active version and any loosening warnings
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayDetail"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteOverlay
+      summary: Delete a custom policy and all of its versions
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /v1/overlays/{id}/versions:
+    get:
+      operationId: listOverlayVersions
+      summary: List every version of a custom policy
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Versions, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayVersionList"
+    post:
+      operationId: createOverlayVersion
+      summary: Append a new draft version
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOverlayVersionRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayVersionResult"
+
+  /v1/overlays/{id}/versions/{n}:
+    get:
+      operationId: getOverlayVersion
+      summary: Fetch a specific version with loosening warnings
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayVersionDetail"
+        "404":
+          description: Not found
+
+  /v1/overlays/{id}/versions/{n}/shadow:
+    post:
+      operationId: promoteOverlayVersionToShadow
+      summary: Promote a draft version to shadow state
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverlayStateTransitionRequest"
+      responses:
+        "204":
+          description: Promoted
+        "404":
+          description: Not found
+        "409":
+          description: Invalid state transition
+
+  /v1/overlays/{id}/versions/{n}/activate:
+    post:
+      operationId: activateOverlayVersion
+      summary: Activate a version, superseding the current active one
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverlayStateTransitionRequest"
+      responses:
+        "204":
+          description: Activated
+        "404":
+          description: Not found
+        "409":
+          description: Invalid state transition
+
+  /v1/overlays/{id}/versions/{n}/preview:
+    post:
+      operationId: previewOverlayVersion
+      summary: Replay samples through the candidate effective profile and the current active, returning a diff
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverlayPreviewRequest"
+      responses:
+        "200":
+          description: Preview result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayPreviewResult"
+        "501":
+          description: Preview runner not configured
+
+  /v1/overlays/{id}/rollback:
+    post:
+      operationId: rollbackOverlay
+      summary: Activate the most recently superseded version
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverlayStateTransitionRequest"
+      responses:
+        "204":
+          description: Rolled back
+        "409":
+          description: No superseded version to roll back to
+
+  /v1/overlays/{id}/audit:
+    get:
+      operationId: listOverlayAudit
+      summary: Audit trail for a custom policy
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Audit entries, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayAuditList"
+
+  /v1/overlays/{id}/shadow-events:
+    get:
+      operationId: listOverlayShadowEvents
+      summary: Shadow divergences recorded for this policy
+      tags: [CustomPolicies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Shadow events, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayShadowEventList"
+
+  /v1/overlay-templates:
+    get:
+      operationId: listOverlayTemplates
+      summary: List built-in custom-policy templates for common verticals
+      tags: [CustomPolicies]
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayTemplateList"
+
+  /v1/overlay-templates/{slug}:
+    get:
+      operationId: getOverlayTemplate
+      summary: Fetch a single template by slug
+      tags: [CustomPolicies]
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OverlayTemplateDetail"
+        "404":
+          description: Not found
+
+  # ============================================================
+  # Governance — Bastio Governance browser extension API
+  # ============================================================
+
+  /v1/governance/domain-list:
+    get:
+      operationId: governanceListDomains
+      summary: Public list of tracked AI tool domains
+      description: |
+        Public allowlist of AI-tool domains the extension watches. The extension
+        bundles its own copy in the manifest; this endpoint exists so live
+        updates can ship without a new release. Cached for 6 hours.
+      tags: [Governance]
+      responses:
+        "200":
+          description: Domain list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceDomainList"
+
+  /v1/governance/events:
+    post:
+      operationId: governanceIngestEvent
+      summary: Ingest a governance telemetry event
+      description: |
+        Idempotent on `event_id` (Redis SETNX, 24h TTL). HMAC-authenticated
+        per-install. Returns `{ duplicate: true }` for duplicate posts (200,
+        not 409). Body capped at 64KB.
+
+        NEVER carries prompt content — only metadata. This is a brand promise.
+      tags: [Governance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceEventPayload"
+      responses:
+        "200":
+          description: Accepted or duplicate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+        "400":
+          description: Invalid JSON or missing required fields
+        "401":
+          description: HMAC signature invalid or replay window exceeded
+        "413":
+          description: Body too large
+
+  /v1/governance/heartbeat:
+    post:
+      operationId: governanceHeartbeat
+      summary: Per-install liveness ping
+      tags: [Governance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceHeartbeat"
+      responses:
+        "200":
+          description: Heartbeat recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /v1/governance/classify:
+    post:
+      operationId: governanceClassify
+      summary: Async server-side classifier hook
+      description: |
+        Non-blocking classifier called by the extension after the local block
+        decision. OSS runs a regex+entropy fallback that promotes severity
+        based on multi-signal context (PII clusters, secret+code combinations,
+        long high-entropy passages). Cloud overrides this with a trained model
+        via WithAPIExtension.
+      tags: [Governance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceClassifyRequest"
+      responses:
+        "200":
+          description: Classification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceClassifyResponse"
+
+  /v1/governance/policy:
+    get:
+      operationId: governanceGetExtensionPolicy
+      summary: Current extension policy + custom keywords + domain overrides
+      description: |
+        Polled by the extension every 30 minutes. Returns the merged customer
+        policy (severity actions, custom keywords, regex packs, redirect
+        target, override + pseudonymize toggles) plus the customer's
+        domain-override list so the extension can refresh its watched-tools
+        set without a separate call.
+      tags: [Governance]
+      responses:
+        "200":
+          description: Effective policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceExtensionPolicy"
+
+  /v1/governance/dashboard/overview:
+    get:
+      operationId: governanceDashboardOverview
+      summary: KPI summary for the IT operator dashboard
+      tags: [Governance]
+      parameters:
+        - in: query
+          name: window_days
+          schema:
+            type: integer
+            default: 7
+            minimum: 1
+            maximum: 90
+      responses:
+        "200":
+          description: Aggregated counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceOverviewSummary"
+
+  /v1/governance/dashboard/events:
+    get:
+      operationId: governanceDashboardEvents
+      summary: Recent governance events (filterable)
+      tags: [Governance]
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            maximum: 500
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - in: query
+          name: source_domain
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GovernanceEventRow"
+                  limit:
+                    type: integer
+
+  /v1/governance/dashboard/overrides:
+    get:
+      operationId: governanceDashboardOverrides
+      summary: Audit feed of overridden events
+      tags: [Governance]
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+      responses:
+        "200":
+          description: Override events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  overrides:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GovernanceEventRow"
+                  count:
+                    type: integer
+
+  /v1/governance/dashboard/deployments:
+    get:
+      operationId: governanceDashboardDeployments
+      summary: Per-install heartbeat health
+      tags: [Governance]
+      responses:
+        "200":
+          description: Active deployments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deployments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GovernanceDeploymentRow"
+
+  /v1/governance/dashboard/installations:
+    get:
+      operationId: governanceDashboardListInstallations
+      summary: List active governance installations for this customer
+      tags: [Governance]
+      responses:
+        "200":
+          description: Installations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GovernanceInstallation"
+    post:
+      operationId: governanceDashboardCreateInstallation
+      summary: Generate a new MDM bundle (one-time secret reveal)
+      description: |
+        Creates a fresh org_id + installation_token + installation_secret.
+        The secret is shown ONCE in the response — IT must store it in their
+        MDM tooling immediately. Subsequent retrievals via `GET .../mdm-bundle.zip`
+        bundle the existing secret without re-revealing it inline.
+      tags: [Governance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+              required: []
+      responses:
+        "201":
+          description: Created with one-time credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceCreatedInstallation"
+
+  /v1/governance/dashboard/installations/{id}:
+    delete:
+      operationId: governanceDashboardRevokeInstallation
+      summary: Revoke an installation
+      tags: [Governance]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+        "404":
+          description: Not found
+
+  /v1/governance/dashboard/installations/{id}/mdm-bundle.zip:
+    get:
+      operationId: governanceDashboardDownloadMDMBundle
+      summary: Download the MDM bundle zip for a given installation
+      description: |
+        Bundle includes Chrome managed-storage JSON, Intune ADMX/ADML, Jamf
+        .mobileconfig, and a README with deployment instructions.
+      tags: [Governance]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Zip archive
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+
+  /v1/governance/dashboard/policy:
+    get:
+      operationId: governanceDashboardGetPolicy
+      summary: Current customer governance policy
+      tags: [Governance]
+      responses:
+        "200":
+          description: Customer policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceCustomerPolicy"
+    put:
+      operationId: governanceDashboardUpdatePolicy
+      summary: Update customer governance policy
+      tags: [Governance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceCustomerPolicy"
+      responses:
+        "200":
+          description: Updated policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceCustomerPolicy"
+        "400":
+          description: Invalid policy (e.g. bad regex pack)
+
+  /v1/governance/dashboard/webhooks:
+    get:
+      operationId: governanceDashboardListWebhooks
+      summary: List configured webhooks for this customer
+      tags: [Governance]
+      responses:
+        "200":
+          description: Webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GovernanceWebhook"
+    post:
+      operationId: governanceDashboardCreateWebhook
+      summary: Add a webhook (Slack / Teams / raw_json)
+      tags: [Governance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceCreateWebhookRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceWebhook"
+
+  /v1/governance/dashboard/webhooks/{id}:
+    delete:
+      operationId: governanceDashboardDeleteWebhook
+      summary: Delete a webhook
+      tags: [Governance]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  /v1/governance/dashboard/webhooks/{id}/test:
+    post:
+      operationId: governanceDashboardTestWebhook
+      summary: Fire a synthetic high-severity event at the webhook
+      tags: [Governance]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Test queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queued:
+                    type: boolean
+
+  /v1/governance/dashboard/domain-overrides:
+    get:
+      operationId: governanceDashboardListDomainOverrides
+      summary: List per-customer domain overrides
+      tags: [Governance]
+      responses:
+        "200":
+          description: Domain overrides
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  overrides:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GovernanceDomainOverride"
+    post:
+      operationId: governanceDashboardAddDomainOverride
+      summary: Add a custom internal AI tool domain to track
+      tags: [Governance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovernanceAddDomainRequest"
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernanceDomainOverride"
+
+  /v1/governance/dashboard/domain-overrides/{id}:
+    delete:
+      operationId: governanceDashboardDeleteDomainOverride
+      summary: Delete a domain override
+      tags: [Governance]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+
+  /v1/governance/dashboard/pilot-report:
+    get:
+      operationId: governanceDashboardPilotReport
+      summary: Structured 14-day Shadow AI Audit report (JSON)
+      tags: [Governance]
+      responses:
+        "200":
+          description: Report payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GovernancePilotReport"
+
+  /v1/governance/dashboard/pilot-report.pdf:
+    get:
+      operationId: governanceDashboardPilotReportPDF
+      summary: Downloadable PDF of the Shadow AI Audit report
+      tags: [Governance]
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /v1/governance/dashboard/scim-token:
+    post:
+      operationId: governanceDashboardCreateSCIMToken
+      summary: Issue a SCIM bearer token for the customer's IdP
+      description: |
+        One-time reveal: the response carries the plaintext bearer. Paste it
+        into Okta / Microsoft Entra ID / Google Workspace / etc. as the
+        SCIM provisioning bearer. Re-creating rotates the token.
+      tags: [Governance]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+      responses:
+        "201":
+          description: Token issued (one-time reveal)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, bearer_token, endpoint]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  label:
+                    type: string
+                  bearer_token:
+                    type: string
+                  endpoint:
+                    type: string
+                  warning:
+                    type: string
+    delete:
+      operationId: governanceDashboardRevokeSCIMToken
+      summary: Revoke the customer's SCIM bearer
+      tags: [Governance]
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+        "404":
+          description: No active token
+
+
+  # Workspace — multi-model AI chat product. Conversations, assistants,
+  # knowledge base, members, analytics. Mounted at /v1/workspace inside
+  # the dashboard-auth group; cloud session middleware gates access.
+  # See bastio/internal/workspace/.
+  # =====================================================================
+
+  /v1/workspace/status:
+    get:
+      operationId: workspaceStatus
+      summary: Workspace status + lazy-create settings
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  customer_id: { type: string, format: uuid }
+                  settings:
+                    $ref: "#/components/schemas/WorkspaceSettings"
+
+  /v1/workspace/settings:
+    get:
+      operationId: workspaceGetSettings
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSettings"
+    patch:
+      operationId: workspaceUpdateSettings
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceSettingsPatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSettings"
+
+  /v1/workspace/me/effective-models:
+    get:
+      operationId: workspaceGetEffectiveModels
+      tags: [Workspace]
+      summary: Per-user effective LLM model whitelist
+      description: |
+        Merged allowed_models list for the calling user.
+        Precedence: workspace_members.allowed_models (override) ⟶
+        workspace_settings.allowed_models (customer-wide) ⟶ empty
+        (open — full catalog visible). Drives the chat surface's
+        model picker.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowed_models]
+                properties:
+                  allowed_models:
+                    type: array
+                    items: { $ref: "#/components/schemas/WorkspaceAllowedModel" }
+
+  /v1/workspace/assistants:
+    get:
+      operationId: workspaceListAssistants
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assistants]
+                properties:
+                  assistants:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceAssistant"
+    post:
+      operationId: workspaceCreateAssistant
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceAssistant"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAssistant"
+
+  /v1/workspace/assistants/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: workspaceGetAssistant
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAssistant"
+    patch:
+      operationId: workspaceUpdateAssistant
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceAssistantPatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAssistant"
+    delete:
+      operationId: workspaceArchiveAssistant
+      tags: [Workspace]
+      responses:
+        "204": { description: Archived }
+
+  /v1/workspace/knowledge:
+    get:
+      operationId: workspaceListKnowledge
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sources]
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceKnowledgeSource"
+    post:
+      operationId: workspaceCreateKnowledge
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceKnowledgeSource"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceKnowledgeSource"
+
+  /v1/workspace/knowledge/upload:
+    post:
+      operationId: workspaceUploadKnowledge
+      summary: Upload a knowledge file (multipart). Async ingestion.
+      description: |
+        Multipart form with a `file` field. The server stores the blob,
+        creates a `workspace_knowledge_sources` row with status='pending',
+        enqueues a River ingestion job, and returns the row immediately.
+        The dashboard polls until status flips to 'ready' or 'failed'.
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Created (ingestion in progress)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceKnowledgeSource"
+
+  /v1/workspace/knowledge/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: workspaceGetKnowledge
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceKnowledgeSource"
+    delete:
+      operationId: workspaceArchiveKnowledge
+      tags: [Workspace]
+      responses:
+        "204": { description: Archived }
+
+  /v1/workspace/knowledge/{id}/release:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: workspaceReleaseKnowledge
+      summary: Release a quarantined knowledge source for re-ingest
+      description: |
+        Admin-only override that flips a quarantined source back to
+        `pending` and re-enqueues the ingest worker. Used when the
+        security scan was a false positive (e.g. a doc legitimately
+        discusses passwords as part of a security policy and the
+        secrets detector tripped). The release action is audited.
+        Only valid when the source is currently in `quarantined`
+        status; releasing a non-quarantined source returns 409.
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Released; ingest re-enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status]
+                properties:
+                  id: { type: string, format: uuid }
+                  status: { type: string, enum: [pending] }
+        "404": { description: Source not found }
+        "409":
+          description: Source is not in quarantined status
+
+  /v1/workspace/settings/slug:
+    put:
+      operationId: workspaceSetSlug
+      summary: Claim or update the workspace's branded-chat slug
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug]
+              properties:
+                slug:
+                  type: string
+                  pattern: "^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSettings"
+        "409":
+          description: Slug already claimed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /v1/workspace/domains:
+    get:
+      operationId: workspaceListDomains
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [domains]
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceDomain"
+    post:
+      operationId: workspaceCreateDomain
+      summary: Register a custom domain (returns DNS verification token)
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain: { type: string, format: hostname }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDomain"
+        "409":
+          description: Domain already registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /v1/workspace/domains/{id}/verify:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: workspaceVerifyDomain
+      summary: Verify domain ownership via DNS TXT record
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDomain"
+        "422":
+          description: TXT record not found or DNS lookup failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /v1/workspace/domains/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: workspaceDeleteDomain
+      tags: [Workspace]
+      responses:
+        "204":
+          description: Removed
+
+  /v1/workspace/conversations:
+    get:
+      operationId: workspaceListConversations
+      tags: [Workspace]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversations]
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceConversationListItem"
+    post:
+      operationId: workspaceCreateConversation
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                assistant_id: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceConversation"
+
+  /v1/workspace/conversations/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: workspaceGetConversation
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceConversation"
+    patch:
+      operationId: workspaceRenameConversation
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+      responses:
+        "204": { description: Renamed }
+    delete:
+      operationId: workspaceArchiveConversation
+      tags: [Workspace]
+      responses:
+        "204": { description: Archived }
+
+  /v1/workspace/conversations/{id}/messages:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: workspaceListMessages
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceMessage"
+    post:
+      operationId: workspaceSendMessage
+      summary: Send a message (non-streaming, returns full assistant reply)
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceSendMessageRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user_message, assistant_message]
+                properties:
+                  user_message:
+                    $ref: "#/components/schemas/WorkspaceMessage"
+                  assistant_message:
+                    $ref: "#/components/schemas/WorkspaceMessage"
+
+  /v1/workspace/conversations/{id}/messages/stream:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: workspaceStreamMessage
+      summary: Send a message and stream tokens via Server-Sent Events
+      description: |
+        Returns a `text/event-stream` with three event types:
+        * `token` — `{ "delta": "<text>" }` repeated until the response is complete
+        * `done` — `{ "message": <Message> }` with the persisted assistant message
+        * `error` — `{ "error": "<message>" }` on transport or provider failure
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceSendMessageRequest"
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/workspace/members:
+    get:
+      operationId: workspaceListMembers
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceMember"
+
+  /v1/workspace/members/{userID}:
+    parameters:
+      - in: path
+        name: userID
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: workspaceRemoveMember
+      tags: [Workspace]
+      responses:
+        "204": { description: Removed }
+
+  /v1/workspace/invitations:
+    get:
+      operationId: workspaceListInvitations
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitations]
+                properties:
+                  invitations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceInvitation"
+    post:
+      operationId: workspaceCreateInvitation
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                role: { type: string, enum: [owner, admin, member, viewer] }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitation, token]
+                properties:
+                  invitation:
+                    $ref: "#/components/schemas/WorkspaceInvitation"
+                  token: { type: string }
+
+  /v1/workspace/invitations/accept:
+    post:
+      operationId: workspaceAcceptInvitation
+      tags: [Workspace]
+      summary: Redeem a workspace invitation token
+      description: |
+        Atomic transaction: validate the bearer token (not expired,
+        revoked, or consumed), enforce email match, re-check the
+        seat limit, insert workspace_members ON CONFLICT DO NOTHING,
+        mark accepted_at. Caller must be authenticated; the handler
+        binds the user to the inviter's customer_id, not the
+        caller's home customer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Membership added
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [customer_id, role, email]
+                properties:
+                  customer_id: { type: string, format: uuid }
+                  role: { type: string, enum: [owner, admin, member, viewer] }
+                  email: { type: string }
+        "402":
+          description: Workspace at seat limit (code = seat_limit_reached)
+        "403":
+          description: Email on session does not match invitation (code = invitation_email_mismatch)
+        "410":
+          description: Invitation expired / revoked / already consumed / not found
+
+  /v1/workspace/invitations/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: workspaceRevokeInvitation
+      tags: [Workspace]
+      responses:
+        "204": { description: Revoked }
+
+  /v1/workspace/analytics/summary:
+    get:
+      operationId: workspaceAnalyticsSummary
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAnalyticsSummary"
+
+  /v1/workspace/analytics/daily:
+    get:
+      operationId: workspaceAnalyticsDaily
+      tags: [Workspace]
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, default: 14, maximum: 90 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days]
+                properties:
+                  days:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceDailyUsagePoint"
+
+  /v1/workspace/audit:
+    get:
+      operationId: workspaceListAudit
+      tags: [Workspace]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: before
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/workspace/whoami:
+    get:
+      operationId: workspaceWhoami
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/workspace/owner/transfer:
+    post:
+      operationId: workspaceTransferOwnership
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_owner_user_id]
+              properties:
+                new_owner_user_id: { type: string }
+      responses:
+        "204":
+          description: Owner transferred
+  /v1/workspace/members/{userID}/role:
+    patch:
+      operationId: workspaceChangeMemberRole
+      tags: [Workspace]
+      parameters:
+        - in: path
+          name: userID
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [admin, member, viewer]
+      responses:
+        "204":
+          description: Role updated
+  /v1/workspace/conversations/{id}/messages/{messageID}:
+    delete:
+      operationId: workspaceDeleteFromMessage
+      tags: [Workspace]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: messageID
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Deleted target message and any subsequent messages
+  /v1/workspace/chat-attachments:
+    post:
+      operationId: workspaceUploadChatAttachment
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/workspace/analytics/by-model:
+    get:
+      operationId: workspaceAnalyticsByModel
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [by_model]
+                properties:
+                  by_model:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkspaceByModelCount"
+  /v1/workspace/analytics/users:
+    get:
+      operationId: workspaceAnalyticsTopUsers
+      tags: [Workspace]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10, maximum: 100 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/workspace/analytics/users/{userID}:
+    get:
+      operationId: workspaceAnalyticsUserDetail
+      tags: [Workspace]
+      parameters:
+        - in: path
+          name: userID
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/workspace/analytics/forecast:
+    get:
+      operationId: workspaceAnalyticsForecast
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/workspace/analytics/compare:
+    get:
+      operationId: workspaceAnalyticsCompare
+      tags: [Workspace]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /v1/workspace/members/{userID}/budgets:
+    patch:
+      operationId: workspaceSetMemberBudgets
+      tags: [Workspace]
+      parameters:
+        - in: path
+          name: userID
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                monthly_token_limit:
+                  type: integer
+                  nullable: true
+                daily_rate_limit:
+                  type: integer
+                  nullable: true
+      responses:
+        "204":
+          description: Updated
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "Bearer sk-bastio-..."
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        postgres:
+          type: string
+        redis:
+          type: string
+        clickhouse:
+          type: string
+
+    Proxy:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - listen_path
+        - target_provider
+        - target_model
+        - is_active
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        listen_path:
+          type: string
+        target_provider:
+          type: string
+        target_model:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateProxyRequest:
+      type: object
+      required: [name, target_provider]
+      properties:
+        name:
+          type: string
+        target_provider:
+          type: string
+          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+        target_model:
+          type: string
+        settings:
+          type: object
+
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+        stream:
+          type: boolean
+          default: false
+        temperature:
+          type: number
+        max_tokens:
+          type: integer
+
+    APIKey:
+      type: object
+      required: [id, name, key_prefix, scopes, is_active, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        key_prefix:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        rate_limit_rpm:
+          type: integer
+          nullable: true
+        is_active:
+          type: boolean
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    APIKeyWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/APIKey"
+        - type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+              description: Plaintext API key; shown only at creation time.
+
+    CreateAPIKeyRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        rate_limit_rpm:
+          type: integer
+
+    Trace:
+      type: object
+      required:
+        - id
+        - customer_id
+        - proxy_id
+        - method
+        - path
+        - provider
+        - model
+        - started_at
+        - completed_at
+        - duration_ms
+        - input_tokens
+        - output_tokens
+        - total_tokens
+        - cost_cents
+        - status
+        - threat_detected
+        - threat_types
+        - threat_score
+        - security_action
+        - end_user_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        proxy_id:
+          type: string
+          format: uuid
+        method:
+          type: string
+        path:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        cost_cents:
+          type: number
+        status:
+          type: string
+        threat_detected:
+          type: boolean
+        threat_types:
+          type: array
+          items:
+            type: string
+        threat_score:
+          type: number
+        security_action:
+          type: string
+        end_user_id:
+          type: string
+        session_id:
+          type: string
+        http_status:
+          type: integer
+        error_message:
+          type: string
+        request_body:
+          type: string
+          description: Populated by GET /v1/traces/{id}; empty in list responses.
+        response_body:
+          type: string
+          description: Populated by GET /v1/traces/{id}; empty in list responses.
+        environment:
+          type: string
+          description: Logical stage the request came from (production, staging, preview-pr-42, ...).
+        release:
+          type: string
+          description: Application version or git SHA that produced the request.
+        trace_name:
+          type: string
+          description: Semantic label for the request (e.g. guard_chat_completions).
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+          description: Free-form key/value tags attached to the trace via X-Bastio-Tag-* headers.
+
+    ThreatEvent:
+      type: object
+      required:
+        - id
+        - trace_id
+        - threat_type
+        - severity
+        - score
+        - action_taken
+        - detector_name
+        - matched_pattern
+        - matched_content
+        - confidence
+        - detected_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        trace_id:
+          type: string
+          format: uuid
+        threat_type:
+          type: string
+        threat_subtype:
+          type: string
+          description: Optional taxonomy tag from the detector (e.g. "persona.dan", "encoding.base64").
+        source:
+          type: string
+          description: Where the threat was found — input | response | tool | retrieval | memory.
+        severity:
+          type: string
+        score:
+          type: number
+        action_taken:
+          type: string
+        detector_name:
+          type: string
+        matched_pattern:
+          type: string
+        matched_content:
+          type: string
+        confidence:
+          type: number
+        end_user_id:
+          type: string
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: string
+          description: Detector-specific metadata (shape depends on detector_name).
+        detected_at:
+          type: string
+          format: date-time
+
+    AnalyticsOverview:
+      type: object
+      required:
+        - total_requests
+        - total_threats
+        - total_blocked
+        - total_cost_cents
+        - avg_duration_ms
+        - requests_by_hour
+        - threats_by_type
+        - top_models
+      properties:
+        total_requests:
+          type: integer
+        total_threats:
+          type: integer
+        total_blocked:
+          type: integer
+        total_cost_cents:
+          type: number
+        avg_duration_ms:
+          type: number
+        requests_by_hour:
+          type: array
+          items:
+            type: object
+            required: [hour, count]
+            properties:
+              hour:
+                type: string
+              count:
+                type: integer
+        threats_by_type:
+          type: array
+          items:
+            type: object
+            required: [type, count]
+            properties:
+              type:
+                type: string
+              count:
+                type: integer
+        top_models:
+          type: array
+          items:
+            type: object
+            required: [model, count, cost_cents]
+            properties:
+              model:
+                type: string
+              count:
+                type: integer
+              cost_cents:
+                type: number
+
+    AppConfig:
+      type: object
+      required: [mode, security_mode, port, version, license]
+      properties:
+        mode:
+          type: string
+        security_mode:
+          type: string
+        port:
+          type: integer
+        version:
+          type: string
+        license:
+          type: string
+
+    ProviderKey:
+      type: object
+      required: [id, provider, key_masked, is_default, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        proxy_id:
+          type: string
+          format: uuid
+          nullable: true
+        provider:
+          type: string
+        key_masked:
+          type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateProviderKeyRequest:
+      type: object
+      required: [provider, key]
+      properties:
+        provider:
+          type: string
+          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+        key:
+          type: string
+          description: Plaintext key. Stored encrypted at rest.
+        proxy_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: If set, scopes the key to a single proxy.
+        is_default:
+          type: boolean
+
+    UpdateProxyRequest:
+      type: object
+      required: [name, target_provider, target_model]
+      properties:
+        name:
+          type: string
+        target_provider:
+          type: string
+          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+        target_model:
+          type: string
+        is_active:
+          type: boolean
+
+    UpdateSecurityProfileRequest:
+      type: object
+      description: Partial update — only provided fields change.
+      properties:
+        injection_enabled:
+          type: boolean
+        injection_threshold:
+          type: number
+        pii_enabled:
+          type: boolean
+        pii_action:
+          type: string
+          enum: [mask, tokenize, block, warn, log_only]
+        pii_scan_response:
+          type: boolean
+          description: When true, scan the LLM response for PII that was not in the request (hallucination / RAG leak).
+        pii_restore_response:
+          type: boolean
+          description: When true and pii_action=tokenize, swap placeholders back to originals before returning the response.
+        pii_token_style:
+          type: string
+          enum: [angle, curly]
+          description: Placeholder shape when pii_action=tokenize.
+        jailbreak_enabled:
+          type: boolean
+        jailbreak_threshold:
+          type: number
+        bot_detection_enabled:
+          type: boolean
+        custom_patterns_enabled:
+          type: boolean
+        canonicalize_enabled:
+          type: boolean
+          description: Run unicode/homoglyph/base64 canonicalization before detectors. Recommended on.
+        secrets_enabled:
+          type: boolean
+          description: Detect and mask API keys, cloud credentials, and private keys.
+        indirect_injection_enabled:
+          type: boolean
+          description: Scan tool/retrieval/memory content for embedded prompt injection with stricter thresholds than user input.
+        output_exfil_enabled:
+          type: boolean
+          description: Scan model responses for system-prompt reveal, echoed secrets, and training-data regurgitation.
+        topic_policy_enabled:
+          type: boolean
+          description: Apply per-customer regex/keyword policy rules from security_patterns.
+        injection_strategy:
+          type: string
+          enum: [block, warn, log_only]
+          description: What happens when the injection step fires.
+        jailbreak_strategy:
+          type: string
+          enum: [block, warn, log_only]
+          description: What happens when the jailbreak step fires.
+        secrets_strategy:
+          type: string
+          enum: [block, mask, warn, log_only]
+          description: What happens when the secrets step fires. No tokenize — secrets must not round-trip.
+        indirect_injection_strategy:
+          type: string
+          enum: [block, warn, log_only]
+          description: What happens when the indirect_injection step fires (on tool/retrieval/memory content).
+        output_exfil_strategy:
+          type: string
+          enum: [block, warn, log_only]
+          description: What happens when the response-side exfil step fires.
+
+    Observation:
+      type: object
+      required:
+        - id
+        - trace_id
+        - type
+        - name
+        - depth
+        - started_at
+        - completed_at
+        - duration_ms
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        trace_id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          description: Empty string when this is a root span.
+        type:
+          type: string
+          description: generation, span, event, tool, retrieval, embedding, guardrail, agent
+        name:
+          type: string
+        depth:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        model:
+          type: string
+        input:
+          type: string
+        output:
+          type: string
+        status:
+          type: string
+        error_message:
+          type: string
+        model_parameters:
+          type: string
+          description: JSON blob of the LLM config used for this span (temperature, top_p, max_tokens, ...).
+        prompt_id:
+          type: string
+        prompt_name:
+          type: string
+        prompt_version:
+          type: integer
+        tool_name:
+          type: string
+        tool_input:
+          type: string
+        tool_output:
+          type: string
+        status_message:
+          type: string
+        cost_cents:
+          type: number
+
+    TraceThreatDetection:
+      type: object
+      required: [id, trace_id, threat_type, severity, detector_name, detected_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        trace_id:
+          type: string
+          format: uuid
+        threat_type:
+          type: string
+          description: injection, pii, jailbreak, bot, rate_anomaly, custom_pattern
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        score:
+          type: number
+        action_taken:
+          type: string
+        detector_name:
+          type: string
+        matched_pattern:
+          type: string
+        matched_content:
+          type: string
+        confidence:
+          type: number
+        end_user_id:
+          type: string
+        ip_address:
+          type: string
+        detected_at:
+          type: string
+          format: date-time
+        threat_subtype:
+          type: string
+          description: Dotted sub-category emitted by the detector (e.g. persona.dan, extraction.meta).
+        source:
+          type: string
+          description: Detection source label (e.g. pattern, structural, crescendo).
+
+    Session:
+      type: object
+      required: [id, trace_count, first_started_at, last_completed_at]
+      properties:
+        id:
+          type: string
+          description: The session_id value shared by all traces in this session.
+        trace_count:
+          type: integer
+        threat_count:
+          type: integer
+        blocked_count:
+          type: integer
+        error_count:
+          type: integer
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        total_cost_cents:
+          type: number
+        first_started_at:
+          type: string
+          format: date-time
+        last_completed_at:
+          type: string
+          format: date-time
+        total_duration_ms:
+          type: integer
+          description: Sum of trace durations (concurrent traces overlap).
+        wall_clock_ms:
+          type: integer
+          description: Time from first trace start to last trace completion.
+        end_user_id:
+          type: string
+
+    SessionDetail:
+      type: object
+      required: [session, traces]
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        traces:
+          type: array
+          items:
+            $ref: "#/components/schemas/Trace"
+
+    TraceDetail:
+      type: object
+      required: [trace, spans]
+      properties:
+        trace:
+          $ref: "#/components/schemas/Trace"
+        spans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Observation"
+
+    TraceScore:
+      type: object
+      required: [id, trace_id, name, value_type, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        trace_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        value_type:
+          type: string
+          enum: [numeric, categorical, boolean]
+        numeric_value:
+          type: number
+          nullable: true
+        string_value:
+          type: string
+        comment:
+          type: string
+        evaluator:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateTraceScoreRequest:
+      type: object
+      required: [name, value_type]
+      properties:
+        name:
+          type: string
+        value_type:
+          type: string
+          enum: [numeric, categorical, boolean]
+        numeric_value:
+          type: number
+        string_value:
+          type: string
+        comment:
+          type: string
+        evaluator:
+          type: string
+
+    UserAnalytics:
+      type: object
+      required:
+        - end_user_id
+        - total_requests
+        - total_cost_cents
+        - avg_duration_ms
+        - total_threats
+        - last_request_at
+      properties:
+        end_user_id:
+          type: string
+        total_requests:
+          type: integer
+        total_cost_cents:
+          type: number
+        avg_duration_ms:
+          type: number
+        total_threats:
+          type: integer
+        last_request_at:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      required:
+        - id
+        - total_traces
+        - first_seen_at
+        - last_seen_at
+      properties:
+        id:
+          type: string
+          description: The X-End-User-Id that tagged these requests.
+        total_traces:
+          type: integer
+        total_threats:
+          type: integer
+        total_blocked:
+          type: integer
+        total_errors:
+          type: integer
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        total_cost_cents:
+          type: number
+        first_seen_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        avg_duration_ms:
+          type: number
+        session_count:
+          type: integer
+
+    UserThreatBreakdown:
+      type: object
+      required: [threat_type, count]
+      properties:
+        threat_type:
+          type: string
+        count:
+          type: integer
+        avg_score:
+          type: number
+
+    UserDetail:
+      type: object
+      required: [user, sessions, traces, threat_breakdown]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+        traces:
+          type: array
+          items:
+            $ref: "#/components/schemas/Trace"
+        threat_breakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserThreatBreakdown"
+
+    Prompt:
+      type: object
+      required: [id, name, latest_version, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        latest_version:
+          type: integer
+        content_type:
+          type: string
+          enum: [text, chat]
+        labels:
+          type: array
+          items:
+            type: string
+        latest_created_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PromptVersion:
+      type: object
+      required: [id, prompt_id, version, content, content_type, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        prompt_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        content:
+          type: string
+        content_type:
+          type: string
+          enum: [text, chat]
+        config:
+          type: object
+          additionalProperties: true
+          description: Model configuration (temperature, top_p, max_tokens, ...).
+        labels:
+          type: array
+          items:
+            type: string
+        commit_message:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    PromptDetail:
+      type: object
+      required: [id, name, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        latest_version:
+          type: integer
+        labels:
+          type: array
+          items:
+            type: string
+        content_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        version:
+          $ref: "#/components/schemas/PromptVersion"
+
+    CreatePromptRequest:
+      type: object
+      required: [name, content]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        content:
+          type: string
+        content_type:
+          type: string
+          enum: [text, chat]
+          default: text
+        config:
+          type: object
+          additionalProperties: true
+        labels:
+          type: array
+          items:
+            type: string
+        commit_message:
+          type: string
+        created_by:
+          type: string
+
+    CreatePromptVersionRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+        content_type:
+          type: string
+          enum: [text, chat]
+        config:
+          type: object
+          additionalProperties: true
+        labels:
+          type: array
+          items:
+            type: string
+        commit_message:
+          type: string
+        created_by:
+          type: string
+
+    SetPromptLabelsRequest:
+      type: object
+      required: [labels]
+      properties:
+        labels:
+          type: array
+          items:
+            type: string
+        exclusive_labels:
+          type: array
+          items:
+            type: string
+          description: Labels here are cleared from every other version of this prompt when set.
+
+    PromptUsageSummary:
+      type: object
+      required: [version, trace_count]
+      properties:
+        version:
+          type: integer
+        trace_count:
+          type: integer
+        avg_duration_ms:
+          type: number
+        total_cost_cents:
+          type: number
+        last_used_at:
+          type: string
+          format: date-time
+
+    PromptUsageTrace:
+      type: object
+      required: [trace_id, version, started_at, status]
+      properties:
+        trace_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        span_name:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        status:
+          type: string
+
+    PromptUsage:
+      type: object
+      required: [summary, recent]
+      properties:
+        summary:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptUsageSummary"
+        recent:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptUsageTrace"
+
+    SecurityProfile:
+      type: object
+      required:
+        - id
+        - customer_id
+        - name
+        - injection_enabled
+        - injection_threshold
+        - pii_enabled
+        - pii_action
+        - pii_scan_response
+        - pii_restore_response
+        - pii_token_style
+        - jailbreak_enabled
+        - jailbreak_threshold
+        - bot_detection_enabled
+        - custom_patterns_enabled
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        proxy_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        injection_enabled:
+          type: boolean
+        injection_threshold:
+          type: number
+        pii_enabled:
+          type: boolean
+        pii_action:
+          type: string
+          enum: [mask, tokenize, block, warn, log_only]
+        pii_scan_response:
+          type: boolean
+        pii_restore_response:
+          type: boolean
+        pii_token_style:
+          type: string
+          enum: [angle, curly]
+        jailbreak_enabled:
+          type: boolean
+        jailbreak_threshold:
+          type: number
+        bot_detection_enabled:
+          type: boolean
+        custom_patterns_enabled:
+          type: boolean
+        canonicalize_enabled:
+          type: boolean
+        secrets_enabled:
+          type: boolean
+        indirect_injection_enabled:
+          type: boolean
+        output_exfil_enabled:
+          type: boolean
+        topic_policy_enabled:
+          type: boolean
+        injection_strategy:
+          type: string
+          enum: [block, warn, log_only]
+        jailbreak_strategy:
+          type: string
+          enum: [block, warn, log_only]
+        secrets_strategy:
+          type: string
+          enum: [block, mask, warn, log_only]
+        indirect_injection_strategy:
+          type: string
+          enum: [block, warn, log_only]
+        output_exfil_strategy:
+          type: string
+          enum: [block, warn, log_only]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DetectMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          description: "Message role (user, assistant, system). Informational only."
+        content:
+          type: string
+
+    DetectStep:
+      type: object
+      required: [detector, strategy]
+      properties:
+        detector:
+          type: string
+          description: "Detector name — must match a detector registered in the engine (injection, pii, jailbreak)."
+        strategy:
+          type: string
+          enum: [block, mask, tokenize, warn, log_only]
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "Weighted score (score × confidence) above which the strategy fires. 0 means any finding fires."
+        options:
+          type: object
+          additionalProperties:
+            type: string
+
+    DetectRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectMessage"
+        profile:
+          type: string
+          description: "Named security profile to use. Omit or 'default' for the customer's default."
+        direction:
+          type: string
+          enum: [input, output]
+          default: input
+        steps:
+          type: array
+          description: "Inline step list that overrides the profile — used by the playground for ad-hoc experiments."
+          items:
+            $ref: "#/components/schemas/DetectStep"
+        source:
+          type: string
+          description: "Optional tag. Set to 'playground' to persist the run into the dashboard history table. SDK callers should omit this to keep production traffic out of the playground history."
+        proxy_id:
+          type: string
+          format: uuid
+          description: "Optional proxy association, recorded on playground runs so the history panel can scope by proxy."
+
+    DetectFinding:
+      type: object
+      properties:
+        threat_type:
+          type: string
+          enum: [injection, pii, jailbreak]
+        detector_name:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        score:
+          type: number
+        confidence:
+          type: number
+        matched_pattern:
+          type: string
+        matched_content:
+          type: string
+        action:
+          type: string
+        message:
+          type: string
+
+    DetectStepResult:
+      type: object
+      properties:
+        detector:
+          type: string
+        strategy:
+          type: string
+        fired:
+          type: boolean
+        skipped:
+          type: boolean
+          description: "True when the step was configured but not executed because an earlier step short-circuited the pipeline (e.g. block)."
+        action:
+          type: string
+        score:
+          type: number
+        threshold:
+          type: number
+          description: "The weighted-score threshold this step was compared against. Useful for diagnosing fired=false at a high-looking score."
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectFinding"
+        duration:
+          type: integer
+          description: "Step duration in nanoseconds."
+
+    DetectMessageResult:
+      type: object
+      properties:
+        role:
+          type: string
+        original:
+          type: string
+        sanitized_content:
+          type: string
+        action:
+          type: string
+        should_block:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectStepResult"
+
+    DetectResponse:
+      type: object
+      properties:
+        profile:
+          type: string
+        direction:
+          type: string
+          enum: [input, output]
+        action:
+          type: string
+        should_block:
+          type: boolean
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectMessageResult"
+
+    PlaygroundRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        profile_name:
+          type: string
+        proxy_id:
+          type: string
+          format: uuid
+          nullable: true
+        direction:
+          type: string
+          enum: [input, output]
+        prompt:
+          type: string
+        sanitized_content:
+          type: string
+        action:
+          type: string
+        should_block:
+          type: boolean
+        fired_detectors:
+          type: array
+          items:
+            type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetectStepResult"
+        duration_ns:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+
+    # ---- Custom Policies (tenant-owned overlays) ----
+
+    OverlayDetectorOverride:
+      type: object
+      description: Per-detector threshold/strategy override. Nil fields inherit core defaults.
+      properties:
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 0..1. Higher = less sensitive. Nil = inherit.
+        strategy:
+          type: string
+          description: block | warn | log_only (plus mask for secrets). Nil = inherit.
+
+    OverlayPIIOverride:
+      type: object
+      properties:
+        action:
+          type: string
+          description: block | mask | tokenize | warn | log_only. Nil = inherit.
+
+    OverlayDetectorOverrides:
+      type: object
+      description: Overlay cannot disable a core detector — no "enabled" field by design.
+      properties:
+        injection:
+          $ref: "#/components/schemas/OverlayDetectorOverride"
+        jailbreak:
+          $ref: "#/components/schemas/OverlayDetectorOverride"
+        secrets:
+          $ref: "#/components/schemas/OverlayDetectorOverride"
+        indirect_injection:
+          $ref: "#/components/schemas/OverlayDetectorOverride"
+        output_exfil:
+          $ref: "#/components/schemas/OverlayDetectorOverride"
+        pii:
+          $ref: "#/components/schemas/OverlayPIIOverride"
+
+    OverlayPatternRule:
+      type: object
+      required: [name, pattern_type, pattern]
+      properties:
+        name:
+          type: string
+        pattern_type:
+          type: string
+          enum: [regex, keyword, semantic]
+        pattern:
+          type: string
+        action:
+          type: string
+          enum: [block, warn, log]
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+
+    OverlayAccessRule:
+      type: object
+      required: [rule_type, value]
+      description: Stored but not yet enforced at runtime.
+      properties:
+        rule_type:
+          type: string
+          enum: [ip_allowlist, ip_blocklist, geo_allow, geo_block]
+        value:
+          type: string
+
+    OverlayPluginDetectorRef:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        config:
+          description: Opaque JSON config passed to the plugin factory.
+
+    OverlaySnapshot:
+      type: object
+      required: [schema_version]
+      description: Delta-only snapshot — additions + overrides, never a copy of the core profile.
+      properties:
+        schema_version:
+          type: integer
+        additional_patterns:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayPatternRule"
+        additional_access_rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayAccessRule"
+        detector_overrides:
+          $ref: "#/components/schemas/OverlayDetectorOverrides"
+        plugin_detectors:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayPluginDetectorRef"
+
+    Overlay:
+      type: object
+      required: [id, customer_id, name, description, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        proxy_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        active_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OverlayVersion:
+      type: object
+      required: [id, overlay_id, customer_id, version, state, snapshot, source, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        overlay_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        state:
+          type: string
+          enum: [draft, shadow, active, superseded]
+        snapshot:
+          $ref: "#/components/schemas/OverlaySnapshot"
+        source:
+          type: string
+          description: "manual | template:<slug> | import"
+        commit_message:
+          type: string
+        created_by:
+          type: string
+        shadow_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        activated_at:
+          type: string
+          format: date-time
+          nullable: true
+        superseded_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    OverlayAuditEntry:
+      type: object
+      required: [id, overlay_id, customer_id, event, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        overlay_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          format: uuid
+          nullable: true
+        event:
+          type: string
+          enum: [created, edited, shadowed, activated, rolled_back, deleted]
+        actor:
+          type: string
+        reason:
+          type: string
+        diff:
+          description: JSON Patch (RFC 6902) from prior version. Nullable for create events.
+        created_at:
+          type: string
+          format: date-time
+
+    OverlayShadowEvent:
+      type: object
+      required:
+        [id, customer_id, overlay_id, shadow_version_id, divergence, active_action, shadow_action, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        overlay_id:
+          type: string
+          format: uuid
+        shadow_version_id:
+          type: string
+          format: uuid
+        active_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        trace_id:
+          type: string
+          format: uuid
+          nullable: true
+        divergence:
+          type: string
+          enum: [would_block, would_allow, threshold_diff, pattern_match_diff, new_detector_fired]
+        active_action:
+          type: string
+        shadow_action:
+          type: string
+        detail:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    OverlayTemplate:
+      type: object
+      required: [id, slug, name, description, snapshot, is_builtin, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        snapshot:
+          $ref: "#/components/schemas/OverlaySnapshot"
+        is_builtin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OverlayWarning:
+      type: object
+      required: [detector, field, from, to, message]
+      description: Flags a snapshot override that weakens security relative to the shipped defaults.
+      properties:
+        detector:
+          type: string
+        field:
+          type: string
+          enum: [threshold, strategy, action]
+        from:
+          type: string
+        to:
+          type: string
+        message:
+          type: string
+
+    OverlayPreviewSample:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    OverlayPreviewSampleResult:
+      type: object
+      required: [content, active_action, candidate_action, active_block, candidate_block]
+      properties:
+        content:
+          type: string
+        active_action:
+          type: string
+        candidate_action:
+          type: string
+        active_block:
+          type: boolean
+        candidate_block:
+          type: boolean
+        divergence:
+          type: string
+
+    OverlayPreviewSummary:
+      type: object
+      required: [total, matching, would_block, would_allow, threshold_diff]
+      properties:
+        total:
+          type: integer
+        matching:
+          type: integer
+        would_block:
+          type: integer
+        would_allow:
+          type: integer
+        threshold_diff:
+          type: integer
+
+    OverlayPreviewResult:
+      type: object
+      required: [results, summary]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayPreviewSampleResult"
+        summary:
+          $ref: "#/components/schemas/OverlayPreviewSummary"
+
+    CreateOverlayRequest:
+      type: object
+      required: [snapshot]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        proxy_id:
+          type: string
+          format: uuid
+        snapshot:
+          $ref: "#/components/schemas/OverlaySnapshot"
+        commit_message:
+          type: string
+        source:
+          type: string
+
+    CreateOverlayVersionRequest:
+      type: object
+      required: [snapshot]
+      properties:
+        snapshot:
+          $ref: "#/components/schemas/OverlaySnapshot"
+        commit_message:
+          type: string
+        source:
+          type: string
+
+    OverlayStateTransitionRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+
+    OverlayFromTemplateRequest:
+      type: object
+      required: [slug]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        proxy_id:
+          type: string
+          format: uuid
+        commit_message:
+          type: string
+
+    OverlayPreviewRequest:
+      type: object
+      required: [samples]
+      properties:
+        samples:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/OverlayPreviewSample"
+        proxy_id:
+          type: string
+          format: uuid
+
+    OverlayList:
+      type: object
+      required: [overlays]
+      properties:
+        overlays:
+          type: array
+          items:
+            $ref: "#/components/schemas/Overlay"
+
+    OverlayCreateResult:
+      type: object
+      required: [overlay, version]
+      properties:
+        overlay:
+          $ref: "#/components/schemas/Overlay"
+        version:
+          $ref: "#/components/schemas/OverlayVersion"
+        template:
+          type: string
+          description: Present when created via /overlays/from-template.
+
+    OverlayDetail:
+      type: object
+      required: [overlay]
+      properties:
+        overlay:
+          $ref: "#/components/schemas/Overlay"
+        active_version:
+          $ref: "#/components/schemas/OverlayVersion"
+        active_warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayWarning"
+
+    OverlayVersionList:
+      type: object
+      required: [versions]
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayVersion"
+
+    OverlayVersionResult:
+      type: object
+      required: [version]
+      properties:
+        version:
+          $ref: "#/components/schemas/OverlayVersion"
+
+    OverlayVersionDetail:
+      type: object
+      required: [version]
+      properties:
+        version:
+          $ref: "#/components/schemas/OverlayVersion"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayWarning"
+
+    OverlayAuditList:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayAuditEntry"
+
+    OverlayShadowEventList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayShadowEvent"
+
+    OverlayTemplateList:
+      type: object
+      required: [templates]
+      properties:
+        templates:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverlayTemplate"
+
+    OverlayTemplateDetail:
+      type: object
+      required: [template]
+      properties:
+        template:
+          $ref: "#/components/schemas/OverlayTemplate"
+
+    # ============================================================
+    # Governance — extension API + dashboard read views
+    # ============================================================
+
+    GovernanceSeverity:
+      type: string
+      enum: [low, medium, high]
+
+    GovernanceAction:
+      type: string
+      enum: [logged, warned, blocked, redirected, overridden]
+
+    GovernanceEventPayload:
+      type: object
+      required: [event_id, occurred_at, source_domain, severity, action]
+      properties:
+        event_id:
+          type: string
+          description: ULID or UUIDv7 generated by the extension; idempotency key
+        user_id:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        source_domain:
+          type: string
+        rule_ids:
+          type: array
+          items:
+            type: string
+        severity:
+          $ref: "#/components/schemas/GovernanceSeverity"
+        action:
+          $ref: "#/components/schemas/GovernanceAction"
+        char_count_intercepted:
+          type: integer
+        browser:
+          type: string
+          enum: [chrome, edge, unknown]
+        browser_version:
+          type: string
+        extension_version:
+          type: string
+        redirect_target_label:
+          type: string
+        override_justification:
+          type: string
+
+    GovernanceHeartbeat:
+      type: object
+      required: [install_id]
+      properties:
+        install_id:
+          type: string
+        extension_version:
+          type: string
+        browser:
+          type: string
+        browser_version:
+          type: string
+
+    GovernanceClassifyRequest:
+      type: object
+      properties:
+        text_excerpt:
+          type: string
+        layer_3_hits:
+          type: array
+          items:
+            type: string
+        source_domain:
+          type: string
+
+    GovernanceClassifyResponse:
+      type: object
+      required: [severity, confidence, reasoning]
+      properties:
+        severity:
+          $ref: "#/components/schemas/GovernanceSeverity"
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        reasoning:
+          type: string
+
+    GovernanceDomainList:
+      type: object
+      properties:
+        domains:
+          type: array
+          items:
+            type: string
+        etag:
+          type: string
+        updated:
+          type: string
+          format: date-time
+
+    GovernanceExtensionPolicy:
+      type: object
+      properties:
+        default_policy:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [log, warn, block_redirect]
+        custom_keywords:
+          type: array
+          items:
+            type: string
+        custom_regex_packs:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceRegexPack"
+        override_enabled:
+          type: boolean
+        pseudonymize_pii:
+          type: boolean
+        domain_overrides:
+          type: array
+          items:
+            type: string
+        redirect_target:
+          oneOf:
+            - $ref: "#/components/schemas/GovernanceRedirectTarget"
+            - type: "null"
+
+    GovernanceRegexPack:
+      type: object
+      required: [id, pattern, severity]
+      properties:
+        id:
+          type: string
+        pattern:
+          type: string
+        severity:
+          $ref: "#/components/schemas/GovernanceSeverity"
+        label:
+          type: string
+
+    GovernanceRedirectTarget:
+      type: object
+      required: [url, label]
+      properties:
+        url:
+          type: string
+          format: uri
+        label:
+          type: string
+        open_in_new_tab:
+          type: boolean
+        carry_over_supported:
+          type: boolean
+
+    GovernanceDomainCount:
+      type: object
+      required: [domain, count]
+      properties:
+        domain:
+          type: string
+        count:
+          type: integer
+
+    GovernanceRuleCount:
+      type: object
+      required: [rule_id, count]
+      properties:
+        rule_id:
+          type: string
+        count:
+          type: integer
+
+    GovernanceOverviewSummary:
+      type: object
+      required:
+        [
+          window_days,
+          total_events,
+          by_severity,
+          by_action,
+          unique_users,
+          unique_domains,
+          top_domains,
+          top_rules,
+        ]
+      properties:
+        window_days:
+          type: integer
+        total_events:
+          type: integer
+        by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+        by_action:
+          type: object
+          additionalProperties:
+            type: integer
+        unique_users:
+          type: integer
+        unique_domains:
+          type: integer
+        top_domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceDomainCount"
+        top_rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceRuleCount"
+
+    GovernanceEventRow:
+      type: object
+      required:
+        [
+          event_id,
+          occurred_at,
+          user_id,
+          source_domain,
+          rule_ids,
+          severity,
+          action,
+          char_count_intercepted,
+          browser,
+          browser_version,
+          extension_version,
+        ]
+      properties:
+        event_id:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        user_id:
+          type: string
+        source_domain:
+          type: string
+        rule_ids:
+          type: array
+          items:
+            type: string
+        severity:
+          $ref: "#/components/schemas/GovernanceSeverity"
+        action:
+          $ref: "#/components/schemas/GovernanceAction"
+        char_count_intercepted:
+          type: integer
+        browser:
+          type: string
+        browser_version:
+          type: string
+        extension_version:
+          type: string
+        redirect_target_label:
+          type: string
+        override_justification:
+          type: string
+
+    GovernanceDeploymentRow:
+      type: object
+      required: [org_id, install_id, last_seen_at]
+      properties:
+        org_id:
+          type: string
+          format: uuid
+        install_id:
+          type: string
+        last_seen_at:
+          type: string
+          format: date-time
+        browser:
+          type: string
+        browser_version:
+          type: string
+        extension_version:
+          type: string
+
+    GovernanceInstallation:
+      type: object
+      required: [ID, OrgID, Label, CreatedAt]
+      properties:
+        ID:
+          type: string
+          format: uuid
+        CustomerID:
+          type: string
+          format: uuid
+        OrgID:
+          type: string
+          format: uuid
+        InstallationToken:
+          type: string
+          description: SHA-256 hex of the bearer token (not the plaintext)
+        Label:
+          type: string
+        CreatedAt:
+          type: string
+          format: date-time
+        RevokedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+
+    GovernanceCreatedInstallation:
+      type: object
+      required: [id, org_id, label, installation_token, installation_secret]
+      properties:
+        id:
+          type: string
+          format: uuid
+        org_id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        installation_token:
+          type: string
+        installation_secret:
+          type: string
+          description: HKDF root secret. Shown ONCE — store immediately.
+        managed_storage_config:
+          type: object
+          description: Pre-filled JSON ready for MDM deploy
+          additionalProperties: true
+        warning:
+          type: string
+
+    GovernanceCustomerPolicy:
+      type: object
+      required:
+        [
+          SeverityLow,
+          SeverityMedium,
+          SeverityHigh,
+          CustomKeywords,
+          CustomRegexPacks,
+          OverrideEnabled,
+          PseudonymizePII,
+        ]
+      properties:
+        CustomerID:
+          type: string
+          format: uuid
+        SeverityLow:
+          type: string
+          enum: [log, warn, block_redirect]
+        SeverityMedium:
+          type: string
+          enum: [log, warn, block_redirect]
+        SeverityHigh:
+          type: string
+          enum: [log, warn, block_redirect]
+        CustomKeywords:
+          type: array
+          items:
+            type: string
+        CustomRegexPacks:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceRegexPack"
+        RedirectTarget:
+          oneOf:
+            - $ref: "#/components/schemas/GovernanceRedirectTarget"
+            - type: "null"
+        OverrideEnabled:
+          type: boolean
+        PseudonymizePII:
+          type: boolean
+
+    GovernanceWebhook:
+      type: object
+      required: [ID, CustomerID, Name, URL, Format, Trigger, CreatedAt]
+      properties:
+        ID:
+          type: string
+          format: uuid
+        CustomerID:
+          type: string
+          format: uuid
+        Name:
+          type: string
+        URL:
+          type: string
+          format: uri
+        Format:
+          type: string
+          enum: [slack, teams, raw_json]
+        Trigger:
+          type: string
+          enum: ["severity:high", "action:overridden", "any"]
+        CreatedAt:
+          type: string
+          format: date-time
+        LastFiredAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        LastError:
+          type: string
+
+    GovernanceCreateWebhookRequest:
+      type: object
+      required: [url, format, trigger]
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+          description: Must be HTTPS
+        format:
+          type: string
+          enum: [slack, teams, raw_json]
+        trigger:
+          type: string
+          enum: ["severity:high", "action:overridden", "any"]
+
+    GovernanceDomainOverride:
+      type: object
+      required: [ID, CustomerID, Domain]
+      properties:
+        ID:
+          type: string
+          format: uuid
+        CustomerID:
+          type: string
+          format: uuid
+        Domain:
+          type: string
+        Label:
+          type: string
+
+    GovernanceAddDomainRequest:
+      type: object
+      required: [domain]
+      properties:
+        domain:
+          type: string
+        label:
+          type: string
+
+    GovernanceArticleMap:
+      type: object
+      required: [article, title, coverage]
+      properties:
+        article:
+          type: string
+        title:
+          type: string
+        coverage:
+          type: string
+
+    GovernancePilotReport:
+      type: object
+      required:
+        [
+          generated_at,
+          window_days,
+          org_label,
+          total_events,
+          unique_users,
+          unique_domains,
+          high_severity,
+          medium_severity,
+          blocked_count,
+          overridden_count,
+          redirected_count,
+          top_domains,
+          top_rules,
+          sample_events,
+          compliance_map,
+        ]
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        window_days:
+          type: integer
+        org_label:
+          type: string
+        total_events:
+          type: integer
+        unique_users:
+          type: integer
+        unique_domains:
+          type: integer
+        high_severity:
+          type: integer
+        medium_severity:
+          type: integer
+        blocked_count:
+          type: integer
+        overridden_count:
+          type: integer
+        redirected_count:
+          type: integer
+        top_domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceDomainCount"
+        top_rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceRuleCount"
+        sample_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceEventRow"
+        compliance_map:
+          type: array
+          items:
+            $ref: "#/components/schemas/GovernanceArticleMap"
+
+    WorkspaceSettings:
+      type: object
+      required: [customer_id, branding, seat_limit, retention_days, billing_mode, allowed_models, created_at, updated_at]
+      properties:
+        customer_id: { type: string, format: uuid }
+        branding: { type: object, additionalProperties: true }
+        default_assistant_id: { type: string, format: uuid, nullable: true }
+        seat_limit: { type: integer }
+        retention_days: { type: integer }
+        spend_cap_cents: { type: integer, nullable: true }
+        billing_mode: { type: string, enum: [platform_keys, byo_keys] }
+        allowed_models:
+          type: array
+          items: { $ref: "#/components/schemas/WorkspaceAllowedModel" }
+          description: |
+            Strict whitelist of LLM provider+model pairs surfaced in
+            the employee chat's model picker. Empty = all curated
+            defaults available; non-empty = strict whitelist (also
+            enforced server-side as defense-in-depth).
+        onboarding_completed_at: { type: string, format: date-time, nullable: true }
+        slug: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WorkspaceAllowedModel:
+      type: object
+      required: [provider, model]
+      properties:
+        provider: { type: string, description: "OSS provider enum: openai | anthropic | bedrock | gemini | mistral | cohere | ollama" }
+        model: { type: string, description: "Provider SDK model identifier (gpt-4o-mini, claude-haiku-4-5, etc.)" }
+
+    WorkspaceSettingsPatch:
+      type: object
+      properties:
+        branding: { type: object, additionalProperties: true }
+        seat_limit: { type: integer }
+        retention_days: { type: integer }
+        spend_cap_cents: { type: integer }
+        billing_mode: { type: string, enum: [platform_keys, byo_keys] }
+        allowed_models:
+          type: array
+          items: { $ref: "#/components/schemas/WorkspaceAllowedModel" }
+          nullable: true
+
+    WorkspaceAssistant:
+      type: object
+      required: [id, customer_id, name, default_provider, default_model, language, suggested_prompts, is_default, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        system_prompt: { type: string }
+        default_provider: { type: string, enum: [openai, anthropic, bedrock, ollama, google] }
+        default_model: { type: string }
+        language: { type: string }
+        suggested_prompts:
+          type: array
+          items: { type: string }
+        is_default: { type: boolean }
+        knowledge_source_ids:
+          type: array
+          items: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WorkspaceAssistantPatch:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        system_prompt: { type: string }
+        default_provider: { type: string }
+        default_model: { type: string }
+        language: { type: string }
+        is_default:
+          type: boolean
+          description: |
+            When true, promotes this assistant to be the workspace's
+            default. Atomically clears any other default assistant.
+            Omit (or pass false) to leave the current default
+            untouched.
+        suggested_prompts:
+          type: array
+          items: { type: string }
+        knowledge_source_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: |
+            When present, replaces the assistant's full set of attached
+            knowledge sources. Pass an empty array to detach all. Omit
+            the field to leave attachments untouched.
+
+    WorkspaceKnowledgeSource:
+      type: object
+      required: [id, customer_id, name, type, source_ref, size_bytes, status, metadata, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string, enum: [file, url, text] }
+        source_ref: { type: string }
+        inline_text: { type: string, nullable: true }
+        mime_type: { type: string, nullable: true }
+        size_bytes: { type: integer, format: int64 }
+        status:
+          type: string
+          enum: [pending, processing, ready, failed, quarantined]
+          description: |
+            'quarantined' means the security engine blocked the
+            content at ingest. No chunks are produced. An admin
+            reviews the source and either releases (POST /release)
+            or archives.
+        error: { type: string, nullable: true }
+        content_hash:
+          type: string
+          nullable: true
+          description: SHA-256 of raw upload bytes (hex). NULL for inline-text sources.
+        scan_result:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: |
+            Snapshot of the ingest-time security scan. Populated only
+            when the scan rewrote (sanitize) or blocked (quarantine)
+            the source. Shape:
+              { action: "block" | "sanitize" | "allow",
+                categories: ["pii_email", "secrets"],
+                threat_score: 0.92 }
+        metadata: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WorkspaceConversation:
+      type: object
+      required: [id, customer_id, user_id, title, pinned, last_message_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        user_id: { type: string }
+        assistant_id: { type: string, format: uuid, nullable: true }
+        title: { type: string }
+        pinned: { type: boolean }
+        last_message_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WorkspaceConversationListItem:
+      allOf:
+        - $ref: "#/components/schemas/WorkspaceConversation"
+        - type: object
+          required: [message_count]
+          properties:
+            message_count: { type: integer }
+            last_message_role: { type: string }
+            last_message_peek: { type: string }
+
+    WorkspaceMessage:
+      type: object
+      required: [id, conversation_id, customer_id, role, content, prompt_tokens, completion_tokens, cost_cents, metadata, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        role: { type: string, enum: [system, user, assistant, tool] }
+        content: { type: string }
+        provider: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        prompt_tokens: { type: integer }
+        completion_tokens: { type: integer }
+        cost_cents: { type: integer }
+        finish_reason: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        metadata: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+
+    WorkspaceSendMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+        provider: { type: string }
+        model: { type: string }
+
+    WorkspaceDomain:
+      type: object
+      required: [id, customer_id, domain, verification_token, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        domain: { type: string }
+        verification_token: { type: string }
+        verified_at: { type: string, format: date-time, nullable: true }
+        last_checked_at: { type: string, format: date-time, nullable: true }
+        last_check_error: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WorkspaceMember:
+      type: object
+      required: [customer_id, user_id, email, role, joined_at]
+      properties:
+        customer_id: { type: string, format: uuid }
+        user_id: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [owner, admin, member, viewer] }
+        invited_by: { type: string, nullable: true }
+        joined_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time, nullable: true }
+
+    WorkspaceInvitation:
+      type: object
+      required: [id, customer_id, email, role, expires_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        email: { type: string }
+        role: { type: string }
+        invited_by: { type: string, nullable: true }
+        expires_at: { type: string, format: date-time }
+        accepted_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    WorkspaceAnalyticsSummary:
+      type: object
+      required: [messages_this_month, tokens_this_month, cost_cents_this_month, active_users, seat_limit]
+      properties:
+        messages_this_month: { type: integer }
+        tokens_this_month: { type: integer }
+        cost_cents_this_month: { type: integer }
+        active_users: { type: integer }
+        seat_limit: { type: integer }
+
+    WorkspaceDailyUsagePoint:
+      type: object
+      required: [day, messages, tokens]
+      properties:
+        day: { type: string, format: date-time }
+        messages: { type: integer }
+        tokens: { type: integer }
+
+    WorkspaceByModelCount:
+      type: object
+      required: [model, count]
+      properties:
+        model: { type: string }
+        count: { type: integer }
+

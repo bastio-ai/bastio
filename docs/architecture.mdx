@@ -1,0 +1,87 @@
+---
+title: Architecture
+description: How Bastio fits between your application and the LLM.
+---
+
+Bastio sits in the request path between your application and the LLM
+provider, scanning every prompt and response for threats before they
+reach either side.
+
+```
+┌─────────────┐   prompt    ┌──────────┐   prompt   ┌──────────┐
+│ Your app    │────────────▶│  Bastio  │───────────▶│ OpenAI   │
+│             │             │ gateway  │            │ Anthropic│
+│             │◀────────────│          │◀───────────│ Bedrock  │
+└─────────────┘   response  └──────────┘  response  └──────────┘
+                                  │
+                  scan + record   │
+                                  ▼
+                            ┌──────────┐
+                            │ Postgres │ (config + traces)
+                            │ Redis    │ (rate limit + cache)
+                            │ ClickHouse│ (analytics, optional)
+                            └──────────┘
+```
+
+## Components
+
+- **Gateway** (`internal/gateway/`) — accepts OpenAI-compatible
+  `POST /v1/chat/completions` and Anthropic `POST /v1/messages`.
+  Authenticates via API key, runs the security pipeline, forwards
+  to the chosen provider, scans the response, and emits a trace.
+- **Security engine** (`internal/security/`) — three modules:
+  `detection/` (regex + entropy + classifier ensemble),
+  `prevention/` (block / mask / tokenize / warn / log-only
+  actions), `scoring/` (per-request risk score 0-100).
+  Latency budget: `<50ms` total across all detectors.
+- **Provider clients** (`internal/providers/`) — typed clients
+  for OpenAI, Anthropic, Bedrock, Vertex, Azure, Ollama, Google.
+  Connection pooling, retry, streaming pass-through.
+- **Observability** (`internal/observability/`) — structured
+  trace per request written to PostgreSQL (real-time inspection)
+  and ClickHouse (historical analytics).
+- **Workers** (`cmd/worker/`, `cmd/ingest/`) — async jobs
+  (knowledge-base ingest, governance webhook delivery, ClickHouse
+  batch writes). River-backed, durable across restarts.
+
+## Deploy modes
+
+The Go binary supports four modes via `BASTIO_MODE`:
+
+| Mode | What it runs | When to use |
+|---|---|---|
+| `server` | HTTP API only | Production with split workers |
+| `worker` | River job processor | Production with split workers |
+| `ingest` | ClickHouse batch writer | Production with split workers |
+| `all-in-one` | All three in one process | Dev, evaluation, small-team self-host |
+
+`all-in-one` is the default. Single binary, single port, one
+container — the simplest path to a working install.
+
+## Multi-tenancy
+
+Every SQL query includes `customer_id` in its `WHERE` clause. The
+OSS server stamps every request with a single default customer
+(single-tenant), so the OSS dashboard "just works" without auth.
+Bastio Cloud overrides the tenant middleware to thread the
+authenticated user's customer through, gating every query.
+
+## Latency budget
+
+Each detector runs in a goroutine. The slowest one determines
+total latency. Targets:
+
+- Regex / pattern detectors: `<2ms` p99
+- Entropy + secret detection: `<8ms` p99
+- Classifier (Presidio when configured): `<30ms` p99
+- Total scan including coordination: `<50ms` p99
+
+The scan blocks the provider call only when it produces a
+`block` decision. `mask` / `tokenize` rewrite the message in
+place; `warn` / `log_only` are transparent.
+
+## Next
+
+- [Gateway](/docs/gateway) — proxy concept, request flow, auth.
+- [Threats](/docs/threats) — detectors, profiles, actions.
+- [SDKs](/docs/sdks) — keep your existing LLM client, insert Bastio inline.

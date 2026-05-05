@@ -1,0 +1,275 @@
+openapi: "3.1.0"
+info:
+  title: Bastio API
+  description: AI Security Gateway API
+  version: "0.1.0"
+  license:
+    name: FSL-1.1-ALv2
+    url: https://fsl.software/FSL-1.1-ALv2.template.md
+
+servers:
+  - url: http://localhost:4000
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      tags: [System]
+      responses:
+        "200":
+          description: All services healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: One or more services unhealthy
+
+  /v1:
+    get:
+      operationId: getVersion
+      summary: API version info
+      tags: [System]
+      responses:
+        "200":
+          description: API info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+
+  # Gateway proxy endpoints (Phase 2)
+  /v1/chat/completions:
+    post:
+      operationId: chatCompletions
+      summary: OpenAI-compatible chat completions proxy
+      tags: [Gateway]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: Chat completion response
+        "403":
+          description: Request blocked by security policy
+        "429":
+          description: Rate limited
+
+  /v1/guard/{proxyId}/v1/messages:
+    post:
+      operationId: anthropicMessages
+      summary: Anthropic Messages API proxy with security scanning
+      tags: [Gateway]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: proxyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Anthropic messages response
+        "403":
+          description: Request blocked by security policy
+
+  # Management API
+  /v1/proxies:
+    get:
+      operationId: listProxies
+      summary: List proxies
+      tags: [Proxies]
+      responses:
+        "200":
+          description: List of proxies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Proxy"
+    post:
+      operationId: createProxy
+      summary: Create a proxy
+      tags: [Proxies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProxyRequest"
+      responses:
+        "201":
+          description: Proxy created
+
+  /v1/api-keys:
+    get:
+      operationId: listApiKeys
+      summary: List API keys
+      tags: [API Keys]
+      responses:
+        "200":
+          description: List of API keys
+    post:
+      operationId: createApiKey
+      summary: Create an API key
+      tags: [API Keys]
+      responses:
+        "201":
+          description: API key created (key shown only once)
+
+  /v1/traces:
+    get:
+      operationId: listTraces
+      summary: List traces with filters
+      tags: [Observability]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Paginated traces
+
+  /v1/threats:
+    get:
+      operationId: listThreats
+      summary: List security threat events
+      tags: [Security]
+      responses:
+        "200":
+          description: Threat events
+
+  /v1/analytics/overview:
+    get:
+      operationId: getAnalyticsOverview
+      summary: Dashboard overview metrics
+      tags: [Analytics]
+      responses:
+        "200":
+          description: Overview metrics
+
+  /v1/security/profiles:
+    get:
+      operationId: listSecurityProfiles
+      summary: List security profiles
+      tags: [Security]
+      responses:
+        "200":
+          description: Security profiles
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "Bearer sk-bastio-..."
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        postgres:
+          type: string
+        redis:
+          type: string
+        clickhouse:
+          type: string
+
+    Proxy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        listen_path:
+          type: string
+        target_provider:
+          type: string
+        target_model:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateProxyRequest:
+      type: object
+      required: [name, target_provider]
+      properties:
+        name:
+          type: string
+        target_provider:
+          type: string
+          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+        target_model:
+          type: string
+        settings:
+          type: object
+
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+        stream:
+          type: boolean
+          default: false
+        temperature:
+          type: number
+        max_tokens:
+          type: integer

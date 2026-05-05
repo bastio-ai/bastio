@@ -1,0 +1,159 @@
+---
+title: AWS Bedrock
+description: Route Bedrock-hosted models (Claude, Llama, Mistral, Titan) through Bastio with IAM auth.
+---
+
+AWS Bedrock is Anthropic's Claude family plus a catalog of other
+foundation models, fronted by AWS infrastructure with IAM-based
+auth. Bastio relays every Bedrock model the same way — pick the
+model ID, point the SDK at Bastio, your IAM credentials never
+leave your environment.
+
+## Prerequisites
+
+- An AWS account with **Bedrock model access enabled** in your
+  region. Most models require an explicit "Request access" step
+  in the Bedrock console.
+- An IAM user or role with `bedrock:InvokeModel` and
+  `bedrock:InvokeModelWithResponseStream` permissions.
+- A running Bastio gateway ([Getting started](/docs/getting-started)).
+
+## Get credentials
+
+Bedrock auth is AWS Signature V4, not a bearer token. Bastio
+needs:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_REGION` (e.g. `us-east-1`, `eu-central-1`)
+
+Generate them in the IAM console (Users → your user → Security
+credentials → Create access key) or use a programmatic role with
+`sts:AssumeRole`.
+
+## Create the proxy
+
+```bash
+curl -X POST http://localhost:4000/api/v1/proxies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "prod-bedrock",
+    "provider": "bedrock",
+    "provider_aws_access_key_id": "AKIA...",
+    "provider_aws_secret_access_key": "...",
+    "provider_aws_region": "us-east-1"
+  }'
+```
+
+The response's `gateway_api_key` is what your application sends to
+Bastio. Bastio uses your AWS credentials to sign each request.
+
+## Send a request
+
+Bedrock model IDs are vendor-prefixed: `anthropic.claude-...`,
+`meta.llama3-...`, `mistral.mistral-...`, etc.
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "anthropic.claude-sonnet-4-5-v2:0",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+Bastio translates the OpenAI-shaped request body into Bedrock's
+native InvokeModel format, signs with SigV4, and returns the
+response in OpenAI-compatible shape — same as native Bedrock
+SDKs do, but with security scanning in the path.
+
+### Python
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4000/v1",
+    api_key=os.environ["BASTIO_GATEWAY_KEY"],
+)
+
+resp = client.chat.completions.create(
+    model="anthropic.claude-sonnet-4-5-v2:0",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+## Inference profiles vs on-demand
+
+Bedrock has two routing modes:
+
+- **On-demand** — the model is invoked directly by ID. Default
+  for most models.
+- **Inference profile** — a logical handle that AWS routes to a
+  specific region/instance pool. Required for some
+  cross-region or provisioned-throughput configurations.
+
+Inference profile IDs are prefixed with the AWS region:
+`us.anthropic.claude-sonnet-4-5-v2:0`. Pass the profile ID as
+`model` and Bastio handles the rest.
+
+## Supported features
+
+- **Chat completions** — full Anthropic / Llama / Mistral
+  message-formatted models.
+- **Streaming** — uses Bedrock's `InvokeModelWithResponseStream`
+  under the hood. Bastio's stream rewriter works on the
+  decoded EventStream events.
+- **Tool calling** — Anthropic Claude on Bedrock supports tool
+  use; Bastio passes it through.
+- **Multimodal** — Claude vision models accept `image_url` blocks
+  the same as native Anthropic.
+
+## Regions
+
+Bedrock model availability varies sharply by region. Common
+gotchas:
+
+| Region | Notes |
+|---|---|
+| `us-east-1` (N. Virginia) | Widest model selection — usually first to get new releases. |
+| `us-west-2` (Oregon) | Second-tier coverage; most Claude + Meta models. |
+| `eu-central-1` (Frankfurt) | EU data residency — partial Claude coverage, no Meta. Verify per-model in the Bedrock console. |
+| `ap-northeast-1` (Tokyo) | Japan residency, narrower model list. |
+
+The proxy's `provider_aws_region` is the SigV4 signing region —
+it must match where the model is actually deployed. A request
+for a us-east-1-only model signed for eu-central-1 returns
+`AccessDeniedException` from Bedrock.
+
+## Gotchas
+
+- **Model access is per-region, per-account, per-model.** "I see
+  Claude Sonnet in the console" doesn't mean your IAM principal
+  can call it. Check Bedrock → Model access → Manage model
+  access.
+- **Cross-region routing.** Use inference profiles for
+  multi-region failover; without them, a region outage means
+  manually switching the proxy's region.
+- **Streaming chunk format differs from OpenAI.** Bastio
+  normalizes to OpenAI streaming shape, but if you bypass and
+  call Bedrock directly, expect EventStream binary frames.
+- **Pricing isn't on the response.** Bedrock returns token
+  counts, but cost calculation is downstream. Bastio's
+  observability layer computes and records per-request cost
+  using the published Bedrock rate table.
+
+## Where the request shows up in traces
+
+Bedrock requests land in Traces with `provider: bedrock`. The
+underlying vendor (anthropic, meta, mistral, etc.) is captured
+in the trace metadata so you can filter by either dimension.
+See [Observability](/docs/observability).
+
+## Next
+
+- [Anthropic](/docs/providers/anthropic) — same Claude models,
+  Anthropic-direct API instead of Bedrock.
+- [Azure](/docs/providers/azure) — OpenAI models on Azure
+  infrastructure with similar IAM-style auth.

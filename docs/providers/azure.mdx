@@ -1,0 +1,147 @@
+---
+title: Azure OpenAI
+description: Route Azure-hosted OpenAI deployments through Bastio with Azure's deployment-name addressing.
+---
+
+Azure OpenAI is OpenAI's models hosted in Microsoft's
+infrastructure with EU / UK / US / regional data-residency
+options. The API surface is OpenAI-compatible but addressing
+goes through **deployment names** instead of model names — your
+deployment of `gpt-4o` might be called `gpt4o-prod` and that's
+what you call it.
+
+## Prerequisites
+
+- An Azure subscription with **Azure OpenAI Service** enabled
+  (a manual application step — typically a few business days).
+- A Cognitive Services resource with at least one model
+  deployment.
+- A running Bastio gateway ([Getting started](/docs/getting-started)).
+
+## Get credentials
+
+Azure OpenAI needs three values:
+
+| Field | Where to find it |
+|---|---|
+| **API key** | Azure portal → your resource → Keys and Endpoint → Key 1 |
+| **Endpoint** | Same page → Endpoint, e.g. `https://acme.openai.azure.com` |
+| **API version** | A date string like `2024-08-01-preview` — pick the one matching the SDK features you use |
+
+You also need the **deployment name** for each model you've
+deployed (Azure OpenAI Studio → Deployments).
+
+## Create the proxy
+
+```bash
+curl -X POST http://localhost:4000/api/v1/proxies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "prod-azure-openai",
+    "provider": "azure",
+    "provider_api_key": "...",
+    "provider_endpoint": "https://acme.openai.azure.com",
+    "provider_api_version": "2024-08-01-preview"
+  }'
+```
+
+The proxy stores the endpoint + version once. Per-request you
+just pass the deployment name as the `model` field.
+
+## Send a request
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt4o-prod",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+Note that `gpt4o-prod` is your **deployment name**, not the
+underlying model ID. Bastio rewrites the URL to Azure's
+`{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={version}`
+shape transparently.
+
+### Python (OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4000/v1",
+    api_key=os.environ["BASTIO_GATEWAY_KEY"],
+)
+
+resp = client.chat.completions.create(
+    model="gpt4o-prod",  # your Azure deployment name
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+You don't need the Azure-specific `AzureOpenAI` SDK — Bastio's
+gateway translates so the standard `OpenAI` SDK works.
+
+## Supported features
+
+- **Chat completions** — full surface with whichever Azure
+  capabilities your deployment exposes.
+- **Streaming** — works the same as native OpenAI.
+- **Tool calling** — works on `gpt-4o` deployments and later.
+- **Multimodal** — vision works on vision-enabled deployments
+  (`gpt-4o`, `gpt-4-vision`).
+- **Embeddings** — proxied without security scanning, same as
+  native OpenAI.
+
+## Regions
+
+Azure OpenAI is the right choice when:
+
+- You need EU data residency — `Sweden Central`, `France Central`,
+  `Switzerland North` all keep traffic in-EU.
+- You need UK residency — `UK South`.
+- Your security review requires Microsoft-tier compliance
+  attestations (FedRAMP High, ISO 27001, SOC 2 Type II) bundled
+  with the AI service.
+
+Model availability varies sharply by region. The
+[Azure OpenAI Service models page](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)
+has the matrix. A common pattern: deploy `gpt-4o` in Sweden Central
+for EU traffic, fall back to East US 2 for everything else.
+
+## Gotchas
+
+- **Deployment name ≠ model name.** Your "gpt-4o" deployment
+  is whatever you called it in Azure OpenAI Studio. The Bastio
+  proxy doesn't know — pass the deployment name, not the model
+  ID.
+- **API version matters.** Newer features (structured outputs,
+  predicted outputs, audio modalities) require newer API
+  version strings. Update the proxy's `provider_api_version`
+  when you adopt them.
+- **Capacity quotas.** Azure deployments have per-minute TPM
+  and RPM quotas separate from OpenAI's. Hitting them returns
+  `429` with an `x-ratelimit-remaining` hint — Bastio surfaces
+  these unchanged.
+- **Content filters.** Azure has its own content filtering
+  layer that runs after Bastio's. A prompt that passes Bastio
+  but trips Azure's content filter returns
+  `content_filter` finish reason. Tune both.
+- **Microsoft Entra ID auth.** If your org requires AAD-based
+  auth instead of API keys, talk to us — the field is on the
+  v2.1 roadmap.
+
+## Where the request shows up in traces
+
+Azure requests land in Traces with `provider: azure` and the
+deployment name in the `model` field. See
+[Observability](/docs/observability).
+
+## Next
+
+- [OpenAI](/docs/providers/openai) — same models, OpenAI's own
+  infrastructure.
+- [Threats](/docs/threats) — Azure's content filter is
+  *additional* to Bastio's, not replacement.

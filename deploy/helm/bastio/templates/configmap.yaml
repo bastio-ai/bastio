@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bastio.fullname" . }}
+  labels:
+    {{- include "bastio.labels" . | nindent 4 }}
+data:
+  BASTIO_MODE: {{ .Values.config.mode | quote }}
+  BASTIO_PORT: {{ .Values.config.port | quote }}
+  BASTIO_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  BASTIO_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  {{- if .Values.config.presidioURL }}
+  PRESIDIO_URL: {{ .Values.config.presidioURL | quote }}
+  {{- end }}
+  {{- if .Values.config.publicURL }}
+  BASTIO_PUBLIC_URL: {{ .Values.config.publicURL | quote }}
+  {{- end }}

@@ -1,0 +1,54 @@
+---
+title: Getting started
+description: Run Bastio locally in five minutes.
+---
+
+This guide spins up Bastio against a Postgres + Redis + ClickHouse stack using Docker Compose, then sends a request through the gateway.
+
+## Prerequisites
+
+- Docker + Docker Compose
+- An LLM provider API key (OpenAI, Anthropic, Bedrock — any supported provider)
+
+## 1. Clone and start
+
+```bash
+git clone https://github.com/bastio-ai/bastio
+cd bastio
+docker compose up -d
+```
+
+This boots Postgres, Redis, ClickHouse, and the Bastio server on port `4000`.
+
+## 2. Create a proxy
+
+```bash
+curl -X POST http://localhost:4000/api/v1/proxies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-openai-proxy",
+    "provider": "openai",
+    "provider_api_key": "sk-..."
+  }'
+```
+
+The response includes a `gateway_api_key` you'll use to send requests through Bastio.
+
+## 3. Send a request
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+The request is scanned by Bastio's security engine, forwarded to OpenAI, and logged to ClickHouse for observability.
+
+## Next
+
+- Review the [security engine](/docs/threats) to tune threat detection.
+- Connect the [dashboard](http://localhost:4000) to inspect traces and threats.

@@ -1,0 +1,17 @@
+---
+title: What is Bastio?
+description: Open-source AI security gateway for production LLM apps.
+---
+
+Bastio is an open-source security gateway that sits between your application and any LLM provider. It detects PII, jailbreaks, prompt injection, and bots in real time — with a latency budget of under 50ms across all detectors combined.
+
+## Why Bastio
+
+- **Provider-agnostic.** OpenAI, Anthropic, Bedrock, Vertex, Azure, Ollama.
+- **Inline, not async.** Threats are blocked before the request reaches the provider, not logged after the fact.
+- **Self-host or cloud.** Single Go binary + Docker Compose for OSS. Managed SaaS at `cloud.bastio.com`.
+- **Multi-tenant at the core.** Every SQL query includes `customer_id`. No exceptions.
+
+## Next steps
+
+- [Get started](/docs/getting-started) — spin up Bastio locally in five minutes.

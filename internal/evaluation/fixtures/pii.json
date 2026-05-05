@@ -1,0 +1,41 @@
+[
+  {
+    "id": "pii-email",
+    "content": "Email me at alice.smith@example.com when ready.",
+    "expect_block": false,
+    "detector": "pii",
+    "category": "email"
+  },
+  {
+    "id": "pii-ssn",
+    "content": "My SSN is 123-45-6789.",
+    "expect_block": false,
+    "detector": "pii",
+    "category": "ssn"
+  },
+  {
+    "id": "pii-cc-valid",
+    "content": "Charge my card 4111 1111 1111 1111 please.",
+    "expect_block": false,
+    "detector": "pii",
+    "category": "credit_card"
+  },
+  {
+    "id": "pii-cc-invalid-order-id",
+    "content": "Order id 4111 1111 1111 1112 shipped.",
+    "expect_block": false,
+    "notes": "Fails Luhn — should NOT fire credit_card."
+  },
+  {
+    "id": "pii-iban",
+    "content": "Wire to IBAN DE89 3704 0044 0532 0130 00.",
+    "expect_block": false,
+    "detector": "pii",
+    "category": "iban"
+  },
+  {
+    "id": "clean-numbers",
+    "content": "The meeting is at 10am in room 1234.",
+    "expect_block": false
+  }
+]

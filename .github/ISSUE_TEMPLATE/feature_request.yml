@@ -1,0 +1,31 @@
+name: Feature Request
+description: Suggest an idea for Bastio
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! We'd love to hear your use case.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Please describe the problem or friction you are experiencing. Is this related to a specific LLM provider or workflow?
+      placeholder: "When I use provider X, I want to be able to..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see implemented in Bastio.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+    validations:
+      required: false

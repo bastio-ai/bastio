@@ -1,0 +1,267 @@
+---
+title: Observability
+description: Traces, metrics, and ClickHouse query examples for inspecting every request through Bastio.
+---
+
+Every request through the Bastio gateway emits a structured
+**trace**: who sent it, which proxy resolved, what the security
+engine found, what the provider returned, how long every stage
+took. Traces are the primary surface for debugging, post-incident
+review, and compliance evidence.
+
+## Three persisted layers
+
+Bastio splits observability data across three stores by query
+shape:
+
+| Store | What lives there | Why |
+|---|---|---|
+| **PostgreSQL** | Per-request trace headers (trace_id, customer_id, status, finish reason, costs, threat summary) | Real-time inspection — the dashboard's Traces tab queries here |
+| **ClickHouse** | Same traces + every threat event, replicated for analytics | Historical aggregations, roll-ups, retention beyond 30 days |
+| **Redis** | Rate-limit counters, ephemeral provider-key cache | Hot path; never queried from the dashboard |
+
+The split matters for query design. Real-time questions ("show me
+the last 50 requests for this customer") hit Postgres. Historical
+questions ("p95 latency by model over the last quarter") hit
+ClickHouse.
+
+## The dashboard's Traces tab
+
+`http://<your-bastio-host>:4000/traces`
+
+Lists every gateway request, most recent first. Each row shows:
+
+- Timestamp + duration
+- Customer + proxy
+- Provider + model
+- Threat scan summary (how many detectors fired, top categories)
+- HTTP status + finish reason
+
+Click a row for the full trace: the request body, the response
+body, every detector hit with its score, the gateway's
+decision, and the per-stage latency breakdown.
+
+## The `/v1/traces` API
+
+Same data, programmatic. Most useful for piping into a SIEM or
+running scheduled reports.
+
+```bash
+curl http://localhost:4000/v1/traces \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -G \
+  --data-urlencode "after=2026-04-01T00:00:00Z" \
+  --data-urlencode "limit=100"
+```
+
+Filters: `customer_id`, `proxy_id`, `provider`, `model`,
+`status`, `finish_reason`, `risk_score_gte`, `category`,
+`after`, `before`, `limit`, `cursor`.
+
+Pagination is cursor-based — every response includes a
+`next_cursor` to walk the next page.
+
+The full schema lives in the OpenAPI spec at `/docs` on your
+gateway.
+
+## Trace anatomy
+
+Each trace has:
+
+- **`trace_id`** — UUID, primary key. Mirrors the
+  `X-Bastio-Trace-Id` response header so you can grep
+  application logs against gateway logs.
+- **`span_ids`** — internal stage timings (auth, scan, provider
+  call, post-scan). Useful for "where is the latency coming from".
+- **`request_body` / `response_body`** — captured for forensics.
+  Truncated at 64KB by default; configurable via
+  `BASTIO_TRACE_BODY_BYTES`. Set to `0` to disable body capture
+  entirely (high-volume / regulated environments).
+- **`scan_result`** — the full security scan payload: which
+  detectors fired, with what scores, what categories, what
+  action the engine chose.
+- **`provider_response_metadata`** — token counts, finish reason,
+  rate-limit headers from the provider.
+- **`cost_cents`** — computed at write time using the published
+  rate table for the provider + model.
+
+## ClickHouse query examples
+
+ClickHouse holds the traces with longer retention and is built
+for the heavy aggregation queries. Connect via your favourite
+SQL client (DataGrip, DBeaver, `clickhouse-client`) using the
+same `CLICKHOUSE_URL` your Bastio server uses.
+
+### Top 10 detected threat categories — last 30 days
+
+```sql
+SELECT
+    category,
+    count() AS hits
+FROM threats
+WHERE customer_id = '...'
+  AND timestamp >= now() - INTERVAL 30 DAY
+GROUP BY category
+ORDER BY hits DESC
+LIMIT 10;
+```
+
+### Per-model p95 latency
+
+```sql
+SELECT
+    model,
+    quantile(0.95)(duration_ms) AS p95_ms,
+    count() AS requests
+FROM traces
+WHERE timestamp >= now() - INTERVAL 7 DAY
+GROUP BY model
+ORDER BY requests DESC;
+```
+
+### Daily blocked-request count by customer
+
+```sql
+SELECT
+    toDate(timestamp) AS day,
+    customer_id,
+    count() AS blocks
+FROM traces
+WHERE finish_reason = 'blocked'
+  AND timestamp >= now() - INTERVAL 30 DAY
+GROUP BY day, customer_id
+ORDER BY day DESC, blocks DESC;
+```
+
+### Cost by model — last calendar month
+
+```sql
+SELECT
+    model,
+    sum(cost_cents) / 100.0 AS dollars,
+    sum(input_tokens + output_tokens) AS tokens
+FROM traces
+WHERE timestamp >= toStartOfMonth(now() - INTERVAL 1 MONTH)
+  AND timestamp <  toStartOfMonth(now())
+GROUP BY model
+ORDER BY dollars DESC;
+```
+
+### High-risk requests grouped by user
+
+```sql
+SELECT
+    user_id_hash,
+    count() AS high_risk_requests,
+    arrayDistinct(groupArray(category)) AS categories_seen
+FROM threats
+WHERE risk_score >= 80
+  AND timestamp >= now() - INTERVAL 7 DAY
+GROUP BY user_id_hash
+ORDER BY high_risk_requests DESC
+LIMIT 20;
+```
+
+`user_id_hash` is a sha256 of the end-user identifier you pass
+in the `X-End-User-Id` header — never the cleartext value. See
+[the API reference](/docs/api-reference) for how to set it.
+
+### Materialized view — daily roll-up
+
+For a dashboard that queries fast, materialize roll-ups:
+
+```sql
+CREATE MATERIALIZED VIEW IF NOT EXISTS traces_daily
+ENGINE = SummingMergeTree
+PARTITION BY toYYYYMM(day)
+ORDER BY (customer_id, day, model)
+AS SELECT
+    customer_id,
+    toDate(timestamp) AS day,
+    model,
+    count() AS requests,
+    sum(cost_cents) AS cost_cents,
+    sum(input_tokens + output_tokens) AS tokens,
+    sum(if(finish_reason = 'blocked', 1, 0)) AS blocks
+FROM traces
+GROUP BY customer_id, day, model;
+```
+
+Now the daily-cost query above runs in ~10ms instead of seconds
+on a multi-million-row table.
+
+## Retention
+
+| Layer | Default retention | How to change |
+|---|---|---|
+| PostgreSQL traces | 30 days | `BASTIO_PG_TRACE_RETENTION_DAYS` |
+| ClickHouse traces | 1 year | `traces` table TTL (`migrations/clickhouse/`) |
+| ClickHouse threats | 1 year | `threats` table TTL |
+| Daily roll-ups | 7 years | Set on the materialized view; survives base-table TTL |
+
+The Postgres TTL keeps the dashboard fast; the longer ClickHouse
+retention covers compliance.
+
+## Wiring into a SIEM
+
+Two options:
+
+1. **Webhooks (recommended).** Subscribe to the
+   `threat.*` events. Each delivery is a JSON envelope with
+   trace metadata + threat categories. Fits Splunk HEC,
+   Datadog Logs, Elastic, or anything else that ingests
+   webhooks. See [Webhooks](/docs/cloud/webhooks).
+2. **ClickHouse export.** Pull via the
+   `clickhouse-client --query` interface on a cron, dump to
+   parquet, push to S3 → SIEM. Higher latency, lower per-event
+   overhead — fits compliance archival more than real-time
+   alerting.
+
+Most customers use both: webhooks for on-call alerting, periodic
+ClickHouse exports for the audit warehouse.
+
+## Custom span attributes
+
+To enrich traces with your application's context, send headers:
+
+| Header | What it does |
+|---|---|
+| `X-End-User-Id` | Hashed and stored on every trace; used for per-user analytics + the threats user-grouping above |
+| `X-Bastio-Trace-Tags` | Comma-separated key=value tags, persisted as JSON on the trace |
+
+Example:
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -H "X-End-User-Id: user-12345" \
+  -H "X-Bastio-Trace-Tags: feature=onboarding,env=prod" \
+  ...
+```
+
+The tags surface in the trace view + ClickHouse so you can
+filter "all traces from `feature=onboarding` in the last week".
+
+## Observability of the gateway itself
+
+Bastio emits its own structured logs (slog, JSON) for the runtime:
+
+- Every request: status, duration, customer_id, trace_id
+- Every detector init / reload: pattern compile, profile cache
+  refresh
+- Every River job: enqueue, run, succeed/fail
+- Every webhook delivery: attempt, status
+
+Set `BASTIO_LOG_LEVEL=debug` to see the dashboard middleware's
+tenant resolution path (added in v2.0 — useful for debugging
+wrong-customer issues).
+
+Pipe logs into your existing aggregator (Datadog, Loki, CloudWatch);
+no extra config — the binary writes to stdout.
+
+## Next
+
+- [Threats](/docs/threats) — the detector catalog that drives
+  the threat events.
+- [API reference](/docs/api-reference) — the full
+  `/v1/traces` schema.

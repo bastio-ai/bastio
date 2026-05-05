@@ -1,0 +1,58 @@
+# Binaries
+bastio-server
+bastio-worker
+bastio-ingest
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+vendor/
+*.test
+*.out
+coverage.txt
+
+# Dashboard
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Work files (plans, notes)
+.work/
+
+# Claude Code
+.claude/
+
+# Internal dev guidance, not shipped to OSS
+CLAUDE.md
+
+# Internal-only notes (not for publication)
+NOTES.md
+TODO.md
+NOTEPAD.md
+PLAN.md
+INTERNAL.md
+ROADMAP.md
+PROGRESS.md
+**/NOTES.md
+**/TODO.md
+**/INTERNAL.md
+.cursor/
+.windsurf/
