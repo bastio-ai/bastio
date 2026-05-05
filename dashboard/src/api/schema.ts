@@ -1372,6 +1372,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/knowledge/{id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release a quarantined knowledge source for re-ingest
+         * @description Admin-only override that flips a quarantined source back to
+         *     `pending` and re-enqueues the ingest worker. Used when the
+         *     security scan was a false positive (e.g. a doc legitimately
+         *     discusses passwords as part of a security policy and the
+         *     secrets detector tripped). The release action is audited.
+         *     Only valid when the source is currently in `quarantined`
+         *     status; releasing a non-quarantined source returns 409.
+         */
+        post: operations["workspaceReleaseKnowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspace/settings/slug": {
         parameters: {
             query?: never;
@@ -1640,6 +1668,102 @@ export interface paths {
         get: operations["workspaceAnalyticsDaily"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceListAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/whoami": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceWhoami"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/owner/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspaceTransferOwnership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/members/{userID}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["workspaceChangeMemberRole"];
+        trace?: never;
+    };
+    "/v1/workspace/conversations/{id}/messages/{messageID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["workspaceDeleteFromMessage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/chat-attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspaceUploadChatAttachment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2917,7 +3041,20 @@ export interface components {
             default_provider?: string;
             default_model?: string;
             language?: string;
+            /**
+             * @description When true, promotes this assistant to be the workspace's
+             *     default. Atomically clears any other default assistant.
+             *     Omit (or pass false) to leave the current default
+             *     untouched.
+             */
+            is_default?: boolean;
             suggested_prompts?: string[];
+            /**
+             * @description When present, replaces the assistant's full set of attached
+             *     knowledge sources. Pass an empty array to detach all. Omit
+             *     the field to leave attachments untouched.
+             */
+            knowledge_source_ids?: string[];
         };
         WorkspaceKnowledgeSource: {
             /** Format: uuid */
@@ -2932,9 +3069,28 @@ export interface components {
             mime_type?: string | null;
             /** Format: int64 */
             size_bytes: number;
-            /** @enum {string} */
-            status: "pending" | "processing" | "ready" | "failed";
+            /**
+             * @description 'quarantined' means the security engine blocked the
+             *     content at ingest. No chunks are produced. An admin
+             *     reviews the source and either releases (POST /release)
+             *     or archives.
+             * @enum {string}
+             */
+            status: "pending" | "processing" | "ready" | "failed" | "quarantined";
             error?: string | null;
+            /** @description SHA-256 of raw upload bytes (hex). NULL for inline-text sources. */
+            content_hash?: string | null;
+            /**
+             * @description Snapshot of the ingest-time security scan. Populated only
+             *     when the scan rewrote (sanitize) or blocked (quarantine)
+             *     the source. Shape:
+             *       { action: "block" | "sanitize" | "allow",
+             *         categories: ["pii_email", "secrets"],
+             *         threat_score: 0.92 }
+             */
+            scan_result?: {
+                [key: string]: unknown;
+            } | null;
             metadata: {
                 [key: string]: unknown;
             };
@@ -5585,6 +5741,47 @@ export interface operations {
             };
         };
     };
+    workspaceReleaseKnowledge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Released; ingest re-enqueued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        status: "pending";
+                    };
+                };
+            };
+            /** @description Source not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source is not in quarantined status */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     workspaceSetSlug: {
         parameters: {
             query?: never;
@@ -6143,6 +6340,149 @@ export interface operations {
                     "application/json": {
                         days: components["schemas"]["WorkspaceDailyUsagePoint"][];
                     };
+                };
+            };
+        };
+    };
+    workspaceListAudit: {
+        parameters: {
+            query?: {
+                limit?: number;
+                action?: string;
+                before?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    workspaceWhoami: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    workspaceTransferOwnership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    new_owner_user_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Owner transferred */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceChangeMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    role: "admin" | "member" | "viewer";
+                };
+            };
+        };
+        responses: {
+            /** @description Role updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceDeleteFromMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                messageID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted target message and any subsequent messages */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceUploadChatAttachment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
         };
