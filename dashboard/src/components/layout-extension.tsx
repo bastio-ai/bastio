@@ -27,7 +27,21 @@ export type LayoutNavSection = {
 };
 
 export type LayoutNavExtension = {
+  // Sections appended after all OSS-shipped sections. Use this when
+  // position doesn't matter or when you want the section to land at
+  // the bottom of the sidebar.
   sections?: LayoutNavSection[];
+
+  // Sections inserted immediately after a named OSS section. Keyed by
+  // the OSS section label (case-insensitive). Use this when position
+  // matters — cloud-dashboard, for example, places "Governance" right
+  // after "Security" so Shadow AI lives next to the threat surfaces it
+  // belongs near, not at the bottom of the rail.
+  //
+  // Each value is an array so multiple sections can anchor to the
+  // same OSS section in stable order. Anchoring to a section that
+  // doesn't exist in OSS is a silent no-op.
+  sectionsAfter?: Record<string, LayoutNavSection[]>;
 };
 
 const Ctx = createContext<LayoutNavExtension>({});
