@@ -136,14 +136,22 @@ export function ThreatDetailPage() {
                     {threat.action_taken}
                   </Badge>
                 </Row>
+                <Row label="Severity">
+                  <span className="font-mono tabular-nums">
+                    {(threat.score * 100).toFixed(0)}%
+                  </span>
+                </Row>
                 <Row label="Confidence">
                   <span className="font-mono tabular-nums">
                     {(threat.confidence * 100).toFixed(0)}%
                   </span>
                 </Row>
-                <Row label="Risk score">
-                  <span className="font-mono tabular-nums">
-                    {(threat.score * 100).toFixed(0)}%
+                <Row label="Triggers at">
+                  <span
+                    className="font-mono tabular-nums"
+                    title="Severity × Confidence — what the threshold actually compares against."
+                  >
+                    {(threat.score * threat.confidence * 100).toFixed(0)}%
                   </span>
                 </Row>
               </CardContent>

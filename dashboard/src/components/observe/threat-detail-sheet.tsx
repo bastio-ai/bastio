@@ -162,18 +162,38 @@ function ScoreRow({
   confidence: number;
   score: number;
 }) {
+  // The engine compares score × confidence against the configured
+  // threshold. Showing only the raw severity-based score made customers
+  // think the threshold was higher than it really effectively was —
+  // they saw 85%, set threshold = 70%, and were surprised when nothing
+  // blocked because the weighted value was 68%.
+  const weighted = score * confidence;
   return (
     <div className="flex items-center gap-4 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-[11px]">
+      <Metric label="Severity" value={`${(score * 100).toFixed(0)}%`} />
+      <div className="h-5 w-px bg-border" />
       <Metric label="Confidence" value={`${(confidence * 100).toFixed(0)}%`} />
       <div className="h-5 w-px bg-border" />
-      <Metric label="Risk score" value={`${(score * 100).toFixed(0)}%`} />
+      <Metric
+        label="Triggers at"
+        value={`${(weighted * 100).toFixed(0)}%`}
+        hint="Severity × Confidence — what the threshold actually compares against."
+      />
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
-    <div>
+    <div title={hint}>
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
         {label}
       </div>
