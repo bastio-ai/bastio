@@ -98,6 +98,12 @@ type Handler struct {
 	secEngine     *security.Engine
 	secProfiles   security.ProfileLookup
 	obsRecorder   *observability.Recorder
+	// billingGate, if set, is a middleware applied to the workspace
+	// router root. Cloud uses it to gate paid-tier surfaces behind an
+	// active subscription (the gate itself decides which methods or
+	// paths to refuse). OSS deployments leave it nil — no gate, no
+	// extra hop per request.
+	billingGate func(http.Handler) http.Handler
 }
 
 // NewHandler wires the workspace handler. registry is the same provider
@@ -180,6 +186,13 @@ func (h *Handler) SetSecurityEngine(e *security.Engine) { h.secEngine = e }
 // as before (direct provider call, no policy enforcement).
 func (h *Handler) SetSecurityProfiles(p security.ProfileLookup) { h.secProfiles = p }
 
+// SetBillingGate installs a chi-shaped middleware that wraps the
+// workspace router. Cloud uses this to refuse mutating requests for
+// customers whose subscription is expired / canceled / unpaid; OSS
+// leaves it nil and the gate does nothing. Set before Routes() is
+// called — the middleware is read once at route construction.
+func (h *Handler) SetBillingGate(mw func(http.Handler) http.Handler) { h.billingGate = mw }
+
 // SetObservabilityRecorder wires the ClickHouse recorder so workspace
 // chat traffic appears in the same trace + threat catalog the
 // gateway populates. Without it, workspace messages still land in
@@ -200,6 +213,13 @@ func (h *Handler) Pool() *pgxpool.Pool {
 // Routes returns the chi router mounted at /v1/workspace.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
+
+	// Optional billing gate. Cloud installs one; OSS leaves it nil.
+	// The gate decides itself which methods or paths to refuse — the
+	// router just wires it in if present.
+	if h.billingGate != nil {
+		r.Use(h.billingGate)
+	}
 
 	// =========================================================
 	// RBAC: every route below this point gates by role. The

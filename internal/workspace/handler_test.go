@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
@@ -74,5 +76,53 @@ func TestEstimateCostCents(t *testing.T) {
 			t.Errorf("estimateCostCents(%q, %d, %d) = %d, want %d",
 				c.model, c.in, c.out, got, c.want)
 		}
+	}
+}
+
+// TestBillingGate_HookFires verifies the cloud-side billing gate is
+// invoked on every request when SetBillingGate has been called. Cloud
+// installs the actual subscription-checking middleware in production;
+// this test just proves the OSS extension point fires reliably.
+func TestBillingGate_HookFires(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandler(nil, nil, nil)
+	var observedMethods []string
+	h.SetBillingGate(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			observedMethods = append(observedMethods, r.Method)
+			// Return a sentinel so we don't depend on downstream handlers
+			// (the workspace handler 500s on nil store; we don't care).
+			w.Header().Set("X-Billing-Gate-Hit", "yes")
+			w.WriteHeader(http.StatusTeapot)
+		})
+	})
+
+	r := h.Routes()
+	for _, method := range []string{"GET", "POST", "PATCH", "DELETE"} {
+		req := httptest.NewRequest(method, "/whoami", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if got := rec.Header().Get("X-Billing-Gate-Hit"); got != "yes" {
+			t.Errorf("%s /whoami: gate did not fire (header: %q)", method, got)
+		}
+	}
+	if len(observedMethods) != 4 {
+		t.Fatalf("expected 4 observed methods, got %d (%v)", len(observedMethods), observedMethods)
+	}
+}
+
+// TestBillingGate_NotInstalled confirms OSS deployments stay free of
+// the gate when SetBillingGate has not been called — no surprise hop.
+func TestBillingGate_NotInstalled(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandler(nil, nil, nil)
+	r := h.Routes()
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if got := rec.Header().Get("X-Billing-Gate-Hit"); got != "" {
+		t.Errorf("OSS path leaked a billing-gate header: %q", got)
 	}
 }
