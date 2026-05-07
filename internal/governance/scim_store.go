@@ -161,7 +161,11 @@ OFFSET $2 LIMIT $3`
 		return nil, 0, fmt.Errorf("list users: %w", err)
 	}
 	defer rows.Close()
-	out := make([]GovernanceUser, 0, count)
+	// Don't pre-size with `count` — CodeQL flags it as a user-controlled
+	// allocation (go/uncontrolled-allocation-size) even though count is
+	// already clamped to ≤200 above. Letting append grow the slice loses
+	// ~3 reallocations max, which is irrelevant at these sizes.
+	out := make([]GovernanceUser, 0)
 	for rows.Next() {
 		u, scanErr := scanUserFromRows(rows)
 		if scanErr != nil {
@@ -382,7 +386,9 @@ OFFSET $2 LIMIT $3`, customerID, startIndex-1, count)
 		return nil, 0, err
 	}
 	defer rows.Close()
-	out := make([]GovernanceGroup, 0, count)
+	// See same-shape comment in ListUsers — count is clamped to ≤200
+	// above, but CodeQL can't trace that through; drop the pre-size.
+	out := make([]GovernanceGroup, 0)
 	for rows.Next() {
 		g, scanErr := scanGroupFromRows(rows)
 		if scanErr != nil {
