@@ -20,7 +20,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Search, Menu } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import type { LayoutNavSection } from "@/components/layout-extension";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/use-theme";
@@ -166,66 +167,42 @@ export function Layout({ children }: { children: ReactNode }) {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
           {navSections.map((section) => (
-            <div key={section.label}>
-              <p className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                {section.label}
-              </p>
-              <div className="space-y-0.5">
-                {section.items.map(({ to, label, icon: Icon }) => {
-                  const isActive = currentPath === to;
-                  return (
-                    <Link
-                      key={to}
-                      to={to}
-                      className={cn(
-                        "flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-all duration-150",
-                        isActive
-                          ? "bg-foreground/[0.08] text-foreground font-medium shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
-                      )}
-                    >
-                      <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-foreground" : "text-muted-foreground/70")} />
-                      {label}
-                    </Link>
-                  );
-                })}
+            <Fragment key={section.label}>
+              <div>
+                <p className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  {section.label}
+                </p>
+                <div className="space-y-0.5">
+                  {section.items.map(({ to, label, icon: Icon }) => {
+                    const isActive = currentPath === to;
+                    return (
+                      <Link
+                        key={to}
+                        to={to}
+                        className={cn(
+                          "flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-all duration-150",
+                          isActive
+                            ? "bg-foreground/[0.08] text-foreground font-medium shadow-sm"
+                            : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
+                        )}
+                      >
+                        <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-foreground" : "text-muted-foreground/70")} />
+                        {label}
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+              {/* Cloud-injected sections anchored to this OSS section.
+                  Rendering inside the same Fragment keeps them visually
+                  attached to the section they trail. */}
+              {(navExt.sectionsAfter?.[section.label.toLowerCase()] ?? []).map((extSection) =>
+                renderExtSection(extSection, currentPath),
+              )}
+            </Fragment>
           ))}
-          {/* Extension nav sections (cloud-dashboard injects Shadow AI here) */}
-          {navExt.sections?.map((section) => (
-            <div key={`ext:${section.label}`}>
-              <p className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                {section.label}
-              </p>
-              <div className="space-y-0.5">
-                {section.items.map(({ to, label, icon: Icon }) => {
-                  const isActive = currentPath === to;
-                  return (
-                    <Link
-                      key={to}
-                      // Cast through `never` because extension `to` values
-                      // come from runtime context, not the OSS `as const`
-                      // navSections, so they're typed loosely as string.
-                      // Cloud-dashboard's registered router includes the
-                      // /governance route at runtime; OSS standalone with
-                      // an empty extension just doesn't render this list.
-                      to={to as never}
-                      className={cn(
-                        "flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-all duration-150",
-                        isActive
-                          ? "bg-foreground/[0.08] text-foreground font-medium shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
-                      )}
-                    >
-                      <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-foreground" : "text-muted-foreground/70")} />
-                      {label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+          {/* Trailing append-only extension sections (no anchor specified). */}
+          {navExt.sections?.map((section) => renderExtSection(section, currentPath))}
         </nav>
 
         {/* Footer */}
@@ -280,6 +257,43 @@ export function Layout({ children }: { children: ReactNode }) {
       </main>
 
       <CommandPalette open={palette.open} onOpenChange={palette.setOpen} />
+    </div>
+  );
+}
+
+// renderExtSection renders one cloud-injected nav section. Extracted
+// because it gets called twice — once for sections anchored after a
+// specific OSS section (LayoutNavExtension.sectionsAfter), and once
+// for the trailing append-only sections (LayoutNavExtension.sections).
+// `to` is cast through `as never` because extension `to` values come
+// from runtime context and don't appear in the OSS-typed routesByPath
+// (cloud-dashboard's router has the actual route registered).
+function renderExtSection(section: LayoutNavSection, currentPath: string) {
+  return (
+    <div key={`ext:${section.label}`}>
+      <p className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+        {section.label}
+      </p>
+      <div className="space-y-0.5">
+        {section.items.map(({ to, label, icon: Icon }) => {
+          const isActive = currentPath === to;
+          return (
+            <Link
+              key={to}
+              to={to as never}
+              className={cn(
+                "flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-all duration-150",
+                isActive
+                  ? "bg-foreground/[0.08] text-foreground font-medium shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
+              )}
+            >
+              <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-foreground" : "text-muted-foreground/70")} />
+              {label}
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
