@@ -21,10 +21,24 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # Author emails whose commits are exempt from DCO sign-off.
+          # GitHub-managed bots (Dependabot, github-actions) submit PRs
+          # whose commits are signed by GitHub's own infrastructure;
+          # contribution provenance is encoded in the bot identity, so
+          # requiring a Signed-off-by trailer would block every dependency
+          # update without adding any real attestation. The numeric IDs
+          # are GitHub's stable user IDs for the bot accounts and are
+          # what shows up in the noreply email; either form is accepted.
+          BOT_EMAILS_REGEX='^(49699333\+dependabot\[bot\]@users\.noreply\.github\.com|41898282\+github-actions\[bot\]@users\.noreply\.github\.com|dependabot\[bot\]@users\.noreply\.github\.com|github-actions\[bot\]@users\.noreply\.github\.com)$'
+
           missing=0
           while IFS= read -r sha; do
-            author_name=$(git show -s --format='%an' "$sha")
             author_email=$(git show -s --format='%ae' "$sha")
+            if [[ "$author_email" =~ $BOT_EMAILS_REGEX ]]; then
+              echo "Commit $sha by bot ${author_email} — skipping DCO check."
+              continue
+            fi
+            author_name=$(git show -s --format='%an' "$sha")
             expected="Signed-off-by: ${author_name} <${author_email}>"
             if ! git show -s --format='%B' "$sha" | grep -qiF "$expected"; then
               echo "::error::Commit $sha is missing: $expected"
