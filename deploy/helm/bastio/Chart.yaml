@@ -1,0 +1,35 @@
+apiVersion: v2
+name: bastio
+description: |
+  Bastio — open-source AI security gateway. Sits between applications
+  and LLM providers, detecting threats (PII, jailbreak, injection,
+  bots), managing proxies, and providing observability.
+
+  This chart deploys the all-in-one binary (server + worker + ingest
+  in one process). Suitable for evaluation, single-node production,
+  and small-team self-hosting. Split-binary mode (separate deployments
+  for server / worker / ingest) is on the roadmap for v2.1.
+
+# Bumped in lockstep with the Bastio release tag the chart is tested
+# against. Self-hosters should pin --version to a specific release.
+type: application
+version: 0.1.0
+appVersion: "2.0.0"
+kubeVersion: ">=1.24.0"
+
+home: https://bastio.com
+sources:
+  - https://github.com/bastio-ai/bastio
+keywords:
+  - ai-security
+  - llm-gateway
+  - prompt-injection
+  - pii-detection
+maintainers:
+  - name: Bastio
+    email: hello@bastio.com
+
+annotations:
+  # Mark experimental in v2.0 — chart is functional and CI-tested but
+  # we want feedback before stabilizing the values.yaml surface.
+  artifacthub.io/maturity: alpha

@@ -1,0 +1,375 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/*
+ * Tailwind v4 source detection. By default v4's Vite plugin scans
+ * the host app's project root (bastio/dashboard/ for OSS standalone,
+ * but bastio-cloud/cloud-dashboard/ when this CSS is imported via
+ * the @/ alias from the cloud app). The latter case skips the OSS
+ * source — so OSS components ship with no Tailwind utilities.
+ *
+ * Explicit @source tells Tailwind: scan THIS directory regardless of
+ * where the CSS is imported from. Path is glob-relative to this CSS
+ * file (bastio/dashboard/src/index.css → ./** scans the OSS src tree).
+ */
+@source "./**/*.{ts,tsx}";
+
+/*
+ * Bastio design tokens — source of truth: .work/DESIGN.md
+ *
+ * Theme strategy: :root = light defaults, .dark = dark overrides.
+ * useTheme adds/removes `.dark` on <html>. Default boot = dark (dark is the brand).
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Light mode (mirror) */
+  --background:      #FAFAFA;
+  --surface-1:       #FFFFFF;
+  --surface-2:       #F4F4F5;
+  --surface-3:       #FFFFFF;
+  --foreground:      #09090B;
+  --text-primary:    #09090B;
+  --text-secondary:  #52525B;
+  --text-muted:      #5F5F68;                       /* AA pass on #FAFAFA */
+  --text-disabled:   #A1A1AA;
+
+  --border:          rgba(0, 0, 0, 0.08);
+  --border-subtle:   rgba(0, 0, 0, 0.06);
+  --border-default:  rgba(0, 0, 0, 0.10);
+  --border-strong:   rgba(0, 0, 0, 0.14);
+
+  --danger:          #DC2626;
+  --danger-bg:       rgba(220, 38, 38, 0.08);
+  --danger-border:   rgba(220, 38, 38, 0.25);
+  --warn:            #B45309;
+  --warn-bg:         rgba(180, 83, 9, 0.08);
+  --warn-border:     rgba(180, 83, 9, 0.25);
+  --success:         #047857;
+  --success-bg:      rgba(4, 120, 87, 0.08);
+  --success-border:  rgba(4, 120, 87, 0.25);
+
+  /* shadcn compat */
+  --card:                    var(--surface-1);
+  --card-foreground:         var(--foreground);
+  --popover:                 var(--surface-3);
+  --popover-foreground:      var(--foreground);
+  --primary:                 #09090B;
+  --primary-foreground:      #FAFAFA;
+  --secondary:               var(--surface-2);
+  --secondary-foreground:    var(--foreground);
+  --muted:                   var(--surface-2);
+  --muted-foreground:        var(--text-secondary);
+  --accent:                  var(--surface-2);
+  --accent-foreground:       var(--foreground);
+  --destructive:             var(--danger);
+  --destructive-foreground:  var(--foreground);
+  --warning:                 var(--warn);
+  --input:                   var(--border-default);
+  --ring:                    rgba(0, 0, 0, 0.20);
+
+  --radius:     0.375rem;
+  --radius-sm:  0.25rem;
+  --radius-md:  0.375rem;
+  --radius-lg:  0.5rem;
+  --radius-xl:  0.75rem;
+
+  --sidebar:                      var(--background);
+  --sidebar-foreground:           var(--foreground);
+  --sidebar-primary:              var(--foreground);
+  --sidebar-primary-foreground:   #FAFAFA;
+  --sidebar-accent:               var(--surface-2);
+  --sidebar-accent-foreground:    var(--foreground);
+  --sidebar-border:               var(--border-subtle);
+  --sidebar-ring:                 var(--ring);
+
+  --chart-1: #09090B;
+  --chart-2: #52525B;
+  --chart-3: #71717A;
+  --chart-4: var(--danger);
+  --chart-5: var(--warn);
+
+  --skeleton:           rgba(0, 0, 0, 0.04);
+  --skeleton-highlight: rgba(0, 0, 0, 0.08);
+}
+
+.dark {
+  /* Dark mode (brand default) */
+  --background:      #0A0A0B;
+  --surface-1:       #111114;
+  --surface-2:       #18181B;
+  --surface-3:       #1F1F23;
+  --foreground:      #FAFAFA;
+  --text-primary:    #FAFAFA;
+  --text-secondary:  #B4B4BC;                       /* up from #A1A1AA for AA */
+  --text-muted:      #8A8A92;                       /* up from #71717A for AA on small text */
+  --text-disabled:   #52525B;
+
+  --border:          rgba(255, 255, 255, 0.06);
+  --border-subtle:   rgba(255, 255, 255, 0.06);
+  --border-default:  rgba(255, 255, 255, 0.10);
+  --border-strong:   rgba(255, 255, 255, 0.14);
+
+  --danger:          #F87171;
+  --danger-bg:       rgba(248, 113, 113, 0.10);
+  --danger-border:   rgba(248, 113, 113, 0.25);
+  --warn:            #FBBF24;
+  --warn-bg:         rgba(251, 191, 36, 0.10);
+  --warn-border:     rgba(251, 191, 36, 0.25);
+  --success:         #4ADE80;
+  --success-bg:      rgba(74, 222, 128, 0.10);
+  --success-border:  rgba(74, 222, 128, 0.25);
+
+  --primary:              #FAFAFA;
+  --primary-foreground:   #09090B;
+  --ring:                 rgba(255, 255, 255, 0.15);
+
+  --chart-1: #FAFAFA;
+  --chart-2: #B4B4BC;
+  --chart-3: #71717A;
+  --chart-4: var(--danger);
+  --chart-5: var(--warn);
+
+  --skeleton:           rgba(255, 255, 255, 0.04);
+  --skeleton-highlight: rgba(255, 255, 255, 0.08);
+}
+
+/* Tailwind v4 utility registration */
+@theme inline {
+  --color-background:           var(--background);
+  --color-foreground:           var(--foreground);
+  --color-card:                 var(--card);
+  --color-card-foreground:      var(--card-foreground);
+  --color-popover:              var(--popover);
+  --color-popover-foreground:   var(--popover-foreground);
+  --color-primary:              var(--primary);
+  --color-primary-foreground:   var(--primary-foreground);
+  --color-secondary:            var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:                var(--muted);
+  --color-muted-foreground:     var(--muted-foreground);
+  --color-accent:               var(--accent);
+  --color-accent-foreground:    var(--accent-foreground);
+  --color-destructive:          var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border:               var(--border);
+  --color-input:                var(--input);
+  --color-ring:                 var(--ring);
+
+  --color-surface-1:            var(--surface-1);
+  --color-surface-2:            var(--surface-2);
+  --color-surface-3:            var(--surface-3);
+  --color-text-primary:         var(--text-primary);
+  --color-text-secondary:       var(--text-secondary);
+  --color-text-muted:           var(--text-muted);
+  --color-text-disabled:        var(--text-disabled);
+  --color-border-subtle:        var(--border-subtle);
+  --color-border-default:       var(--border-default);
+  --color-border-strong:        var(--border-strong);
+  --color-danger:               var(--danger);
+  --color-danger-bg:            var(--danger-bg);
+  --color-danger-border:        var(--danger-border);
+  --color-warn:                 var(--warn);
+  --color-warn-bg:              var(--warn-bg);
+  --color-warn-border:          var(--warn-border);
+  --color-success:              var(--success);
+  --color-success-bg:           var(--success-bg);
+  --color-success-border:       var(--success-border);
+
+  --color-sidebar:                      var(--sidebar);
+  --color-sidebar-foreground:           var(--sidebar-foreground);
+  --color-sidebar-primary:              var(--sidebar-primary);
+  --color-sidebar-primary-foreground:   var(--sidebar-primary-foreground);
+  --color-sidebar-accent:               var(--sidebar-accent);
+  --color-sidebar-accent-foreground:    var(--sidebar-accent-foreground);
+  --color-sidebar-border:               var(--sidebar-border);
+  --color-sidebar-ring:                 var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-skeleton:           var(--skeleton);
+  --color-skeleton-highlight: var(--skeleton-highlight);
+
+  --font-sans:    'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:    'Geist Mono Variable', ui-monospace, 'JetBrains Mono', monospace;
+  --font-heading: var(--font-sans);
+
+  --radius-sm:   var(--radius-sm);
+  --radius-md:   var(--radius-md);
+  --radius-lg:   var(--radius-lg);
+  --radius-xl:   var(--radius-xl);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    font-feature-settings: 'cv11', 'ss03';
+    color-scheme: light;
+  }
+  html.dark { color-scheme: dark; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-size: 13px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  .font-mono { font-family: var(--font-mono); }
+
+  .surface-card {
+    background-color: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      0 1px 2px rgba(0, 0, 0, 0.20);
+  }
+  :root:not(.dark) .surface-card {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+
+  .surface-elevated {
+    background-color: var(--surface-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 8px 24px rgba(0, 0, 0, 0.40),
+      0 2px 6px rgba(0, 0, 0, 0.25);
+  }
+  :root:not(.dark) .surface-elevated {
+    box-shadow:
+      0 12px 32px rgba(0, 0, 0, 0.12),
+      0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* Pulsing status dot — keyed per tone so color token is baked in */
+@keyframes bastio-pulse-success {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.18); }
+  50%      { box-shadow: 0 0 0 5px rgba(74, 222, 128, 0.02); }
+}
+@keyframes bastio-pulse-danger {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.18); }
+  50%      { box-shadow: 0 0 0 5px rgba(248, 113, 113, 0.02); }
+}
+@keyframes bastio-pulse-warn {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.18); }
+  50%      { box-shadow: 0 0 0 5px rgba(251, 191, 36, 0.02); }
+}
+
+/* Honour user's motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Scrollbar — minimal, token-driven */
+::-webkit-scrollbar                  { width: 6px; height: 6px; }
+::-webkit-scrollbar-track            { background: transparent; }
+::-webkit-scrollbar-thumb            { background: rgba(0, 0, 0, 0.08); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover      { background: rgba(0, 0, 0, 0.16); }
+.dark ::-webkit-scrollbar-thumb      { background: rgba(255, 255, 255, 0.06); }
+.dark ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* =========================================================================
+   Code block theming — light mode overrides for highlight.js github-dark
+   =========================================================================
+   The base import is github-dark (correct in dark mode). In light mode
+   (no .dark on <html>) we re-paint the hljs token colors so code blocks
+   read against the light page bg instead of staying a dark island. Token
+   classes follow highlight.js conventions. Colors picked to match the
+   brand and read AAA contrast against bg-muted in light mode.
+*/
+:root:not(.dark) .hljs {
+  background: hsl(var(--muted) / 0.5) !important;
+  color: hsl(var(--foreground)) !important;
+}
+:root:not(.dark) .hljs-comment,
+:root:not(.dark) .hljs-quote,
+:root:not(.dark) .hljs-meta {
+  color: hsl(var(--muted-foreground)) !important;
+  font-style: italic;
+}
+:root:not(.dark) .hljs-keyword,
+:root:not(.dark) .hljs-selector-tag,
+:root:not(.dark) .hljs-section,
+:root:not(.dark) .hljs-name,
+:root:not(.dark) .hljs-tag {
+  color: hsl(212 92% 36%) !important;
+}
+:root:not(.dark) .hljs-string,
+:root:not(.dark) .hljs-attr,
+:root:not(.dark) .hljs-attribute,
+:root:not(.dark) .hljs-symbol,
+:root:not(.dark) .hljs-bullet,
+:root:not(.dark) .hljs-addition {
+  color: hsl(20 90% 38%) !important;
+}
+:root:not(.dark) .hljs-number,
+:root:not(.dark) .hljs-literal,
+:root:not(.dark) .hljs-variable,
+:root:not(.dark) .hljs-template-variable,
+:root:not(.dark) .hljs-link {
+  color: hsl(160 80% 28%) !important;
+}
+:root:not(.dark) .hljs-title,
+:root:not(.dark) .hljs-class .hljs-title,
+:root:not(.dark) .hljs-type {
+  color: hsl(280 80% 35%) !important;
+}
+:root:not(.dark) .hljs-built_in,
+:root:not(.dark) .hljs-builtin-name,
+:root:not(.dark) .hljs-function {
+  color: hsl(190 80% 30%) !important;
+}
+:root:not(.dark) .hljs-deletion {
+  color: hsl(0 80% 40%) !important;
+}
+
+/* =========================================================================
+   Touch-friendly hover-only controls
+   =========================================================================
+   The chat surface uses `invisible group-hover:visible` for affordances
+   like the conversation 3-dot menu, message copy/regenerate/edit, and
+   attachment chip removers — clean on desktop, but completely gone on
+   touch devices that have no hover state. Make them visible (dimmed)
+   on touch via the `(hover: none)` media query.
+*/
+@media (hover: none) {
+  .group .invisible.group-hover\:visible {
+    visibility: visible;
+    opacity: 0.6;
+  }
+  .group .opacity-0.group-hover\:opacity-100 {
+    opacity: 0.6;
+  }
+}

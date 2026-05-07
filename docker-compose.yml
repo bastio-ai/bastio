@@ -1,0 +1,98 @@
+services:
+  bastio:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      BASTIO_MODE: all-in-one
+      BASTIO_PORT: "4000"
+      DATABASE_URL: postgres://bastio:bastio@postgres:5432/bastio?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      CLICKHOUSE_URL: http://clickhouse:8123
+      BASTIO_LOG_LEVEL: info
+      # Optional: set PRESIDIO_URL when running with the `presidio` profile
+      # to route governance classifier calls to Microsoft Presidio.
+      PRESIDIO_URL: ${PRESIDIO_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    # Bundles pgvector. Migration 017_pgvector.sql does
+    # CREATE EXTENSION IF NOT EXISTS vector — fails on a stock postgres
+    # image because the extension isn't installed. Switching the base
+    # image is the lowest-friction fix; alternative would be a custom
+    # Dockerfile that apt-installs postgresql-XX-pgvector.
+    image: pgvector/pgvector:pg18
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: bastio
+      POSTGRES_PASSWORD: bastio
+      POSTGRES_DB: bastio
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bastio"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: bastio
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - chdata:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Microsoft Presidio analyzer — opt-in PII classifier that powers the
+  # governance extension's server-side enrichment. Off by default to keep
+  # the OSS minimum-deps story small. Enable with:
+  #
+  #   docker compose --profile presidio up
+  #
+  # The bastio server reads PRESIDIO_URL on startup; when set, /v1/governance/classify
+  # routes to Presidio and falls back to the regex+entropy heuristic on
+  # error. Latency is bounded by the extension's 500ms async budget.
+  presidio:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    profiles: ["presidio"]
+    ports:
+      - "5001:3000"
+    environment:
+      LOG_LEVEL: WARNING
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  chdata:

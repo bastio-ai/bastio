@@ -1,0 +1,108 @@
+---
+title: Threats
+description: What Bastio detects and how to tune the response.
+---
+
+Every request through Bastio runs through a parallel set of
+detectors that produce one **scan result** with a list of typed
+threats. Detectors are configured per **security profile** — a
+named threshold + action map you assign to a proxy or workspace.
+
+## Detector catalog
+
+| Detector | What it catches |
+|---|---|
+| `pii_*` | Person names, emails, phone numbers, SSNs, credit cards, IBANs, addresses, IP addresses, dates of birth |
+| `secrets` | API keys, AWS / GCP / Azure credentials, JWTs, RSA keys, OpenAI tokens, GitHub PATs |
+| `code` | Source code blocks (any language) — useful for restricting code leak from internal tools |
+| `jailbreak` | "Ignore your instructions" attacks, role-play injections, prompt-leak attempts |
+| `injection` | Indirect prompt injection from retrieved context (URL embeds, attached docs) |
+| `bots` | Automated traffic patterns — abuse heuristics + signature checks |
+| `profanity` | Slurs, harassment language (workspace use) |
+| `topic` | Configurable allow / deny topic list (e.g. "no medical advice") |
+
+The full list of `ThreatType` enum values lives in
+[`internal/security/threats.go`](https://github.com/bastio-ai/bastio/blob/main/internal/security/threats.go).
+
+## Profiles
+
+A profile binds **detector → threshold → action**. Example:
+
+```json
+{
+  "name": "default",
+  "rules": {
+    "pii_email":      { "threshold": 0.5, "action": "mask" },
+    "pii_credit_card":{ "threshold": 0.5, "action": "block" },
+    "secrets":        { "threshold": 0.7, "action": "block" },
+    "jailbreak":      { "threshold": 0.6, "action": "block" },
+    "code":           { "threshold": 0.8, "action": "warn" }
+  },
+  "default_action": "log_only"
+}
+```
+
+Profiles live at workspace level and can be overridden per proxy.
+The dashboard's Security Center exposes a builder; the API
+surface mirrors it 1:1.
+
+## Action types
+
+What Bastio does when a detector hits its threshold:
+
+| Action | Effect |
+|---|---|
+| `block` | Request is rejected, returns 403 with the detector list. The provider is never called. |
+| `mask` | Matched spans replaced with `[REDACTED]` before the prompt reaches the provider. The model sees a sanitized prompt. |
+| `tokenize` | Matched spans replaced with reversible placeholders (`<PII_TOKEN_a3f1>`). The original is restored on the response, so the user sees their data un-redacted. Used for in-flight protection without losing user context. |
+| `warn` | Forwarded to the provider; the trace records the threat. The response includes a `bastio.warnings` envelope so downstream code can act on it. |
+| `log_only` | Recorded in the trace, otherwise transparent. |
+
+## Scoring
+
+Every scan produces an aggregate **risk score** 0-100 alongside the
+typed threat list. The score isn't a sum — it's the weighted max
+across detectors, so one critical hit dominates the number. Useful
+for "alert above 80" routing logic.
+
+## Defense-in-depth
+
+Detectors run on both sides:
+
+- **Inbound**: the user's prompt is scanned before reaching the
+  provider.
+- **Outbound**: the provider's response is scanned before reaching
+  the user. Catches the case where a model leaks PII / secrets it
+  was trained on.
+
+Both scans share the same profile. Pre-redacted prompts are
+restored if you used `tokenize`, so the user sees their original
+text in the response.
+
+## Adding a custom detector
+
+Implement the `Detector` interface in `internal/security/detection/`:
+
+```go
+type Detector interface {
+    Name() string
+    Detect(ctx context.Context, content string, profile *Profile) ([]Match, error)
+}
+```
+
+Register it in `engine.go`'s detector list. Patterns get compiled
+once at startup; never compile per-request — the latency budget
+won't allow it.
+
+## Cloud-only detectors
+
+Bastio Cloud adds Microsoft Presidio for higher-precision PII
+classification. Set `PRESIDIO_URL` to the analyzer endpoint;
+without it, OSS falls back to a regex + entropy heuristic that
+covers ~95% of the same cases.
+
+## Next
+
+- [SDKs](/docs/sdks) — handle threats in your application code.
+- [Architecture](/docs/architecture) — how detection fits into
+  the request lifecycle.

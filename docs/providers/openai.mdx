@@ -1,0 +1,151 @@
+---
+title: OpenAI
+description: Route OpenAI traffic through Bastio with full security scanning, no SDK changes.
+---
+
+OpenAI is the most common provider behind a Bastio proxy. Once
+you've created the proxy, every existing OpenAI SDK call works
+unchanged — only the `baseURL` moves from
+`api.openai.com` to your Bastio gateway.
+
+## Prerequisites
+
+- An OpenAI account with API access and a funded billing balance
+- A running Bastio gateway ([Getting started](/docs/getting-started))
+
+## Get an API key
+
+1. Sign in at [platform.openai.com](https://platform.openai.com/api-keys).
+2. Create a new secret key. Pick a project so usage is scoped.
+3. Copy the `sk-…` value — you can't retrieve it again.
+
+If your org uses **organization-scoped keys** (`sk-proj-…`), they
+work the same way. Bastio doesn't need the org ID separately —
+the key itself encodes it.
+
+## Create the proxy
+
+```bash
+curl -X POST http://localhost:4000/api/v1/proxies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "prod-openai",
+    "provider": "openai",
+    "provider_api_key": "sk-..."
+  }'
+```
+
+The response includes a `gateway_api_key` — copy it now, you can't
+retrieve it again. This is the key your application sends to
+Bastio. Bastio holds your OpenAI key on its side and never returns
+it.
+
+## Send a request
+
+```bash
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+### Python
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4000/v1",
+    api_key=os.environ["BASTIO_GATEWAY_KEY"],
+)
+
+resp = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+print(resp.choices[0].message.content)
+```
+
+### Node.js
+
+```ts
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://localhost:4000/v1",
+  apiKey: process.env.BASTIO_GATEWAY_KEY,
+});
+
+const resp = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello" }],
+});
+```
+
+## Supported features
+
+- **Chat completions** — full surface: `model`, `messages`,
+  `temperature`, `top_p`, `tools`, `tool_choice`,
+  `response_format`, `seed`, `parallel_tool_calls`, etc.
+- **Streaming** — `stream: true` works without extra config.
+  Bastio scans content as chunks arrive and rewrites them
+  in-flight when the security profile chooses `mask` or
+  `tokenize`.
+- **Function / tool calling** — passes through verbatim. Tool
+  call arguments are scanned the same as message content.
+- **Multimodal** — `image_url` blocks pass through. Image bytes
+  are scanned at the URL level (against the URL allowlist), not
+  for visual content. Models that support vision (`gpt-4o`,
+  `gpt-4.1`, etc.) work normally.
+- **JSON mode** — `response_format: { type: "json_object" }` and
+  `json_schema` both work.
+- **Embeddings** — `POST /v1/embeddings` is proxied, but content
+  is not security-scanned (no user-facing risk surface).
+
+## Models
+
+Pick any current OpenAI model — Bastio infers the family from the
+`model` field on the request, no extra config. For an up-to-date
+list and pricing, see
+[OpenAI's model docs](https://platform.openai.com/docs/models).
+
+Common picks:
+
+| Use case | Model |
+|---|---|
+| General chat | `gpt-4o` |
+| Cost-sensitive | `gpt-4o-mini` |
+| Reasoning | `o1`, `o3-mini` |
+| Latest flagship | `gpt-4.1` |
+
+## Gotchas
+
+- **Project-scoped keys.** `sk-proj-…` keys are scoped to one
+  project; if the project hits its usage cap, OpenAI returns
+  `insufficient_quota` (not a Bastio error). Check the project's
+  billing page.
+- **`o1` models don't accept `temperature`.** Standard OpenAI
+  behavior — Bastio passes the request through unchanged, so
+  the 400 you see is from OpenAI, not us.
+- **Streaming + tool calls.** Some older clients buffer full
+  responses before parsing — make sure your client supports
+  the streaming `tool_calls` delta format.
+- **Multipart audio uploads.** Whisper's `/v1/audio/transcriptions`
+  endpoint is supported but not security-scanned — audio
+  isn't text, our detectors don't apply.
+
+## Where the request shows up in traces
+
+Every request through the OpenAI proxy lands in the dashboard's
+Traces tab with `provider: openai`, the model you sent, and the
+threat scan result. See [Observability](/docs/observability) for
+the trace anatomy.
+
+## Next
+
+- [Anthropic](/docs/providers/anthropic) — same gateway, different
+  key + endpoint shape.
+- [Threats](/docs/threats) — what gets scanned on the way through.

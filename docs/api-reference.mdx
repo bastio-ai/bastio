@@ -1,0 +1,66 @@
+---
+title: API reference
+description: Interactive OpenAPI 3.1 reference for every Bastio endpoint.
+---
+
+The full Bastio API is documented as an OpenAPI 3.1 spec at
+[`cmd/server/openapi.yaml`](https://github.com/bastio-ai/bastio/blob/main/cmd/server/openapi.yaml)
+and rendered as an interactive Scalar reference on every running
+Bastio instance.
+
+## On a self-hosted instance
+
+Once your gateway is running, the interactive reference is
+available at:
+
+```
+http://<your-bastio-host>:4000/docs
+```
+
+The page renders `openapi.yaml` with Scalar — try requests
+directly from the browser, generate code samples, or download
+the spec for client-codegen. The OpenAPI spec is the source of
+truth: the dashboard's typed API client and the SDKs are all
+generated from it, so the routes you see here are the routes
+that exist.
+
+## On Bastio Cloud
+
+The interactive reference is at:
+
+```
+https://cloud.bastio.com/docs
+```
+
+Same Scalar UI. Authenticated requests use your dashboard
+session cookie; unauthenticated browsing of the spec works for
+public reference.
+
+## Major route groups
+
+| Prefix | Purpose |
+|---|---|
+| `POST /v1/chat/completions` | OpenAI-compatible gateway |
+| `POST /v1/messages` | Anthropic-compatible gateway |
+| `POST /v1/detect` | Standalone detection (used by the SDKs) |
+| `/api/v1/proxies/*` | Proxy CRUD (gateway API keys + provider routing) |
+| `/api/v1/profiles/*` | Security profile CRUD |
+| `/api/v1/traces/*` | Read traces — request/response audit log |
+| `/api/v1/threats/*` | Read threat events |
+| `/v1/workspace/*` | Workspace product (chat, assistants, KB, members) |
+| `/v1/governance/*` | Bastio Governance (browser-extension API) |
+| `/scim/v2/*` | SCIM 2.0 user / group sync |
+
+## Generated clients
+
+The OpenAPI spec drives:
+
+- The dashboard's typed API client (`dashboard/src/api/schema.ts`,
+  generated via `openapi-typescript`).
+- The TypeScript SDK's request types (`@bastio/core`).
+- The Python SDK's typed responses (`bastio/types.py`).
+- Documentation rendering at `/docs` on every running instance.
+
+If you spot a route in the source that's missing from the spec,
+that's a CI-caught bug — open an issue and we'll add it. The
+spec lags behind code by at most one release.

@@ -1,0 +1,156 @@
+---
+title: Anthropic
+description: Route Anthropic traffic through Bastio with full security scanning, no SDK changes.
+---
+
+Anthropic's Claude models work through Bastio via the
+`/v1/messages` endpoint — same shape as
+`api.anthropic.com/v1/messages`, just pointed at your Bastio
+gateway.
+
+## Prerequisites
+
+- An Anthropic Console account with API access
+- A running Bastio gateway ([Getting started](/docs/getting-started))
+
+## Get an API key
+
+1. Sign in at
+   [console.anthropic.com](https://console.anthropic.com/settings/keys).
+2. Create a new key. Anthropic keys start with `sk-ant-…`.
+3. Copy the value — Anthropic shows it once.
+
+## Create the proxy
+
+```bash
+curl -X POST http://localhost:4000/api/v1/proxies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "prod-anthropic",
+    "provider": "anthropic",
+    "provider_api_key": "sk-ant-..."
+  }'
+```
+
+The response's `gateway_api_key` is what your application sends.
+You can't retrieve it again — copy it now.
+
+## Send a request
+
+Anthropic uses the `x-api-key` header (not `Authorization: Bearer`)
+and requires the `anthropic-version` header. Bastio honours both:
+
+```bash
+curl http://localhost:4000/v1/messages \
+  -H "x-api-key: $BASTIO_GATEWAY_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+### Python
+
+```python
+import anthropic
+
+client = anthropic.Anthropic(
+    base_url="http://localhost:4000",
+    api_key=os.environ["BASTIO_GATEWAY_KEY"],
+)
+
+resp = client.messages.create(
+    model="claude-sonnet-4-5",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}],
+)
+print(resp.content[0].text)
+```
+
+### Node.js
+
+```ts
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL: "http://localhost:4000",
+  apiKey: process.env.BASTIO_GATEWAY_KEY,
+});
+
+const resp = await client.messages.create({
+  model: "claude-sonnet-4-5",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Hello" }],
+});
+```
+
+## Supported features
+
+- **Messages API** — full surface: `messages`, `system`,
+  `temperature`, `top_p`, `top_k`, `stop_sequences`, `tools`,
+  `tool_choice`.
+- **Streaming** — `stream: true` works. Bastio rewrites
+  in-flight content blocks the same way it does for OpenAI
+  streams.
+- **Tool use** — passes through verbatim. `tool_use` and
+  `tool_result` blocks are scanned the same as text content.
+- **Multimodal** — `image` blocks (base64 or URL) pass through
+  unchanged. The base64 payload is detected and stripped from
+  the security scan to avoid false-positive secret detection
+  on entropy.
+- **Prompt caching** — `cache_control` markers on system /
+  message blocks pass through unchanged. Bastio doesn't touch
+  the cache layer; the provider sees the same cache breakpoints
+  your app set.
+- **`/v1/messages/count_tokens`** — proxied without scanning
+  (counting doesn't send content to the model).
+
+## Models
+
+Pick any current Claude model on the `model` field. For the
+up-to-date list, see
+[Anthropic's model docs](https://docs.anthropic.com/en/docs/models-overview).
+
+Common picks:
+
+| Use case | Model |
+|---|---|
+| Highest reasoning | `claude-opus-4` |
+| Balanced default | `claude-sonnet-4-5` |
+| Fast + cheap | `claude-haiku-4-5` |
+
+## Gotchas
+
+- **`max_tokens` is required.** Unlike OpenAI, Anthropic rejects
+  requests without it. Bastio doesn't fill it in for you — pass
+  it explicitly.
+- **`anthropic-version` header.** Anthropic versions their API
+  by date string. The current standard is `2023-06-01`. Older
+  values still work but newer features (extended thinking,
+  prompt caching) require newer headers.
+- **System prompts go in `system`, not `messages`.** Easy to
+  trip on if you're porting from OpenAI — Bastio's gateway
+  passes whatever you send, so a misplaced system message
+  becomes a regular user turn.
+- **Beta features.** `extended-thinking` and others ship behind
+  beta headers (`anthropic-beta`). Bastio passes them through
+  unchanged; whether they work depends on your account's beta
+  access.
+
+## Where the request shows up in traces
+
+Anthropic requests land in the dashboard's Traces tab with
+`provider: anthropic`. The trace `request_body` and
+`response_body` mirror Anthropic's native shape (messages
+content blocks, not OpenAI choices). See
+[Observability](/docs/observability).
+
+## Next
+
+- [Bedrock](/docs/providers/bedrock) — Claude on AWS, with
+  IAM auth instead of an API key.
+- [SDKs](/docs/sdks) — keep your direct Anthropic connection,
+  scan separately via `@bastio/core`.

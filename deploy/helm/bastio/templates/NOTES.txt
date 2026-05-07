@@ -1,0 +1,51 @@
+{{- $fullName := include "bastio.fullname" . -}}
+Bastio v{{ .Chart.AppVersion }} is starting up.
+
+This chart is marked **alpha** in v2.0 — the values.yaml surface may
+shift in v2.1 based on early-adopter feedback. Pin --version when
+you upgrade.
+
+1. Wait for the deployment to roll out:
+
+   kubectl --namespace {{ .Release.Namespace }} rollout status \
+     deployment/{{ $fullName }}
+
+2. Tail the logs to confirm it's healthy:
+
+   kubectl --namespace {{ .Release.Namespace }} logs \
+     -l app.kubernetes.io/instance={{ .Release.Name }} -f
+
+{{- if .Values.ingress.enabled }}
+
+3. Reach the dashboard at:
+{{- range .Values.ingress.hosts }}
+{{- range .paths }}
+   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ .path }}
+{{- end }}
+{{- end }}
+
+{{- else if contains "ClusterIP" .Values.service.type }}
+
+3. Port-forward to test the dashboard locally:
+
+   kubectl --namespace {{ .Release.Namespace }} port-forward \
+     svc/{{ $fullName }} 8080:{{ .Values.service.port }}
+
+   Then open http://localhost:8080
+{{- end }}
+
+4. Smoke-check readiness:
+
+   kubectl --namespace {{ .Release.Namespace }} exec deploy/{{ $fullName }} \
+     -- wget -qO- http://localhost:{{ .Values.config.port }}/ready
+
+   Expected: {"status":"ready"}
+
+5. If something looks off, check that DATABASE_URL and REDIS_URL are
+   correctly populated in the secret:
+
+   kubectl --namespace {{ .Release.Namespace }} get secret \
+     {{ include "bastio.secretName" . }} -o yaml
+
+Docs: https://bastio.com/docs
+Issues: https://github.com/bastio-ai/bastio/issues

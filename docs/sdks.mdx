@@ -1,0 +1,165 @@
+---
+title: SDKs
+description: Python, TypeScript, and Go clients for Bastio's detect API.
+---
+
+The SDKs let you keep your existing LLM client and insert Bastio's
+security scan inline. Use these when you want finer control than
+the [gateway pattern](/docs/gateway) — for example, custom block
+UI, retry-on-mask logic, or scanning prompts you build yourself
+before they hit any model.
+
+All SDKs hit the same endpoint: `POST /v1/detect`. They're thin
+wrappers around the HTTP API and depend on no Bastio internals.
+
+## TypeScript
+
+Three packages, one engine:
+
+| Package | What it does |
+|---|---|
+| `@bastio/core` | Thin HTTP client + shared types + `BastioBlockedError` |
+| `@bastio/mastra` | Input / output processors for [Mastra](https://mastra.ai) agents |
+| `@bastio/vercel-ai` | Middleware for the [Vercel AI SDK](https://sdk.vercel.ai) |
+
+```bash
+npm install @bastio/core
+```
+
+### Direct API usage
+
+```ts
+import { Bastio, BastioBlockedError } from "@bastio/core";
+
+const bastio = new Bastio({
+  baseURL: process.env.BASTIO_URL!,
+  apiKey: process.env.BASTIO_KEY!,
+});
+
+try {
+  const result = await bastio.detect({
+    content: userPrompt,
+    direction: "inbound",
+  });
+  // result.action: "allow" | "mask" | "tokenize" | "block"
+  // result.sanitized: rewritten content if mask/tokenize
+  if (result.action === "allow") {
+    return await openai.chat.completions.create({ ... });
+  }
+} catch (err) {
+  if (err instanceof BastioBlockedError) {
+    // err.threats — typed list (pii_email, jailbreak, ...)
+    showBlockedNotice(err.threats);
+  }
+}
+```
+
+### Vercel AI SDK middleware
+
+```ts
+import { wrapLanguageModel } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { bastioMiddleware } from "@bastio/vercel-ai";
+
+const model = wrapLanguageModel({
+  model: openai("gpt-4o"),
+  middleware: bastioMiddleware({
+    baseURL: process.env.BASTIO_URL!,
+    apiKey: process.env.BASTIO_KEY!,
+  }),
+});
+
+// Use `model` like any other Vercel AI SDK model.
+```
+
+When the profile picks `block`, the wrapped model throws
+`BastioBlockedError`. When it picks `mask` / `tokenize`, the
+content is rewritten before the model sees it. `warn` and
+`log_only` pass through transparently.
+
+### Mastra agent processors
+
+```ts
+import { Agent } from "@mastra/core";
+import { BastioInputProcessor, BastioOutputProcessor } from "@bastio/mastra";
+
+const agent = new Agent({
+  id: "support",
+  inputProcessors: [
+    new BastioInputProcessor({ baseURL, apiKey }),
+  ],
+  outputProcessors: [
+    new BastioOutputProcessor({ baseURL, apiKey }),
+  ],
+});
+```
+
+## Python
+
+```bash
+pip install bastio
+```
+
+```python
+from bastio import Bastio, BastioBlockedError
+
+bastio = Bastio(
+    base_url=os.environ["BASTIO_URL"],
+    api_key=os.environ["BASTIO_KEY"],
+)
+
+try:
+    result = bastio.detect(content=user_prompt, direction="inbound")
+    if result.action == "allow":
+        response = openai.chat.completions.create(...)
+    elif result.action == "mask":
+        # send result.sanitized to the model instead
+        response = openai.chat.completions.create(messages=[
+            {"role": "user", "content": result.sanitized},
+        ])
+except BastioBlockedError as e:
+    # e.threats — typed list
+    return blocked_response(e.threats)
+```
+
+## Go
+
+```bash
+go get github.com/bastio-ai/bastio/sdk/go
+```
+
+```go
+import bastio "github.com/bastio-ai/bastio/sdk/go"
+
+client := bastio.New(bastio.Config{
+    BaseURL: os.Getenv("BASTIO_URL"),
+    APIKey:  os.Getenv("BASTIO_KEY"),
+})
+
+result, err := client.Detect(ctx, &bastio.DetectRequest{
+    Content:   prompt,
+    Direction: bastio.DirectionInbound,
+})
+if errors.Is(err, bastio.ErrBlocked) {
+    return blockedResponse(result.Threats)
+}
+```
+
+## When to use which pattern
+
+| Scenario | Recommendation |
+|---|---|
+| OpenAI / Anthropic SDK in production, no agent framework | [Gateway](/docs/gateway) — change baseURL, done |
+| Mastra or Vercel AI SDK | TypeScript SDK middleware |
+| Direct provider call with custom retry / block UI | SDK direct usage |
+| Pre-flight scan of cached prompts before LLM call | SDK direct usage |
+| Scanning context retrieved from a vector DB before passing to LLM | SDK direct usage (the only way to scan retrieved context) |
+
+You can mix them. The gateway protects the user → model leg;
+the SDK protects internal pipelines (RAG retrieval, prompt
+caching, prompt building tools).
+
+## Next
+
+- [Threats](/docs/threats) — the action types your SDK code will branch on.
+- [Architecture](/docs/architecture) — how `/v1/detect` fits the bigger picture.
