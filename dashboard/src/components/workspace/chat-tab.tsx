@@ -37,6 +37,14 @@ function isFirstTime(items: ConversationListItem[]): boolean {
 
 type Props = {
   initialConversationID?: string;
+  // manageUrl controls whether ChatTab rewrites window.history when the
+  // active conversation changes. The workspace-app SPA owns its own
+  // host (workspace.bastio.com), so /  ↔ /c/<id> URL ownership is
+  // safe — that's the default (true). The OSS dashboard mounts ChatTab
+  // at /chat as part of a wider router; rewriting to / from there
+  // would clobber the dashboard's URL. Pass `manageUrl={false}` in
+  // that case.
+  manageUrl?: boolean;
 };
 
 // readConversationIDFromPath pulls /c/<uuid> from the current
@@ -50,7 +58,7 @@ function readConversationIDFromPath(): string | null {
   return m ? (m[1] ?? null) : null;
 }
 
-export function ChatTab({ initialConversationID }: Props) {
+export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
   const qc = useQueryClient();
   const [activeID, setActiveID] = useState<string | null>(
     () => readConversationIDFromPath() ?? initialConversationID ?? null,
@@ -263,12 +271,16 @@ export function ChatTab({ initialConversationID }: Props) {
   // Compares against current location to avoid duplicate history
   // entries when the path is already correct (e.g. on initial mount
   // after readPath set the state).
+  // Skipped when `manageUrl=false` so consumers that mount ChatTab
+  // inside a wider router (the OSS dashboard's /chat route) don't
+  // get their pathname clobbered.
   useEffect(() => {
+    if (!manageUrl) return;
     const next = activeID ? `/c/${activeID}` : "/";
     if (window.location.pathname !== next) {
       window.history.pushState({}, "", next + window.location.search + window.location.hash);
     }
-  }, [activeID]);
+  }, [activeID, manageUrl]);
 
   // Extension-redirect prefill. The Bastio Governance browser
   // extension ships a "Continue in Workspace" button on its block
@@ -459,8 +471,13 @@ export function ChatTab({ initialConversationID }: Props) {
         sidebarOpen
           ? // Mobile: chat takes full width, sidebar overlays via
             // fixed positioning (see ConversationList wrapper below).
-            // Desktop: side-by-side grid.
-            "flex h-full min-h-0 lg:grid lg:grid-cols-[280px_1fr] lg:gap-4"
+            // Desktop: side-by-side grid. grid-rows is explicit because
+            // default `auto` sizes the row to content's max-content —
+            // a tall sidebar list (or scroll-container content) blows
+            // the row past the parent's height and pushes the composer
+            // off-screen. minmax(0,1fr) forces the row to fit the
+            // grid's own height, letting `min-h-0` on children shrink.
+            "flex h-full min-h-0 lg:grid lg:grid-cols-[280px_1fr] lg:grid-rows-[minmax(0,1fr)] lg:gap-4"
           : "flex h-full min-h-0"
       }
     >
@@ -506,7 +523,7 @@ export function ChatTab({ initialConversationID }: Props) {
       )}
 
       <Card
-        className="relative flex min-h-0 flex-col overflow-hidden"
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         onDragOver={(e) => {
           // dataTransfer.types includes "Files" only for file drags —
           // suppresses the overlay during text-selection drags from
@@ -876,7 +893,20 @@ function ConversationList({
   // ChatGPT / Claude — Pinned at the top, then Today, Yesterday, Last
   // 7 days, Last 30 days, Older. Empty buckets are skipped. Within
   // each bucket, items keep the server's last_message_at DESC order.
-  const groups = bucketConversations(filtered);
+  const allGroups = bucketConversations(filtered);
+
+  // When idle (no search), cap the visible total so the sidebar never
+  // crowds the chat composer — older history lives one click away on
+  // /chats (paginated, with its own search). Pinned items always pass
+  // through uncut; the cap only trims trailing date buckets. While
+  // searching the user wants every match — uncapped.
+  const SIDEBAR_CAP = 8;
+  const isSearching = query.trim().length > 0;
+  const groups = isSearching
+    ? allGroups
+    : capGroups(allGroups, SIDEBAR_CAP);
+  const totalShown = groups.reduce((n, g) => n + g.items.length, 0);
+  const hiddenCount = filtered.length - totalShown;
 
   return (
     <Card className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -949,13 +979,20 @@ function ConversationList({
             page (Favio-shape). Plain anchor not Link so it works in
             both router-less (workspace-app) and router-aware
             consumers; the workspace-app's App component swaps render
-            trees on /chats. */}
+            trees on /chats. Always shown when there are items so the
+            user has a stable escape hatch from the recent-only sidebar. */}
         {!loading && items.length > 0 && (
           <a
             href="/chats"
-            className="mt-2 block rounded-md px-2 py-2 text-center text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="mt-2 flex shrink-0 items-center justify-between rounded-md border border-transparent px-2 py-2 text-xs text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground"
           >
-            View all chats →
+            <span>View all chats</span>
+            <span className="flex items-center gap-1.5">
+              {!isSearching && hiddenCount > 0 && (
+                <span className="tabular-nums">+{hiddenCount}</span>
+              )}
+              <span aria-hidden>→</span>
+            </span>
           </a>
         )}
       </CardContent>
@@ -1293,6 +1330,30 @@ function bucketConversations(items: ConversationListItem[]): {
 		{ label: "Previous 30 days", items: last30 },
 		{ label: "Older", items: older },
 	];
+}
+
+// capGroups trims a bucketed list to a maximum total item count while
+// preserving bucket order. Pinned items always pass through (they're
+// the first bucket and the user explicitly asked for them up top); the
+// remaining buckets get whatever room is left. Empty buckets are
+// dropped so the rendered list stays tidy.
+function capGroups(
+	groups: { label: string; items: ConversationListItem[] }[],
+	cap: number,
+): { label: string; items: ConversationListItem[] }[] {
+	const out: { label: string; items: ConversationListItem[] }[] = [];
+	let remaining = cap;
+	for (const g of groups) {
+		if (g.items.length === 0) continue;
+		if (g.label === "Pinned") {
+			out.push(g);
+			continue;
+		}
+		if (remaining <= 0) continue;
+		out.push({ label: g.label, items: g.items.slice(0, remaining) });
+		remaining -= Math.min(g.items.length, remaining);
+	}
+	return out;
 }
 
 // ConversationRow is one item in the bucketed list. The row body

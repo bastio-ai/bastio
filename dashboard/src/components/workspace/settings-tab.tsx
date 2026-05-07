@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe, Trash2, CheckCircle2, AlertCircle, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { SkeletonRows } from "@/components/skeleton";
 
-import { workspaceApi, type Settings, type Domain } from "./types";
+import { workspaceApi, type Settings } from "./types";
 import { MODEL_CATALOG, type AllowedModelEntry } from "./model-picker";
 
 export function SettingsTab() {
@@ -71,8 +69,6 @@ export function SettingsTab() {
 
   return (
     <div className="space-y-6">
-      <BrandedChatSection settings={settings.data ?? null} />
-
       <h3 className="text-sm font-semibold">AI persona</h3>
       <p className="text-xs text-muted-foreground -mt-4">
         Give your workspace's AI a name and personality. Applies to every assistant — employees see
@@ -319,222 +315,7 @@ function ModelWhitelistEditor({
   );
 }
 
-// =============================================================================
-// Branded chat: slug + custom domains
-// =============================================================================
-
-function BrandedChatSection({ settings }: { settings: Settings | null }) {
-  const qc = useQueryClient();
-  const domains = useQuery({
-    queryKey: ["workspace", "domains"],
-    queryFn: workspaceApi.listDomains,
-  });
-  const [slugDraft, setSlugDraft] = useState("");
-  const [slugError, setSlugError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (settings?.slug) setSlugDraft(settings.slug);
-  }, [settings?.slug]);
-
-  const saveSlug = useMutation({
-    mutationFn: () => workspaceApi.setSlug(slugDraft.trim()),
-    onSuccess: () => {
-      setSlugError(null);
-      qc.invalidateQueries({ queryKey: ["workspace", "settings"] });
-    },
-    onError: (err) => setSlugError((err as Error).message),
-  });
-
-  const slugSet = !!settings?.slug;
-  const hostedURL = settings?.slug
-    ? `${window.location.origin.replace("//bastio.", "//workspace.bastio.").replace("//bastio.com", "//workspace.bastio.com")}/c/${settings.slug}`
-    : null;
-
-  return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Branded chat</h3>
-      <p className="text-xs text-muted-foreground">
-        Give your team or clients a hosted chat URL. Use a custom domain
-        (e.g. <code>ai.acme.com</code>) to put your own brand on it — visitors
-        never see <code>bastio.com</code>.
-      </p>
-
-      <Card>
-        <CardContent className="space-y-3 p-4">
-          <Field label="Workspace slug">
-            <div className="flex gap-2">
-              <input
-                value={slugDraft}
-                onChange={(e) => setSlugDraft(e.target.value.toLowerCase())}
-                placeholder="acme-team"
-                className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
-              />
-              <Button
-                size="sm"
-                onClick={() => saveSlug.mutate()}
-                disabled={!slugDraft.trim() || saveSlug.isPending || slugDraft === settings?.slug}
-              >
-                {saveSlug.isPending ? "Saving…" : slugSet ? "Update" : "Claim"}
-              </Button>
-            </div>
-          </Field>
-          {slugError && (
-            <p className="text-sm text-destructive">{slugError}</p>
-          )}
-          {hostedURL && (
-            <p className="text-xs text-muted-foreground">
-              Hosted at:{" "}
-              <a
-                href={hostedURL}
-                target="_blank"
-                rel="noopener"
-                className="text-cyan-500 hover:underline"
-              >
-                {hostedURL}
-              </a>
-            </p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Lowercase letters, digits, and hyphens. 3–40 chars.
-          </p>
-        </CardContent>
-      </Card>
-
-      <DomainsCard
-        domains={domains.data?.domains ?? []}
-        loading={domains.isLoading}
-      />
-    </div>
-  );
-}
-
-function DomainsCard({ domains, loading }: { domains: Domain[]; loading: boolean }) {
-  const qc = useQueryClient();
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const create = useMutation({
-    mutationFn: () => workspaceApi.createDomain(draft.trim()),
-    onSuccess: () => {
-      setDraft("");
-      setError(null);
-      qc.invalidateQueries({ queryKey: ["workspace", "domains"] });
-    },
-    onError: (err) => setError((err as Error).message),
-  });
-  const verify = useMutation({
-    mutationFn: workspaceApi.verifyDomain,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace", "domains"] }),
-  });
-  const remove = useMutation({
-    mutationFn: workspaceApi.deleteDomain,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace", "domains"] }),
-  });
-
-  return (
-    <Card>
-      <CardContent className="space-y-3 p-4">
-        <h4 className="text-sm font-semibold">Custom domains</h4>
-        <p className="text-xs text-muted-foreground">
-          Point your domain at <code>bastio.com</code> via CNAME, then verify ownership with
-          a DNS TXT record. Multiple domains are supported.
-        </p>
-
-        <div className="flex gap-2">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value.toLowerCase())}
-            placeholder="ai.acme.com"
-            className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
-          />
-          <Button
-            size="sm"
-            onClick={() => create.mutate()}
-            disabled={!draft.trim() || create.isPending}
-          >
-            <Plus className="mr-2 h-4 w-4" /> Add domain
-          </Button>
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        {loading && <SkeletonRows count={2} />}
-        {!loading && domains.length === 0 && (
-          <p className="py-4 text-center text-xs text-muted-foreground">
-            No custom domains yet.
-          </p>
-        )}
-
-        <ul className="space-y-3">
-          {domains.map((d) => (
-            <DomainRow
-              key={d.id}
-              d={d}
-              onVerify={() => verify.mutate(d.id)}
-              onDelete={() => {
-                if (confirm(`Remove ${d.domain}?`)) remove.mutate(d.id);
-              }}
-              verifying={verify.isPending}
-            />
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DomainRow({
-  d,
-  onVerify,
-  onDelete,
-  verifying,
-}: {
-  d: Domain;
-  onVerify: () => void;
-  onDelete: () => void;
-  verifying: boolean;
-}) {
-  const verified = !!d.verified_at;
-  return (
-    <li className="rounded-md border border-border p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Globe className="h-4 w-4 text-muted-foreground" />
-          <span className="truncate font-mono text-sm">{d.domain}</span>
-          {verified ? (
-            <Badge variant="secondary" className="gap-1">
-              <CheckCircle2 className="h-3 w-3" /> Verified
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="gap-1">
-              <AlertCircle className="h-3 w-3" /> Pending
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          {!verified && (
-            <Button size="sm" variant="ghost" onClick={onVerify} disabled={verifying}>
-              {verifying ? "Checking…" : "Verify"}
-            </Button>
-          )}
-          <Button size="sm" variant="ghost" onClick={onDelete}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-      {!verified && (
-        <div className="mt-3 space-y-1 text-xs">
-          <p className="text-muted-foreground">
-            Add a TXT record at <code className="font-mono">{d.domain}</code> with this
-            value:
-          </p>
-          <code className="block break-all rounded-md bg-muted p-2 font-mono">
-            bastio-verify={d.verification_token}
-          </code>
-          {d.last_check_error && (
-            <p className="text-destructive">Last check: {d.last_check_error}</p>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
+// Branded chat (slug + custom domains) was moved to bastio-cloud's
+// cloud-dashboard/src/components/workspace/domains-tab.tsx — both
+// features depend on hosted infrastructure (workspace.bastio.com
+// routing + DNS verification) that doesn't exist in OSS deployments.

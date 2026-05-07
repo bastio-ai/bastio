@@ -52,12 +52,17 @@ function GovernanceLazyRoute() {
   );
 }
 
-// Workspace admin console — configure assistants, team, knowledge,
-// integrations, retention, billing. The chat product employees use
-// is a separate Vite app at workspace.bastio.com (or a custom domain),
-// not embedded in the admin dashboard.
+// Workspace admin console — configure assistants, knowledge, settings.
+// The chat surface is also reachable in-app at /workspace/chat for OSS
+// (single-tenant) deployments; cloud deployments override the "Open
+// Workspace" link via WorkspaceExtension.openWorkspaceURL to point at
+// the dedicated employee SPA at workspace.bastio.com.
 const WorkspacePage = lazy(() =>
   import("./workspace").then((m) => ({ default: m.WorkspacePage })),
+);
+
+const WorkspaceChatPage = lazy(() =>
+  import("./workspace-chat").then((m) => ({ default: m.WorkspaceChatPage })),
 );
 
 function WorkspaceLazyRoute() {
@@ -70,6 +75,20 @@ function WorkspaceLazyRoute() {
       }
     >
       <WorkspacePage />
+    </Suspense>
+  );
+}
+
+function WorkspaceChatLazyRoute() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
+          Loading chat…
+        </div>
+      }
+    >
+      <WorkspaceChatPage />
     </Suspense>
   );
 }
@@ -258,6 +277,17 @@ const workspaceRoute = createRoute({
   component: WorkspaceLazyRoute,
 });
 
+// Path is /chat at the root, not /workspace/chat — TanStack Router
+// treats sibling literal-segment routes that share a prefix
+// (`/workspace` + `/workspace/chat`) ambiguously and routes the longer
+// one to the index. /chat as a top-level route avoids the collision
+// and reads cleaner in the URL bar anyway.
+const workspaceChatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat",
+  component: WorkspaceChatLazyRoute,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   tracesRoute,
@@ -284,4 +314,5 @@ export const routeTree = rootRoute.addChildren([
   overlayTemplatesRoute,
   governanceRoute,
   workspaceRoute,
+  workspaceChatRoute,
 ]);

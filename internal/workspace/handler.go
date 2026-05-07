@@ -104,6 +104,22 @@ type Handler struct {
 	// paths to refuse). OSS deployments leave it nil — no gate, no
 	// extra hop per request.
 	billingGate func(http.Handler) http.Handler
+
+	// cloudOnlyEnabled gates the 16 multi-user / audit / per-user-
+	// analytics / custom-domain endpoints behind explicit opt-in.
+	// Default false: OSS deployments don't register them — the
+	// associated frontend code lives in bastio-cloud only (Phase 1
+	// of the OSS↔Cloud split, commit 90678b0). Cloud-server flips
+	// this via WorkspaceCustomizer.EnableCloudOnlyRoutes() during
+	// the WithWorkspaceCustomize callback.
+	//
+	// A determined self-hoster could write Go code that imports
+	// pkg/server and calls EnableCloudOnlyRoutes() to flip it back
+	// on — but the auth + billing + SSO backends those endpoints
+	// rely on still don't exist in OSS, so flipping the flag yields
+	// 401/500-shaped failures, not a working multi-user product.
+	// The barrier is meaningful even though it's not absolute.
+	cloudOnlyEnabled bool
 }
 
 // NewHandler wires the workspace handler. registry is the same provider
@@ -193,6 +209,14 @@ func (h *Handler) SetSecurityProfiles(p security.ProfileLookup) { h.secProfiles 
 // called — the middleware is read once at route construction.
 func (h *Handler) SetBillingGate(mw func(http.Handler) http.Handler) { h.billingGate = mw }
 
+// EnableCloudOnlyRoutes opts the workspace handler into registering the
+// multi-user / audit / per-user-analytics / custom-domain endpoints
+// that depend on bastio-cloud's auth, billing, and SSO backends.
+// Cloud-server calls this during WithWorkspaceCustomize. OSS leaves
+// it unset — the routes don't register, the endpoints 404. See the
+// cloudOnlyEnabled field comment for the threat model.
+func (h *Handler) EnableCloudOnlyRoutes() { h.cloudOnlyEnabled = true }
+
 // SetObservabilityRecorder wires the ClickHouse recorder so workspace
 // chat traffic appears in the same trace + threat catalog the
 // gateway populates. Without it, workspace messages still land in
@@ -237,11 +261,15 @@ func (h *Handler) Routes() chi.Router {
 	// actions (transfer, billing) get a separate gate.
 	// =========================================================
 
-	// Status + whoami are viewer-min — even read-only auditors
-	// need to see whether the workspace is enabled and who they
-	// are. /whoami is the frontend's role-discovery endpoint.
+	// Status is viewer-min — even read-only auditors need to see
+	// whether the workspace is enabled.
 	r.With(RequireRole(RoleViewer)).Get("/status", h.status)
-	r.With(RequireRole(RoleViewer)).Get("/whoami", h.whoami)
+	// /whoami is the frontend's role-discovery endpoint and only
+	// makes sense in multi-user (cloud) deployments. OSS is
+	// single-tenant — there's only one user, no role to discover.
+	if h.cloudOnlyEnabled {
+		r.With(RequireRole(RoleViewer)).Get("/whoami", h.whoami)
+	}
 
 	r.With(RequireRole(RoleViewer)).Get("/settings", h.getSettings)
 	r.With(RequireRole(RoleAdmin)).Patch("/settings", h.patchSettings)
@@ -289,30 +317,36 @@ func (h *Handler) Routes() chi.Router {
 		r.With(RequireRole(RoleMember)).Delete("/{id}/messages/{messageID}", h.deleteFromMessage)
 	})
 
-	r.Route("/members", func(r chi.Router) {
-		// Listing members is viewer-readable — everyone can see
-		// who's in the workspace.
-		r.With(RequireRole(RoleViewer)).Get("/", h.listMembers)
-		r.With(RequireRole(RoleAdmin)).Patch("/{userID}/budgets", h.setMemberBudgets)
-		r.With(RequireRole(RoleAdmin)).Patch("/{userID}/role", h.changeMemberRole)
-		r.With(RequireRole(RoleAdmin)).Delete("/{userID}", h.removeMember)
-	})
+	// Members, invitations, owner transfer — multi-user features.
+	// Cloud-only: OSS is single-tenant by design (no auth, one
+	// hardcoded customer), so there's no "members" concept to list
+	// or invite into. Cloud-server opts in via EnableCloudOnlyRoutes.
+	if h.cloudOnlyEnabled {
+		r.Route("/members", func(r chi.Router) {
+			// Listing members is viewer-readable — everyone can see
+			// who's in the workspace.
+			r.With(RequireRole(RoleViewer)).Get("/", h.listMembers)
+			r.With(RequireRole(RoleAdmin)).Patch("/{userID}/budgets", h.setMemberBudgets)
+			r.With(RequireRole(RoleAdmin)).Patch("/{userID}/role", h.changeMemberRole)
+			r.With(RequireRole(RoleAdmin)).Delete("/{userID}", h.removeMember)
+		})
 
-	// Owner transfer — only the existing owner can hand off
-	// the workspace. Picks an existing member and promotes them
-	// to owner; the previous owner becomes admin.
-	r.With(RequireRole(RoleOwner)).Post("/owner/transfer", h.transferOwnership)
+		// Owner transfer — only the existing owner can hand off
+		// the workspace. Picks an existing member and promotes them
+		// to owner; the previous owner becomes admin.
+		r.With(RequireRole(RoleOwner)).Post("/owner/transfer", h.transferOwnership)
 
-	r.Route("/invitations", func(r chi.Router) {
-		r.With(RequireRole(RoleViewer)).Get("/", h.listInvitations)
-		r.With(RequireRole(RoleAdmin)).Post("/", h.createInvitation)
-		// Accept is intentionally NOT role-gated — the caller is
-		// signed in but might not yet be a workspace member. The
-		// handler authorizes via the bearer token in the body,
-		// which encodes the inviter's intent.
-		r.Post("/accept", h.acceptInvitation)
-		r.With(RequireRole(RoleAdmin)).Delete("/{id}", h.revokeInvitation)
-	})
+		r.Route("/invitations", func(r chi.Router) {
+			r.With(RequireRole(RoleViewer)).Get("/", h.listInvitations)
+			r.With(RequireRole(RoleAdmin)).Post("/", h.createInvitation)
+			// Accept is intentionally NOT role-gated — the caller is
+			// signed in but might not yet be a workspace member. The
+			// handler authorizes via the bearer token in the body,
+			// which encodes the inviter's intent.
+			r.Post("/accept", h.acceptInvitation)
+			r.With(RequireRole(RoleAdmin)).Delete("/{id}", h.revokeInvitation)
+		})
+	}
 
 	r.Route("/analytics", func(r chi.Router) {
 		// All analytics are viewer-readable — observation is the
@@ -321,27 +355,37 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/summary", h.analyticsSummary)
 		r.Get("/daily", h.analyticsDaily)
 		r.Get("/by-model", h.analyticsByModel)
-		r.Get("/users", h.analyticsTopUsers)
-		r.Get("/users/{userID}", h.analyticsUserDetail)
 		r.Get("/forecast", h.analyticsForecast)
 		r.Get("/compare", h.analyticsCompare)
+		// Per-user analytics (top users, user detail) require a
+		// users concept — cloud-only.
+		if h.cloudOnlyEnabled {
+			r.Get("/users", h.analyticsTopUsers)
+			r.Get("/users/{userID}", h.analyticsUserDetail)
+		}
 	})
 
-	// Audit log read — admin+. Every privileged mutation in the
-	// workspace handlers writes a row via h.audit; this is the
-	// single endpoint admins use to see who did what.
-	r.With(RequireRole(RoleAdmin)).Get("/audit", h.listAudit)
+	// Audit log read, branded chat slug + custom-domain CRUD —
+	// cloud-only. Audit retention/export is a managed-product
+	// feature; branded-domain routing depends on the cloud's
+	// HostInterceptMiddleware + DNS-verification job worker.
+	if h.cloudOnlyEnabled {
+		// Audit log read — admin+. Every privileged mutation in the
+		// workspace handlers writes a row via h.audit; this is the
+		// single endpoint admins use to see who did what.
+		r.With(RequireRole(RoleAdmin)).Get("/audit", h.listAudit)
 
-	// Branded chat admin: slug + custom-domain CRUD with DNS
-	// verification. Admin-only (the public-facing branded routes
-	// are mounted outside the auth group via PublicRoutes / HostRoutes).
-	r.With(RequireRole(RoleAdmin)).Put("/settings/slug", h.setSlug)
-	r.Route("/domains", func(r chi.Router) {
-		r.With(RequireRole(RoleViewer)).Get("/", h.listDomains)
-		r.With(RequireRole(RoleAdmin)).Post("/", h.createDomain)
-		r.With(RequireRole(RoleAdmin)).Post("/{id}/verify", h.verifyDomain)
-		r.With(RequireRole(RoleAdmin)).Delete("/{id}", h.deleteDomain)
-	})
+		// Branded chat admin: slug + custom-domain CRUD with DNS
+		// verification. Admin-only (the public-facing branded routes
+		// are mounted outside the auth group via PublicRoutes / HostRoutes).
+		r.With(RequireRole(RoleAdmin)).Put("/settings/slug", h.setSlug)
+		r.Route("/domains", func(r chi.Router) {
+			r.With(RequireRole(RoleViewer)).Get("/", h.listDomains)
+			r.With(RequireRole(RoleAdmin)).Post("/", h.createDomain)
+			r.With(RequireRole(RoleAdmin)).Post("/{id}/verify", h.verifyDomain)
+			r.With(RequireRole(RoleAdmin)).Delete("/{id}", h.deleteDomain)
+		})
+	}
 
 	return r
 }

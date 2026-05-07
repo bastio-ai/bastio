@@ -1,49 +1,39 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, X, ExternalLink } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { CheckCircle2, X, ExternalLink, ArrowRight, MessageSquare } from "lucide-react";
 
 import { PageHeader } from "@/components/card";
 
 import { DashboardTab } from "@/components/workspace/dashboard-tab";
-import { TeamTab } from "@/components/workspace/team-tab";
 import { AssistantsTab } from "@/components/workspace/assistants-tab";
 import { KnowledgeTab } from "@/components/workspace/knowledge-tab";
-import { IntegrationsTab } from "@/components/workspace/integrations-tab";
 import { SettingsTab } from "@/components/workspace/settings-tab";
-import { AnalyticsTab } from "@/components/workspace/analytics-tab";
-import { AuditTab } from "@/components/workspace/audit-tab";
+import { useWorkspaceExtension } from "@/components/workspace/extension-context";
 
-// AdminTab is the operator-facing view of Workspace. The chat product
-// itself lives in a separate app at workspace.bastio.com (or the
-// customer's custom domain) — employees never see the admin surface,
-// admins never need to embed the chat surface inside their dashboard.
-type AdminTab =
-  | "dashboard"
-  | "team"
-  | "assistants"
-  | "knowledge"
-  | "integrations"
-  | "settings"
-  | "analytics"
-  | "audit";
+// AdminTab is the operator-facing view of Workspace. The chat surface
+// itself is reachable in-app at /chat (OSS single-tenant);
+// cloud deployments override the "Open Workspace" link via the
+// extension context to point at workspace.bastio.com instead.
+type AdminTab = "dashboard" | "assistants" | "knowledge" | "settings";
 
-const TABS: { id: AdminTab; label: string }[] = [
+const BASE_TABS: { id: string; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "team", label: "Team" },
   { id: "assistants", label: "Assistants" },
   { id: "knowledge", label: "Knowledge Base" },
-  { id: "integrations", label: "Integrations" },
   { id: "settings", label: "Settings" },
-  { id: "analytics", label: "Analytics" },
-  { id: "audit", label: "Audit Log" },
 ];
 
 // WorkspacePage is the ADMIN console for Workspace. Configure
-// assistants, knowledge bases, team membership, retention, billing.
-// The actual chat product employees use is a separate Vite app
-// served from a Workspace host (e.g. workspace.example.com or a
-// customer's branded domain).
+// assistants, knowledge, integrations, settings.
+//
+// Cloud-dashboard injects extra tabs (Team, Audit Log, Analytics,
+// Custom Domains) via WorkspaceExtensionProvider in its main.tsx —
+// OSS source ships without those tabs because their backend
+// (multi-user auth, billing, SSO) only exists in bastio-cloud.
 export function WorkspacePage() {
-  const [tab, setTab] = useState<AdminTab>("dashboard");
+  const { extraTabs, openWorkspaceURL, hideUpsell } = useWorkspaceExtension();
+
+  const [tab, setTab] = useState<string>("dashboard");
   const [showSubscribedToast, setShowSubscribedToast] = useState(false);
 
   // Stripe Checkout success URL is /workspace?subscribed=1 — when the
@@ -58,16 +48,7 @@ export function WorkspacePage() {
     }
   }, []);
 
-  // The dashboard tab originally surfaced an "open chat" affordance.
-  // Chat now lives at a separate host (workspace.bastio.com), so the
-  // affordance opens that URL in a new tab. workspaceURL falls back
-  // to a sensible local-dev default if the env var isn't set.
-  const workspaceURL =
-    (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env
-      ?.VITE_WORKSPACE_URL ?? "http://workspace.localhost:3000";
-  const openChat = () => {
-    window.open(workspaceURL, "_blank", "noopener,noreferrer");
-  };
+  const allTabs = [...BASE_TABS, ...extraTabs];
 
   return (
     <div className="space-y-6 p-6">
@@ -77,22 +58,13 @@ export function WorkspacePage() {
       <div className="flex items-start justify-between gap-4">
         <PageHeader
           title="Workspace"
-          description="Configure the AI chat product your team uses. Assistants, knowledge bases, team membership, retention, billing."
+          description="Configure the AI chat product your team uses. Assistants, knowledge bases, integrations, settings."
         />
-        <a
-          href={workspaceURL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground"
-          title="Open Workspace as an employee"
-        >
-          Open Workspace
-          <ExternalLink className="h-3 w-3" />
-        </a>
+        <OpenWorkspaceLink openWorkspaceURL={openWorkspaceURL} />
       </div>
 
       <div className="flex gap-1 overflow-x-auto border-b border-border">
-        {TABS.map((t) => (
+        {allTabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -108,14 +80,115 @@ export function WorkspacePage() {
         ))}
       </div>
 
-      {tab === "dashboard" && <DashboardTab onOpenChat={openChat} />}
-      {tab === "team" && <TeamTab />}
+      {tab === "dashboard" && (
+        <>
+          <DashboardTab onOpenChat={() => navigateToChat(openWorkspaceURL)} />
+          {!hideUpsell && <CloudUpsellCard />}
+        </>
+      )}
       {tab === "assistants" && <AssistantsTab />}
       {tab === "knowledge" && <KnowledgeTab />}
-      {tab === "integrations" && <IntegrationsTab />}
       {tab === "settings" && <SettingsTab />}
-      {tab === "analytics" && <AnalyticsTab />}
-      {tab === "audit" && <AuditTab />}
+
+      {/* Cloud-injected tabs render their own component below. */}
+      {extraTabs.map(
+        (et) => tab === et.id && <div key={et.id}>{et.component}</div>,
+      )}
+    </div>
+  );
+}
+
+// OpenWorkspaceLink renders the "Open Workspace" affordance in the
+// page header. In OSS (no openWorkspaceURL) it routes to the in-app
+// /chat full-screen route. In cloud, it opens the dedicated
+// employee SPA (workspace.bastio.com) in a new tab.
+function OpenWorkspaceLink({
+  openWorkspaceURL,
+}: {
+  openWorkspaceURL: string | null;
+}) {
+  const className =
+    "inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground";
+
+  if (openWorkspaceURL) {
+    return (
+      <a
+        href={openWorkspaceURL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+        title="Open Workspace as an employee"
+      >
+        Open Workspace
+        <ExternalLink className="h-3 w-3" />
+      </a>
+    );
+  }
+
+  return (
+    <Link to="/chat" className={className} title="Open chat">
+      Open chat
+      <MessageSquare className="h-3 w-3" />
+    </Link>
+  );
+}
+
+function navigateToChat(openWorkspaceURL: string | null) {
+  if (openWorkspaceURL) {
+    window.open(openWorkspaceURL, "_blank", "noopener,noreferrer");
+    return;
+  }
+  window.location.assign("/chat");
+}
+
+// CloudUpsellCard renders below the Workspace dashboard in OSS to
+// surface what Cloud unlocks (multi-user, SSO, audit retention,
+// managed Presidio). Hidden when WorkspaceExtension.hideUpsell is
+// true — i.e. on the hosted product where the user is already on
+// Cloud and the funnel would be noise.
+function CloudUpsellCard() {
+  const items = [
+    { label: "Team management", desc: "Invite users, roles, RBAC" },
+    { label: "Single sign-on", desc: "SAML, OIDC, SCIM" },
+    { label: "Stripe billing", desc: "Per-seat, per-token, mixed" },
+    { label: "Audit retention", desc: "7-year tamper-evident export" },
+    { label: "Custom domain", desc: "workspace.your-company.com" },
+    { label: "Managed Presidio", desc: "PII classifier, no setup" },
+  ];
+
+  return (
+    <div className="mt-6 rounded-lg border border-border bg-muted/30 p-6">
+      <div className="flex items-start justify-between gap-6">
+        <div className="max-w-xl">
+          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+            Bastio Cloud
+          </p>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight">
+            Run Workspace as a managed product.
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            OSS gives you the gateway, the chat surface, and one operator. Cloud
+            adds everything you need to run it for a real team.
+          </p>
+        </div>
+        <a
+          href="https://bastio.com/cloud"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:opacity-90"
+        >
+          See Cloud
+          <ArrowRight className="h-3 w-3" />
+        </a>
+      </div>
+      <div className="mt-5 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((it) => (
+          <div key={it.label} className="text-xs">
+            <p className="font-medium text-foreground">{it.label}</p>
+            <p className="text-muted-foreground">{it.desc}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -151,3 +224,7 @@ function SubscribedToast({ onDismiss }: { onDismiss: () => void }) {
     </div>
   );
 }
+
+// Used by AdminTab type so eslint doesn't flag the export-only type
+// when the strip drops to 5 tabs from 8.
+export type { AdminTab };

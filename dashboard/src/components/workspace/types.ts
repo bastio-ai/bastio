@@ -308,41 +308,45 @@ export const workspaceApi = {
     if (!r.ok) throw new Error(`transfer ownership ${r.status} ${await r.text()}`);
   },
 
-  // members + invitations
-  listMembers: async (): Promise<{ members: Member[] }> =>
-    (await unwrap(http.GET("/v1/workspace/members"))) as { members: Member[] },
+  // members + invitations — cloud-only, paths stripped from OSS
+  // openapi.yaml. rawJSON keeps these decoupled from generated path
+  // types so re-running `npm run generate:api` against the OSS spec
+  // doesn't break cloud-dashboard's typed client.
+  listMembers: (): Promise<{ members: Member[] }> =>
+    rawJSON("/v1/workspace/members"),
   removeMember: (userID: string) =>
-    unwrap(
-      http.DELETE("/v1/workspace/members/{userID}", {
-        params: { path: { userID } },
-      }),
-    ),
-  listInvitations: () => unwrap(http.GET("/v1/workspace/invitations")),
+    rawJSON<void>(`/v1/workspace/members/${encodeURIComponent(userID)}`, {
+      method: "DELETE",
+    }),
+  listInvitations: (): Promise<{ invitations: Invitation[] }> =>
+    rawJSON("/v1/workspace/invitations"),
   createInvitation: (body: {
     email: string;
     role?: "owner" | "admin" | "member" | "viewer";
-  }) => unwrap(http.POST("/v1/workspace/invitations", { body })),
+  }): Promise<Invitation> => rawJSON("/v1/workspace/invitations", { body }),
   revokeInvitation: (id: string) =>
-    unwrap(
-      http.DELETE("/v1/workspace/invitations/{id}", { params: { path: { id } } }),
-    ),
+    rawJSON<void>(`/v1/workspace/invitations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 
-  // branded chat: slug + custom domains
+  // branded chat: slug + custom domains — cloud-only.
   setSlug: (slug: string) =>
-    unwrap(http.PUT("/v1/workspace/settings/slug", { body: { slug } })),
-  listDomains: () => unwrap(http.GET("/v1/workspace/domains")),
-  createDomain: (domain: string) =>
-    unwrap(http.POST("/v1/workspace/domains", { body: { domain } })),
-  verifyDomain: (id: string) =>
-    unwrap(
-      http.POST("/v1/workspace/domains/{id}/verify", {
-        params: { path: { id } },
-      }),
-    ),
+    rawJSON<void>("/v1/workspace/settings/slug", {
+      method: "PUT",
+      body: { slug },
+    }),
+  listDomains: (): Promise<{ domains: Domain[] }> =>
+    rawJSON("/v1/workspace/domains"),
+  createDomain: (domain: string): Promise<Domain> =>
+    rawJSON("/v1/workspace/domains", { body: { domain } }),
+  verifyDomain: (id: string): Promise<Domain> =>
+    rawJSON(`/v1/workspace/domains/${encodeURIComponent(id)}/verify`, {
+      method: "POST",
+    }),
   deleteDomain: (id: string) =>
-    unwrap(
-      http.DELETE("/v1/workspace/domains/{id}", { params: { path: { id } } }),
-    ),
+    rawJSON<void>(`/v1/workspace/domains/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 
   // analytics
   analyticsSummary: () => unwrap(http.GET("/v1/workspace/analytics/summary")),
@@ -391,13 +395,34 @@ export const workspaceApi = {
   },
 };
 
-// rawJSON is the escape hatch for endpoints that openapi.yaml stubs
-// as `type: object` (no typed response). Threads through the same
-// session cookie auth as the typed client because both go through the
-// browser's fetch — no headers needed beyond Accept.
-async function rawJSON<T>(url: string): Promise<T> {
-  const r = await fetch(url, { headers: { Accept: "application/json" } });
+// rawJSON is the escape hatch for endpoints that openapi.yaml does
+// not document — primarily the cloud-only workspace API surface
+// (members, invitations, audit, domains, per-user analytics). Those
+// paths were stripped from the public OSS spec so /docs only renders
+// the single-tenant surface; their handlers still register at runtime
+// when cloud-server enables them via WorkspaceCustomizer.EnableCloudOnlyRoutes.
+//
+// Threads through the same session cookie auth as the typed client
+// because both go through the browser's fetch — no headers needed
+// beyond Accept. Pass `body` to send JSON; method defaults to POST
+// when a body is provided, otherwise GET.
+async function rawJSON<T>(
+  url: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  let bodyStr: string | undefined;
+  if (init.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    bodyStr = JSON.stringify(init.body);
+  }
+  const r = await fetch(url, {
+    method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
+    headers,
+    body: bodyStr,
+  });
   if (!r.ok) throw new Error(`fetch ${url} ${r.status} ${await r.text()}`);
+  if (r.status === 204) return undefined as T;
   return (await r.json()) as T;
 }
 

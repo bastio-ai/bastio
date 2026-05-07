@@ -172,6 +172,12 @@ type WorkspaceCustomizer interface {
 	// root of the workspace router. Cloud uses this to gate paid-tier
 	// surfaces behind an active subscription. OSS leaves it unset.
 	SetBillingGate(func(http.Handler) http.Handler)
+	// EnableCloudOnlyRoutes opts the workspace handler into registering
+	// the multi-user / audit / per-user-analytics / custom-domain
+	// endpoints whose backend (auth, billing, SSO) only exists in
+	// bastio-cloud. Cloud-server flips this; OSS leaves it unset so
+	// the corresponding routes don't register and return 404.
+	EnableCloudOnlyRoutes()
 	Pool() *pgxpool.Pool
 }
 
