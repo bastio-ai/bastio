@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +12,16 @@ import (
 	"github.com/bastio-ai/bastio/internal/llmpipeline"
 	"github.com/bastio-ai/bastio/internal/security"
 )
+
+// debugSecurityEnabled gates the per-request workspace security
+// diagnostic logs. We added them during launch-week debugging when
+// the input-scan path was misbehaving on real traffic; they're
+// noisy in production (one entry per workspace message), so they're
+// off unless `BASTIO_DEBUG_SECURITY=1` is set in the environment.
+//
+// Read once at package init — env vars don't change at runtime, and
+// this is on a hot path.
+var debugSecurityEnabled = os.Getenv("BASTIO_DEBUG_SECURITY") == "1"
 
 // scanUserMessage runs the workspace's pre-flight security scan against
 // the user's prompt. Mirrors what the gateway does on every API
@@ -51,22 +62,25 @@ func (h *Handler) scanUserMessage(ctx context.Context, customerID uuid.UUID, use
 		SkipSanitization: false,
 		Role:             security.RoleUser,
 	})
-	// Diagnostic: log every preflight outcome so we can see whether
-	// the input scan caught a finding and whether ShouldBlock fired.
-	// Useful for tracing why workspace messages get past the gate
-	// when the trace later shows a "block" finding.
-	if res != nil {
-		slog.Info("workspace preflight",
-			"customer_id", customerID,
-			"content_len", len(content),
-			"action", res.Action,
-			"should_block", res.ShouldBlock,
-			"threat_score", res.ThreatScore,
-			"findings", len(res.Findings))
-	} else {
-		slog.Info("workspace preflight returned nil",
-			"customer_id", customerID,
-			"content_len", len(content))
+	// Diagnostic logging — gated behind BASTIO_DEBUG_SECURITY=1.
+	// One log entry per workspace message is noisy at scale; we keep
+	// these around because they're invaluable when debugging why a
+	// message either failed to block or blocked unexpectedly, but
+	// they shouldn't run in normal production.
+	if debugSecurityEnabled {
+		if res != nil {
+			slog.Info("workspace preflight",
+				"customer_id", customerID,
+				"content_len", len(content),
+				"action", res.Action,
+				"should_block", res.ShouldBlock,
+				"threat_score", res.ThreatScore,
+				"findings", len(res.Findings))
+		} else {
+			slog.Info("workspace preflight returned nil",
+				"customer_id", customerID,
+				"content_len", len(content))
+		}
 	}
 	return res, profile, nil
 }
