@@ -168,6 +168,10 @@ func WithAPIExtension(fn func(r chi.Router)) Option {
 type WorkspaceCustomizer interface {
 	SetKeyResolver(KeyResolver)
 	SetEmbeddingClient(EmbeddingClient)
+	// SetBillingGate installs a chi-shaped middleware that runs at the
+	// root of the workspace router. Cloud uses this to gate paid-tier
+	// surfaces behind an active subscription. OSS leaves it unset.
+	SetBillingGate(func(http.Handler) http.Handler)
 	Pool() *pgxpool.Pool
 }
 
