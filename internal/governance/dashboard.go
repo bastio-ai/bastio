@@ -395,6 +395,13 @@ func (s *EventStore) RecentEvents(ctx context.Context, customerID uuid.UUID, lim
 	if s.ch == nil {
 		return nil, nil
 	}
+	// Enforce the cap the doc comment above already promises. Without
+	// this clamp the limit flowed straight into a make([]EventRow, ...,
+	// limit) call, which CodeQL flagged as DoS-able if a hostile caller
+	// sent a huge value.
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
 
 	q := `
 SELECT event_id, occurred_at, user_id, source_domain, rule_ids, severity, action,

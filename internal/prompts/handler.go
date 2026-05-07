@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -367,6 +368,13 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		n, err := strconv.Atoi(q.Get("version"))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid version", err)
+			return
+		}
+		// Reject values that don't fit a positive int32. Prompt versions
+		// fit comfortably below 2^31; anything outside that range is a
+		// malformed query string, not a real version.
+		if n < 1 || n > math.MaxInt32 {
+			writeError(w, http.StatusBadRequest, "version out of range", nil)
 			return
 		}
 		versionRow = h.fetchVersion(r, promptID, int32(n))

@@ -591,7 +591,13 @@ func appendBastioField(raw []byte, envelope map[string]any) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	out := make([]byte, 0, len(raw)+len(envBytes)+16)
+	// Don't pre-size the buffer — CodeQL flags len(raw)+len(envBytes)+16
+	// as a potential int overflow (go/allocation-size-overflow). At
+	// production sizes the cost of a couple appends growing the slice is
+	// not measurable. raw is bounded upstream by the HTTP body limit;
+	// envBytes is bounded by what we marshal. The summed value can never
+	// realistically approach 2^62 — CodeQL is being theoretical.
+	out := make([]byte, 0)
 	out = append(out, raw[:end-1]...)
 	if hasContent {
 		out = append(out, ',')

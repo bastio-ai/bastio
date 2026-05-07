@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,6 +14,21 @@ import (
 
 	"github.com/bastio-ai/bastio/pkg/tenant"
 )
+
+// clampU32 narrows an int64 (typically from strconv.ParseInt of an OTLP
+// attribute value) to uint32, saturating at 0 and math.MaxUint32 instead
+// of wrapping. Used for token counts and prompt versions where the wire
+// schema is uint32 but the upstream parser produces int64. The explicit
+// bounds checks satisfy CodeQL's go/incorrect-integer-conversion rule.
+func clampU32(v int64) uint32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(v)
+}
 
 // OTLPHandler accepts OpenTelemetry trace payloads over HTTP/JSON and
 // pushes each span onto the observability Recorder's trace buffer. This
@@ -165,9 +181,9 @@ func toTraceRecord(s otlpSpan, resourceAttrs map[string]any, customerID uuid.UUI
 		StartedAt:    start,
 		CompletedAt:  end,
 		DurationMs:   durationMs,
-		InputTokens:  uint32(inTok),
-		OutputTokens: uint32(outTok),
-		TotalTokens:  uint32(inTok + outTok),
+		InputTokens:  clampU32(inTok),
+		OutputTokens: clampU32(outTok),
+		TotalTokens:  clampU32(inTok + outTok),
 		Status:       status,
 		ErrorMessage: s.Status.Message,
 		EndUserID:    endUser,
@@ -262,8 +278,8 @@ func toObservationRecord(s otlpSpan, traceID, customerID uuid.UUID) *Observation
 		StartedAt:     start,
 		CompletedAt:   end,
 		DurationMs:    dur,
-		InputTokens:   uint32(inTok),
-		OutputTokens:  uint32(outTok),
+		InputTokens:   clampU32(inTok),
+		OutputTokens:  clampU32(outTok),
 		Model:         model,
 		Input:         input,
 		Output:        output,
@@ -274,7 +290,7 @@ func toObservationRecord(s otlpSpan, traceID, customerID uuid.UUID) *Observation
 		ToolInput:     toolInput,
 		ToolOutput:    toolOutput,
 		PromptName:    promptName,
-		PromptVersion: uint32(promptVersion),
+		PromptVersion: clampU32(promptVersion),
 		Environment:   env,
 	}
 }
