@@ -257,9 +257,8 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if scanResult != nil && scanResult.ShouldBlock {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		blockedBody := fmt.Sprintf(`{"error":"request blocked by security policy","trace_id":%q,"threat_types":%s,"threat_score":%.2f}`,
-			traceID.String(), mustJSON(scanResult.ThreatTypes), scanResult.ThreatScore)
-		_, _ = w.Write([]byte(blockedBody))
+		blockedBody := blockedResponseBody(traceID, scanResult.ThreatTypes, scanResult.ThreatScore)
+		_, _ = w.Write(blockedBody)
 		h.recordTrace(recordInput{
 			TraceID:   traceID,
 			Info:      info,
@@ -270,7 +269,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			Status:    "blocked",
 			Scan:      scanResult,
 			ReqBody:   body,
-			RespBody:  []byte(blockedBody),
+			RespBody:  blockedBody,
 			Headers:   r.Header,
 			IPAddress: r.RemoteAddr,
 			UserAgent: r.UserAgent(),
@@ -413,11 +412,8 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	if scanResult != nil && scanResult.ShouldBlock {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		blockedBody := fmt.Sprintf(
-			`{"error":"request blocked by security policy","trace_id":%q,"threat_types":%s,"threat_score":%.2f}`,
-			anthropicTraceID.String(), mustJSON(scanResult.ThreatTypes), scanResult.ThreatScore,
-		)
-		_, _ = w.Write([]byte(blockedBody))
+		blockedBody := blockedResponseBody(anthropicTraceID, scanResult.ThreatTypes, scanResult.ThreatScore)
+		_, _ = w.Write(blockedBody)
 		h.recordTrace(recordInput{
 			TraceID:   anthropicTraceID,
 			Info:      info,
@@ -428,7 +424,7 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 			Status:    "blocked",
 			Scan:      scanResult,
 			ReqBody:   body,
-			RespBody:  []byte(blockedBody),
+			RespBody:  blockedBody,
 			Headers:   r.Header,
 			IPAddress: r.RemoteAddr,
 			UserAgent: r.UserAgent(),
@@ -1676,6 +1672,26 @@ func extractAnthropicUserContent(body []byte) string {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// blockedResponseBody returns the JSON body returned to a client whose
+// request was halted by the security pipeline. Built via json.Marshal
+// instead of hand-crafted via fmt.Sprintf so the response is always
+// well-formed regardless of what makes it into ThreatTypes — closes
+// the unsafe-quoting class flagged by CodeQL (go/unsafe-quoting).
+func blockedResponseBody(traceID uuid.UUID, types []security.ThreatType, score float64) []byte {
+	body, _ := json.Marshal(struct {
+		Error       string                `json:"error"`
+		TraceID     string                `json:"trace_id"`
+		ThreatTypes []security.ThreatType `json:"threat_types"`
+		ThreatScore float64               `json:"threat_score"`
+	}{
+		Error:       "request blocked by security policy",
+		TraceID:     traceID.String(),
+		ThreatTypes: types,
+		ThreatScore: score,
+	})
+	return body
 }
 
 // customerIDFromInfo returns the customer id on an APIKeyInfo or the zero
