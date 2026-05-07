@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -50,8 +51,14 @@ func (s *LocalBlobStore) Put(ctx context.Context, customerID, sourceID uuid.UUID
 	if err := ctx.Err(); err != nil {
 		return "", 0, err
 	}
+	// filepath.Base strips any directory component the caller injected;
+	// the explicit traversal-marker check below is defense in depth and
+	// also silences CodeQL's go/path-injection (it can't see Base as a
+	// sanitizer). If anything looks suspicious we fall back to the
+	// source's UUID as the on-disk filename.
 	safeName := filepath.Base(name)
-	if safeName == "" || safeName == "." || safeName == "/" {
+	if safeName == "" || safeName == "." || safeName == "/" ||
+		strings.ContainsAny(safeName, "\x00/\\") || strings.Contains(safeName, "..") {
 		safeName = sourceID.String()
 	}
 	dir := filepath.Join(s.root, "workspace", "knowledge", customerID.String(), sourceID.String())

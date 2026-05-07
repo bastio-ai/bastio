@@ -21,7 +21,12 @@ export class BastioClient {
     if (!opts.baseURL) {
       throw new BastioError("BastioClient: baseURL is required");
     }
-    this.baseURL = opts.baseURL.replace(/\/+$/, "");
+    // Strip trailing slashes via a loop instead of /\/+$/ — the regex
+    // form trips CodeQL's polynomial-redos rule. A while loop is O(n)
+    // and equally clear at the call site.
+    let base = opts.baseURL;
+    while (base.endsWith("/")) base = base.slice(0, -1);
+    this.baseURL = base;
     this.apiKey = opts.apiKey;
     this.fetchImpl = opts.fetch ?? globalThis.fetch;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
