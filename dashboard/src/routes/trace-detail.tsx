@@ -7,6 +7,7 @@ import { api } from "@/api/client";
 import type {
   CreateTraceScoreRequest,
   Observation,
+  Trace,
   TraceDetail,
   TraceScore,
 } from "@/api/client";
@@ -25,26 +26,48 @@ import { KpiCard } from "@/components/observe/kpi-card";
 import { ResizablePanels } from "@/components/observe/resizable-panels";
 import { SpanDetailTabs } from "@/components/observe/span-detail-tabs";
 import { SpanTree } from "@/components/observe/span-tree";
+import { useTracesExtension } from "@/components/traces-extension";
 import { formatCost, formatDuration } from "@/lib/utils";
 
 export function TraceDetailPage() {
   const { id } = useParams({ from: "/traces/$id" });
+  const ext = useTracesExtension();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["trace", id],
     queryFn: () => api.traces.get(id),
+    retry: false,
+  });
+
+  // Fallback path: when api.traces.get(id) fails (typically 404 because the
+  // row lives in an extension's data store, e.g. governance_events), ask the
+  // injected TracesExtension whether it owns this id. Cloud-dashboard wires
+  // up fetchExtraDetail; OSS standalone leaves it undefined and we fall
+  // through to the original "Trace not found" empty state.
+  const primaryFailed = Boolean(error) || (!isLoading && !data?.trace);
+  const { data: extTrace, isLoading: extLoading } = useQuery({
+    queryKey: ["trace-extension-detail", id],
+    queryFn: () => ext.fetchExtraDetail!(id),
+    enabled: primaryFailed && Boolean(ext.fetchExtraDetail),
+    retry: false,
   });
 
   const { data: threats = [] } = useQuery({
     queryKey: ["trace-threats", id],
     queryFn: () => api.traces.threats(id),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && Boolean(data?.trace),
   });
 
-  if (isLoading) {
+  if (isLoading || (primaryFailed && extLoading)) {
     return <LoadingBlock label="Loading trace..." />;
   }
-  if (error || !data?.trace) {
+  if (primaryFailed) {
+    if (extTrace && ext.renderDetail) {
+      return <>{ext.renderDetail(extTrace)}</>;
+    }
+    if (extTrace) {
+      return <ExtensionDefaultDetail trace={extTrace} />;
+    }
     return (
       <div className="space-y-4">
         <BackLink />
@@ -56,8 +79,8 @@ export function TraceDetailPage() {
     );
   }
 
-  const trace = data.trace;
-  const spans = (data.spans ?? []) as Observation[];
+  const trace = data!.trace!;
+  const spans = (data!.spans ?? []) as Observation[];
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col space-y-4">
@@ -285,6 +308,30 @@ function TraceSplit({
         </div>
       }
     />
+  );
+}
+
+// ExtensionDefaultDetail is the OSS fallback shown when a TracesExtension
+// returned a row from fetchExtraDetail but did not supply renderDetail.
+// Cloud-dashboard ships its own renderDetail with the rich governance UI;
+// this default just makes sure /traces/:id never 404s for an id the
+// extension claims as its own.
+function ExtensionDefaultDetail({ trace }: { trace: Trace }) {
+  // TraceHeader/KpiStrip type their `trace` prop as TraceDetail["trace"];
+  // structurally Trace carries every field they actually read. Cast through
+  // unknown to keep tsc honest without widening the shared helpers.
+  const t = trace as unknown as NonNullable<TraceDetail["trace"]>;
+  return (
+    <div className="space-y-4">
+      <TraceHeader trace={t} threatCount={0} />
+      <KpiStrip trace={t} threatCount={0} />
+      <Card className="border-border/50">
+        <CardContent className="py-6 text-sm text-muted-foreground">
+          This event came from an integration that doesn’t expose span-level detail.
+          Provider: <span className="font-mono">{trace.provider ?? "—"}</span>.
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
