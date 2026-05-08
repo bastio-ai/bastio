@@ -20,6 +20,7 @@ import { SkeletonRows } from "@/components/skeleton";
 import { FilterBar, emptyFilters, parseTagFilter, type ObserveFilters } from "@/components/observe/filter-bar";
 import { KpiCard } from "@/components/observe/kpi-card";
 import { LiveToggle } from "@/components/observe/live-toggle";
+import { useTracesExtension } from "@/components/traces-extension";
 import { downloadCSV } from "@/lib/csv";
 import { formatCost, formatDuration, formatNumber } from "@/lib/utils";
 
@@ -45,11 +46,40 @@ export function TracesPage() {
     return params;
   }, [filters]);
 
-  const { data: traces, isLoading } = useQuery({
+  const { data: gatewayTraces, isLoading } = useQuery({
     queryKey: ["traces", queryParams, live],
     queryFn: () => api.traces.list(queryParams),
     refetchInterval: live ? 3000 : false,
   });
+
+  // Optional extra rows fed by a downstream consumer (cloud-dashboard
+  // injects browser-extension governance events as Trace-shaped rows
+  // here). OSS standalone leaves the extension empty and the fetcher
+  // never runs.
+  const ext = useTracesExtension();
+  const extQ = useQuery({
+    queryKey: ["traces:extension", filters, live],
+    queryFn: () => ext.fetchExtra!(filters),
+    enabled: typeof ext.fetchExtra === "function",
+    refetchInterval: live ? 3000 : false,
+  });
+
+  // Merge primary traces with extension rows, sorted by started_at desc
+  // so the timeline is contiguous regardless of which source emitted
+  // the row. Empty array fallbacks keep this stable while either query
+  // is still in-flight.
+  const traces = useMemo<Trace[]>(() => {
+    const primary = gatewayTraces ?? [];
+    const extras = extQ.data ?? [];
+    if (extras.length === 0) return primary;
+    const merged = [...primary, ...extras];
+    merged.sort((a, b) => {
+      const ta = a.started_at ? new Date(a.started_at).getTime() : 0;
+      const tb = b.started_at ? new Date(b.started_at).getTime() : 0;
+      return tb - ta;
+    });
+    return merged;
+  }, [gatewayTraces, extQ.data]);
 
   const filtered = useMemo(() => {
     if (!traces) return [] as Trace[];
