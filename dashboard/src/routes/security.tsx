@@ -15,7 +15,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader, SectionHeader } from "@/components/card";
+import { useSecurityExtension } from "@/components/security-extension";
 import { cn } from "@/lib/utils";
 import { api } from "@/api/client";
 import type { SecurityProfile, UpdateSecurityProfileRequest } from "@/api/client";
@@ -179,11 +181,28 @@ export function SecurityPage() {
     updateProfile.mutate({ [field]: !currentValue } as UpdateSecurityProfileRequest);
   };
 
+  // Cloud (or any other consumer) can inject extra tabs into the
+  // Security Center via SecurityExtensionProvider. OSS standalone
+  // never wraps with the provider, so extraTabs is always empty
+  // and the page renders just the "Detectors" tab as before.
+  const { extraTabs = [] } = useSecurityExtension();
+
   return (
     <>
       <PageHeader title="Security Center" description="Threat detection and security policy configuration" />
 
-      <SectionHeader title="Preprocessing" description="Normalize input before detection runs" />
+      <Tabs defaultValue="detectors" className="mt-2">
+        <TabsList variant="line">
+          <TabsTrigger value="detectors">Detectors</TabsTrigger>
+          {extraTabs.map((t) => (
+            <TabsTrigger key={t.id} value={t.id}>
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="detectors" className="pt-6">
+          <SectionHeader title="Preprocessing" description="Normalize input before detection runs" />
 
       <Card className="border-border/50 mb-6">
         <CardContent className="p-4">
@@ -415,6 +434,14 @@ export function SecurityPage() {
         </code>
         {" "}environment variable. Restart the server to change.
       </p>
+        </TabsContent>
+
+        {extraTabs.map((t) => (
+          <TabsContent key={t.id} value={t.id} className="pt-6">
+            {t.component}
+          </TabsContent>
+        ))}
+      </Tabs>
     </>
   );
 }

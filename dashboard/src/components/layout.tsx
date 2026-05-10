@@ -54,7 +54,7 @@ const navSections = [
     label: "Security",
     items: [
       { to: "/threats", label: "Threats", icon: ShieldAlert },
-      { to: "/security", label: "Security Center", icon: Shield },
+      { to: "/security-settings", label: "Security Center", icon: Shield },
       { to: "/overlays", label: "Custom Policies", icon: Layers },
       { to: "/playground", label: "Playground", icon: FlaskConical },
     ],

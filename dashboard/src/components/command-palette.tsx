@@ -114,7 +114,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
       { id: "nav-users",     group: "Navigation", label: "Go to Users",           shortcut: "G U", onSelect: () => navigate({ to: "/users" }) },
       { id: "nav-analytics", group: "Navigation", label: "Go to Analytics",       shortcut: "G A", onSelect: () => navigate({ to: "/analytics" }) },
       { id: "nav-threats",   group: "Security",   label: "Go to Threats",         shortcut: "G H", onSelect: () => navigate({ to: "/threats" }) },
-      { id: "nav-security",  group: "Security",   label: "Go to Security Center",                  onSelect: () => navigate({ to: "/security" }) },
+      { id: "nav-security",  group: "Security",   label: "Go to Security Center",                  onSelect: () => navigate({ to: "/security-settings" }) },
       { id: "nav-prompts",   group: "Build",      label: "Go to Prompts",         shortcut: "G P", onSelect: () => navigate({ to: "/prompts" }) },
       { id: "nav-proxies",   group: "Platform",   label: "Go to Proxies",                          onSelect: () => navigate({ to: "/proxies" }) },
       { id: "nav-api-keys",  group: "Platform",   label: "Go to API Keys",        shortcut: "G K", onSelect: () => navigate({ to: "/api-keys" }) },
