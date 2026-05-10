@@ -3,6 +3,7 @@ import {
   createRootRoute,
   createRoute,
   Outlet,
+  redirect,
 } from "@tanstack/react-router";
 import { Layout } from "@/components/layout";
 import { OverviewPage } from "./overview";
@@ -164,10 +165,27 @@ const proxyDetailRoute = createRoute({
   component: ProxyDetailPage,
 });
 
+// Renamed from /security to /security-settings as part of the
+// Security Center IA refactor (BAS-28). The tab structure inside
+// SecurityPage now hosts not only the OSS detector configuration
+// (the original /security content) but also any cloud-only tabs
+// injected via SecurityExtensionProvider, so "settings" is a more
+// honest noun than "center" for the URL slug.
 const securityRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/security",
+  path: "/security-settings",
   component: SecurityPage,
+});
+
+// Backward-compat redirect for the old /security URL. Anyone with a
+// runbook link or browser bookmark lands on /security-settings
+// automatically. Pure redirect — no component, no fallback.
+const securityRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/security",
+  beforeLoad: () => {
+    throw redirect({ to: "/security-settings" });
+  },
 });
 
 const playgroundRoute = createRoute({
@@ -301,6 +319,7 @@ export const ossChildRoutes = [
   proxiesRoute,
   proxyDetailRoute,
   securityRoute,
+  securityRedirectRoute,
   playgroundRoute,
   apiKeysRoute,
   settingsRoute,
