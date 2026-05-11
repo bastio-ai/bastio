@@ -96,6 +96,7 @@ type options struct {
 	apiExtenders         []func(r chi.Router)
 	dashboardAPIExtenders []func(r chi.Router)
 	workspaceCustomizers []func(WorkspaceCustomizer)
+	providersDecorator  func(Provider, Client) Client
 	encryption          *encryption.Service
 	readTimeout         time.Duration
 	writeTimeout        time.Duration
@@ -277,6 +278,25 @@ var (
 // OSS server.
 func WithWorkspaceCustomize(fn func(WorkspaceCustomizer)) Option {
 	return func(o *options) { o.workspaceCustomizers = append(o.workspaceCustomizers, fn) }
+}
+
+// WithProvidersDecorator installs a generic wrapping function applied to
+// every LLM provider Client the OSS gateway and workspace pull from the
+// internal registry. fn is called with (provider, raw client) and
+// returns the wrapped client.
+//
+// Use cases are intentionally open-ended: response caching, retry
+// shims, per-customer telemetry, traffic shadowing. OSS callers don't
+// need this — leaving it unset is the OSS default and clients are
+// returned as-is. Cloud uses it to layer cross-cutting behaviour
+// (e.g. LLM response caching) without OSS having to know the concept
+// exists.
+//
+// Set once at startup. The decorator runs on every Registry.Get; keep
+// it allocation-light. Returning the original client unchanged is fine
+// for providers you don't want to wrap.
+func WithProvidersDecorator(fn func(Provider, Client) Client) Option {
+	return func(o *options) { o.providersDecorator = fn }
 }
 
 // WithEncryption wires the encryption service used to envelope provider
@@ -585,6 +605,9 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	providerRegistry.Register(providers.NewAnthropicClient())
 	providerRegistry.Register(providers.NewBedrockClient())
 	providerRegistry.Register(providers.NewOllamaClient())
+	if s.opts.providersDecorator != nil {
+		providerRegistry.Decorate(s.opts.providersDecorator)
+	}
 
 	gw := gateway.NewHandler(providerRegistry, proxySvc, secEngine, profileLookup, s.recorder, string(s.cfg.SecurityMode))
 	rateLimiter := gateway.NewRateLimiter(s.redis)
