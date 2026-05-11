@@ -15,10 +15,10 @@ require (
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.19.0
-	github.com/riverqueue/river v0.35.1
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.35.1
-	golang.org/x/crypto v0.50.0
-	golang.org/x/text v0.36.0
+	github.com/riverqueue/river v0.36.0
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.36.0
+	golang.org/x/crypto v0.51.0
+	golang.org/x/text v0.37.0
 )
 
 require (
@@ -52,9 +52,9 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/riverqueue/river/riverdriver v0.35.1 // indirect
-	github.com/riverqueue/river/rivershared v0.35.1 // indirect
-	github.com/riverqueue/river/rivertype v0.35.1 // indirect
+	github.com/riverqueue/river/riverdriver v0.36.0 // indirect
+	github.com/riverqueue/river/rivershared v0.36.0 // indirect
+	github.com/riverqueue/river/rivertype v0.36.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
@@ -69,7 +69,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
