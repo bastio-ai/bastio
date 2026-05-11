@@ -96,10 +96,30 @@ won't allow it.
 
 ## Cloud-only detectors
 
-Bastio Cloud adds Microsoft Presidio for higher-precision PII
-classification. Set `PRESIDIO_URL` to the analyzer endpoint;
-without it, OSS falls back to a regex + entropy heuristic that
-covers ~95% of the same cases.
+Bastio Cloud ships an additional **AI Security Suite** that runs
+alongside the OSS detectors in the same parallel pipeline. Five
+extra detectors, all hosted on managed infrastructure:
+
+| Detector | What it does | Stack |
+|---|---|---|
+| **Privacy Filter** *(Cloud only)* | Transformer-grade PII classification (~97% F1 on PII-Masking-300k) | Microsoft Presidio analyzer |
+| **Prompt Guard** *(Cloud only)* | ML classifier for prompt injection + jailbreak | DeBERTa-v3 |
+| **Threat Vector** *(Cloud only)* | Embedding-similarity lookup against a curated attack-fingerprint corpus | pgvector |
+| **Injection Semantic** *(Cloud only)* | Heuristic semantic analyzer for role manipulation, framing attacks, context hijacking — pure CPU, sub-millisecond | In-process |
+| **Session Risk Score** *(Cloud only)* | Multi-turn behavioral scorer over a rolling per-conversation window | In-process |
+
+OSS gets the regex + entropy detectors in the catalog above — same
+code Cloud also runs. The five ML / heuristic-semantic detectors
+are cloud-only because hosting transformer + embedding models per
+request and curating the attack corpus requires managed infra.
+
+If you're self-hosting and want the Presidio path, set
+`PRESIDIO_URL` to your own analyzer endpoint; the gateway will use
+it for PII classification. The other four cloud-only detectors are
+not currently available outside Cloud.
+
+See [Bastio Cloud](/docs/cloud) for the full list of cloud-only
+features.
 
 ## Next
 
