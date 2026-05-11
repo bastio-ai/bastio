@@ -91,7 +91,8 @@ type Client interface {
 
 // Registry holds provider clients by name.
 type Registry struct {
-	clients map[Provider]Client
+	clients   map[Provider]Client
+	decorator func(Provider, Client) Client
 }
 
 // NewRegistry creates an empty provider registry.
@@ -104,11 +105,30 @@ func (r *Registry) Register(client Client) {
 	r.clients[client.Name()] = client
 }
 
-// Get returns a provider client by name.
+// Decorate installs a generic wrapping function applied to every Client
+// returned by Get. Use cases: cross-cutting concerns like retries,
+// per-client logging, response caching, or rate limiting that should
+// transparently sit between callers and the upstream provider.
+//
+// fn is called with (provider, raw client) and returns the wrapped
+// client. Returning the original client unchanged disables wrapping
+// for that provider. nil fn clears the decorator.
+//
+// Set once at startup before traffic flows — Decorate is not safe to
+// call concurrently with Get.
+func (r *Registry) Decorate(fn func(Provider, Client) Client) {
+	r.decorator = fn
+}
+
+// Get returns a provider client by name. If a decorator is installed,
+// the wrapped client is returned.
 func (r *Registry) Get(provider Provider) (Client, error) {
 	c, ok := r.clients[provider]
 	if !ok {
 		return nil, fmt.Errorf("unknown provider: %s", provider)
+	}
+	if r.decorator != nil {
+		return r.decorator(provider, c), nil
 	}
 	return c, nil
 }
