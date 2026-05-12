@@ -85,14 +85,22 @@ func Welcome(toName, dashboardURL string) Message {
 // confirmation independent of Stripe's own receipt mail. Includes a
 // link to the customer portal.
 //
+// productName is the public tier display name ("Bastio Cloud Core",
+// "Bastio Cloud Pro", "Bastio Workspace") so the subject + opening
+// line match the plan the customer actually bought. Empty falls back
+// to "Bastio" for legacy / unknown-tier rows that pre-date BAS-29.
+//
 // monthlyTotalLabel is a fully-formatted price string ("€29.00",
 // "€75.00", "$125.00") so the caller owns currency/locale formatting
 // — keeps the template currency-agnostic and lets the bastio-cloud
 // caller pull the real number off the Stripe subscription.
-func SubscriptionReceipt(toName string, seats int, monthlyTotalLabel, portalURL string) Message {
+func SubscriptionReceipt(toName, productName string, seats int, monthlyTotalLabel, portalURL string) Message {
+	if productName == "" {
+		productName = "Bastio"
+	}
 	body := fmt.Sprintf(`Hi %s,
 
-Your Bastio Workspace subscription is active.
+Your %s subscription is active.
 
   Seats:           %d
   Monthly total:   %s
@@ -102,10 +110,10 @@ The audit data from your governance pilot has been carried over —
 you'll see it the next time you visit the Governance tab.
 
 — The Bastio team`,
-		safeName(toName), seats, monthlyTotalLabel, portalURL)
+		safeName(toName), productName, seats, monthlyTotalLabel, portalURL)
 
 	return Message{
-		Subject: "Your Bastio Workspace subscription is active",
+		Subject: "Your " + productName + " subscription is active",
 		ToName:  toName,
 		Text:    body,
 		Tag:     "receipt",
