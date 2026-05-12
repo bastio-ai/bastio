@@ -190,8 +190,8 @@ func TestWelcomeFallsBackOnEmptyName(t *testing.T) {
 
 func TestSubscriptionReceiptShape(t *testing.T) {
 	t.Parallel()
-	msg := SubscriptionReceipt("Alice", 5, 125, "https://bastio.com/portal")
-	if !strings.Contains(msg.Text, "5") || !strings.Contains(msg.Text, "$125") {
+	msg := SubscriptionReceipt("Alice", 5, "€75.00", "https://bastio.com/portal")
+	if !strings.Contains(msg.Text, "5") || !strings.Contains(msg.Text, "€75.00") {
 		t.Fatalf("missing seats or total: %q", msg.Text)
 	}
 	if msg.Tag != "receipt" {

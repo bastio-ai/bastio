@@ -84,20 +84,25 @@ func Welcome(toName, dashboardURL string) Message {
 // `customer.subscription.created` Stripe webhook so the user gets
 // confirmation independent of Stripe's own receipt mail. Includes a
 // link to the customer portal.
-func SubscriptionReceipt(toName string, seats int, monthlyTotalUSD int, portalURL string) Message {
+//
+// monthlyTotalLabel is a fully-formatted price string ("€29.00",
+// "€75.00", "$125.00") so the caller owns currency/locale formatting
+// — keeps the template currency-agnostic and lets the bastio-cloud
+// caller pull the real number off the Stripe subscription.
+func SubscriptionReceipt(toName string, seats int, monthlyTotalLabel, portalURL string) Message {
 	body := fmt.Sprintf(`Hi %s,
 
 Your Bastio Workspace subscription is active.
 
   Seats:           %d
-  Monthly total:   $%d
+  Monthly total:   %s
   Manage / cancel: %s
 
 The audit data from your governance pilot has been carried over —
 you'll see it the next time you visit the Governance tab.
 
 — The Bastio team`,
-		safeName(toName), seats, monthlyTotalUSD, portalURL)
+		safeName(toName), seats, monthlyTotalLabel, portalURL)
 
 	return Message{
 		Subject: "Your Bastio Workspace subscription is active",
