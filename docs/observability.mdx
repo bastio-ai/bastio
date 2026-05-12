@@ -259,6 +259,24 @@ wrong-customer issues).
 Pipe logs into your existing aggregator (Datadog, Loki, CloudWatch);
 no extra config — the binary writes to stdout.
 
+## Cloud-only operations features
+
+Bastio Cloud adds operational surfaces that build on the same trace
++ threat data shown above. None of these run in OSS:
+
+| Feature | What it does |
+|---|---|
+| **Response Cache** *(Cloud only)* | Identical-prompt deduplication for `/v1/chat/completions` + workspace conversations. Per-tenant TTL, streaming-safe, tool-call aware. Cached responses include an `X-Bastio-Cache: hit` header and skip the upstream provider call. Monthly Hits / Misses / Tokens saved / USD saved dashboard. |
+| **Audit Log** *(Cloud only)* | Append-only record of admin actions (member invite, role change, key rotation, settings edit) for compliance evidence. |
+| **Webhooks** *(Cloud only)* | Push delivery of `threat.*` events into Splunk HEC, Datadog Logs, Elastic, or anything that consumes JSON webhooks. River-backed with retry + dead-letter. |
+| **Branded Workspace** *(Cloud only)* | Employee-facing chat product at `workspace.bastio.com` or a custom domain. Same trace + scan pipeline. |
+
+OSS surfaces all of the underlying data — webhooks and audit log
+can be replicated by reading from ClickHouse + Postgres directly.
+The cloud features are about packaging, not new data.
+
+See [Bastio Cloud](/docs/cloud) for the full list.
+
 ## Next
 
 - [Threats](/docs/threats) — the detector catalog that drives

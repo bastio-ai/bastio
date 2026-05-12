@@ -1,0 +1,90 @@
+---
+title: Bastio Cloud
+description: What Bastio Cloud adds on top of the open-source gateway, and why some features are cloud-only.
+---
+
+The OSS gateway in this repo is the foundation. **Bastio Cloud** is
+the hosted, multi-tenant version that wraps it with everything a
+team needs to run Bastio as a managed product: auth, billing, SSO,
+the higher-precision detector suite, the employee chat product, and
+operational features like response caching.
+
+OSS and Cloud share the same Go gateway, the same OpenAPI surface,
+and the same baseline detectors. Cloud imports
+`github.com/bastio-ai/bastio` (this repo) as a module — there is no
+fork.
+
+## What Cloud adds
+
+| Surface | Cloud feature | OSS equivalent |
+|---|---|---|
+| Auth | Email + password, Google OAuth, SAML, OIDC, RBAC | None — network-level access only |
+| Tenancy | Multi-workspace, invitations, SSO group sync | Single-tenant |
+| Billing | Per-seat Stripe subscription + customer portal | N/A |
+| Detection | **Bastio AI Security Suite** — Privacy Filter (Presidio), Prompt Guard (DeBERTa-v3), Threat Vector (pgvector similarity), Injection Semantic, Session Risk Score | Regex + entropy detectors (~95% of everyday cases) |
+| Performance | **Bastio Response Cache** — identical-prompt dedup, per-tenant TTL, streaming-safe, tool-call aware | None |
+| Operations | Audit log, webhooks, branded chat, browser extension MDM bundles | None |
+| Workspace | Employee-facing chat at `workspace.bastio.com` (or custom domain) | None |
+| Governance | SCIM 2.0 sync, anonymous Shadow AI audit, governance dashboard | None |
+
+Full docs for each surface live at
+[bastio.com/docs/cloud](https://bastio.com/docs/cloud).
+
+## Why these are cloud-only
+
+Each cloud-only feature has a concrete reason it can't ship in OSS
+without changing what OSS is:
+
+- **AI Security Suite** — transformer + embedding models per
+  request, plus a curated attack-fingerprint corpus that needs
+  ongoing maintenance. Hosting + curation is managed infrastructure,
+  not a binary.
+- **Response Cache** — runs against ClickHouse + Redis with
+  per-tenant USD savings math against a per-model price table.
+  Single-tenant OSS doesn't have the namespacing layer this
+  assumes.
+- **Auth / SSO / RBAC** — OSS deliberately ships with no dashboard
+  auth so self-hosters control access at the network layer. Adding
+  auth to OSS would force every self-host install to configure it.
+- **Billing** — Stripe wiring only makes sense for a managed
+  service.
+- **Workspace, Governance backend, Audit log, Webhooks** — each
+  depends on multi-tenancy + auth, neither of which OSS has.
+
+This isn't gatekeeping. The OSS gateway is the same code Cloud runs
+in production every day. Cloud adds the layers that don't make
+sense without a managed control plane.
+
+## When OSS is enough
+
+OSS covers the common case:
+
+- One team, one set of API keys, network-level access control.
+- Regex + entropy detection for PII, secrets, code, jailbreak, and
+  injection. Catches ~95% of everyday cases.
+- Self-host on Docker Compose or your own Helm chart.
+- Full trace + threat-event capture in PostgreSQL + ClickHouse, with
+  the same dashboard the Cloud product uses.
+
+If you don't need SSO, multi-tenancy, seat-based billing, or
+transformer-grade detection, OSS is the shorter path.
+
+## Upgrading
+
+OSS → Cloud is a config switch, not a migration:
+
+- Same OpenAPI surface — the OpenAI-compatible
+  `/v1/chat/completions` endpoint behaves identically.
+- Same trace + threat schema — your ClickHouse queries keep working.
+- API keys provisioned in Cloud work against `api.bastio.com`; point
+  your apps at the new base URL and you're done.
+
+Sign up at [cloud.bastio.com](https://cloud.bastio.com) and invite
+your team.
+
+## Next
+
+- [Threats](/docs/threats) — the detector catalog. Some entries
+  are labeled **Cloud only**; the rest run in OSS.
+- [Observability](/docs/observability) — traces, ClickHouse query
+  examples, and the response headers Cloud adds.
