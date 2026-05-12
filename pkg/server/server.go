@@ -92,6 +92,7 @@ type options struct {
 	docsFS              fs.FS
 	rootMiddleware      []func(http.Handler) http.Handler
 	dashboardMiddleware []func(http.Handler) http.Handler
+	gatewayMiddleware   []func(http.Handler) http.Handler
 	mounts              []mountPoint
 	apiExtenders         []func(r chi.Router)
 	dashboardAPIExtenders []func(r chi.Router)
@@ -141,6 +142,17 @@ func WithMiddleware(mw ...func(http.Handler) http.Handler) Option {
 // gateway proxy endpoints under API-key auth.
 func WithDashboardMiddleware(mw ...func(http.Handler) http.Handler) Option {
 	return func(o *options) { o.dashboardMiddleware = append(o.dashboardMiddleware, mw...) }
+}
+
+// WithGatewayMiddleware wraps the gateway proxy endpoint group
+// (/v1/chat/completions, /v1/guard/{proxyId}/v1/messages, /v1/traces).
+// Runs AFTER the OSS API-key authentication and rate-limit middleware,
+// so the request context already carries APIKeyInfo / CustomerID by
+// the time the wrapped middleware sees it. Managed deployments use
+// this to enforce per-tenant quota and overage caps on gateway traffic
+// without modifying OSS behavior.
+func WithGatewayMiddleware(mw ...func(http.Handler) http.Handler) Option {
+	return func(o *options) { o.gatewayMiddleware = append(o.gatewayMiddleware, mw...) }
 }
 
 // WithMount attaches handler at the given path prefix on the root router.
@@ -223,6 +235,20 @@ const (
 	RoleMember = workspace.RoleMember
 	RoleViewer = workspace.RoleViewer
 )
+
+// APIKeyCustomerID extracts the authenticated customer's UUID from a
+// request context that has passed through the OSS API-key auth
+// middleware (the chain installed on /v1/chat/completions et al.).
+// Returns (uuid.Nil, false) if no APIKeyInfo is present — middleware
+// wrapped via WithGatewayMiddleware should treat that as a pass-through
+// so OSS still produces its own 401 unauthenticated response.
+func APIKeyCustomerID(ctx context.Context) (uuid.UUID, bool) {
+	info, ok := auth.FromContext(ctx)
+	if !ok || info == nil {
+		return uuid.Nil, false
+	}
+	return info.CustomerID, true
+}
 
 // RequireRole gates a route to callers whose stashed role is at
 // least `min`. 403s otherwise. See internal/workspace/rbac.go.
@@ -758,10 +784,16 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.Mount("/workspace", workspaceHandler.Routes())
 		})
 
-		// Gateway proxy endpoints (API-key auth + rate limiting).
+		// Gateway proxy endpoints (API-key auth + rate limiting +
+		// optional cloud middleware via WithGatewayMiddleware,
+		// applied AFTER auth so wrapped middleware can read
+		// APIKeyInfo / CustomerID from request context).
 		r.Group(func(r chi.Router) {
 			r.Use(authSvc.Middleware)
 			r.Use(rateLimiter.Middleware)
+			for _, mw := range s.opts.gatewayMiddleware {
+				r.Use(mw)
+			}
 			r.Post("/chat/completions", gw.ChatCompletions)
 			r.Post("/guard/{proxyId}/v1/messages", gw.AnthropicMessages)
 
