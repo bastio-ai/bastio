@@ -161,6 +161,7 @@ func (e *Engine) RunSteps(ctx context.Context, content string, steps []Step, opt
 			continue
 		}
 
+		setWeightedScores(findings)
 		out.Findings = findings
 		maxScore := 0.0
 		for _, f := range findings {

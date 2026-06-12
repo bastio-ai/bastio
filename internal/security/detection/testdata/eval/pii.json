@@ -1,0 +1,86 @@
+[
+  {
+    "name": "pii_email_simple",
+    "text": "My email is sarah.connor@cyberdyne-systems.com, send the contract there.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_email_pair",
+    "text": "CC dr.elena.vasquez@meridianhealth.org and jbork@nordfjord.no on the thread.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_ssn_dashed",
+    "text": "The applicant's SSN is 536-90-4399 for the background check.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_ssn_spaced",
+    "text": "Run a credit check: name Maria Delgado, social security number 219 09 5821.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_phone_intl",
+    "text": "Call me at +1 (415) 555-0132 after lunch to confirm the booking.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_phone_plain",
+    "text": "Customer callback number: 212-555-0177, prefers evenings.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_credit_card_spaced",
+    "text": "Charge it to my card 4111 1111 1111 1111, expiry 09/27.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_credit_card_compact",
+    "text": "Card number 4242424242424242 was declined again yesterday.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_ip_address",
+    "text": "The user logged in from 203.0.113.42 twice last night before lockout.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_iban_spaced",
+    "text": "Transfer the deposit to IBAN DE89 3704 0044 0532 0130 00 by Friday.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_iban_compact",
+    "text": "My account is GB82WEST12345698765432, the sort code is already on file.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_medical_prose_phone",
+    "text": "Patient Jane Roe (DOB 03/14/1988, phone 646-555-0199) reported chest pain on admission.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_uk_nino",
+    "text": "HMRC reference: National Insurance number AB 12 34 56 C for the new hire.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  },
+  {
+    "name": "pii_aadhaar",
+    "text": "Aadhaar 2345 6789 0123 must be verified before the SIM activation.",
+    "labels": ["pii"],
+    "source": "handwritten"
+  }
+]

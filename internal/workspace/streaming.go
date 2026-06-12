@@ -81,7 +81,17 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 	// persisted message and stripping the image from the LLM call.
 	// Scan the text portion only; re-embed images afterwards.
 	scanText, scanImages := extractImagesForProvider(body.Content)
-	scan, _, _ := h.scanUserMessage(r.Context(), cid, userID, ipHash, userAgent, scanText)
+	scan, _, scanErr := h.scanUserMessage(r.Context(), cid, id, userID, ipHash, userAgent, scanText)
+	if scanErr != nil {
+		// Only set in fail-closed mode (BASTIO_SCAN_FAIL_MODE=closed).
+		// We're still pre-SSE here, so a plain HTTP error works —
+		// consistent with the model_not_allowed reject above.
+		writeStructuredError(w, http.StatusServiceUnavailable,
+			"security_scan_unavailable",
+			"security scan unavailable, message not sent",
+			nil)
+		return
+	}
 
 	if scan != nil && scan.ShouldBlock {
 		// Persist user message + a blocked assistant message so the

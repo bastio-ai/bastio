@@ -1,6 +1,7 @@
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import type { TraceThreatDetection } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
+import { weightedThreatScore } from "@/lib/utils";
 
 type Props = {
   threats: TraceThreatDetection[];
@@ -45,8 +46,16 @@ export function ThreatCascade({ threats, onSelect }: Props) {
               >
                 {t.severity}
               </Badge>
-              <span className="text-[10px] text-muted-foreground">
-                {t.detector_name} · {((t.confidence ?? 0) * 100).toFixed(0)}%
+              <span
+                className="text-[10px] text-muted-foreground tabular-nums"
+                title={`${(t.score ?? 0).toFixed(2)} × ${(t.confidence ?? 0).toFixed(2)} (severity × confidence) — what the threshold compares against`}
+              >
+                {t.detector_name} ·{" "}
+                {(
+                  weightedThreatScore(t.score, t.confidence, t.weighted_score) *
+                  100
+                ).toFixed(0)}
+                % weighted
               </span>
             </div>
             {t.matched_pattern ? (

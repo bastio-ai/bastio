@@ -25,3 +25,23 @@ export function formatCost(cents: number): string {
   if (cents < 1) return `$${cents.toFixed(4)}`;
   return `$${(cents / 100).toFixed(2)}`;
 }
+
+// weightedThreatScore returns the weighted score (score × confidence,
+// clamped to [0, 1]) — the value the engine's threshold check actually
+// compares against. Prefers the server-provided weighted_score; rows
+// persisted before that field existed report 0, so fall back to
+// deriving it from confidence, and finally to the raw severity score
+// so historical traces never render as 0%.
+export function weightedThreatScore(
+  score: number | undefined,
+  confidence: number | undefined,
+  weighted?: number,
+): number {
+  const clamp = (n: number) => Math.min(Math.max(n, 0), 1);
+  if (typeof weighted === "number" && weighted > 0) return clamp(weighted);
+  const s = typeof score === "number" ? score : 0;
+  if (typeof confidence === "number" && confidence > 0) {
+    return clamp(s * confidence);
+  }
+  return clamp(s);
+}

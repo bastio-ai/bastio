@@ -238,6 +238,7 @@ func (h *Handler) ListTraceThreats(w http.ResponseWriter, r *http.Request) {
 			"threat_type":      threatType,
 			"severity":         severity,
 			"score":            score,
+			"weighted_score":   weightedThreatScore(score, confidence),
 			"action_taken":     actionTaken,
 			"detector_name":    detectorName,
 			"matched_pattern":  matchedPattern,

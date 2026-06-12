@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Mode string
@@ -55,6 +56,27 @@ type Config struct {
 	// `workspace_domains` swaps in the branded handler. Empty list
 	// disables custom-domain interception (sensible default for tests).
 	PlatformHosts []string
+
+	// IPListEnabled turns on the IP threat-list subsystem
+	// (internal/security/iplist): background feed refresh plus a gateway
+	// middleware that checks client IPs against FireHOL level1 and the
+	// Tor exit-node list. Disabled by default — zero behavior change
+	// unless explicitly enabled.
+	IPListEnabled bool
+
+	// IPListBlock switches the iplist middleware from annotate-only
+	// (default: attach a verdict + synthetic finding to the request)
+	// to blocking listed IPs with a 403.
+	IPListBlock bool
+
+	// IPListRefresh is the cadence of the background feed refresh.
+	IPListRefresh time.Duration
+
+	// IPListFireHOLURL / IPListTorURL override the public feed URLs.
+	// Empty uses the provider defaults (FireHOL level1 netset on GitHub
+	// raw; check.torproject.org bulk exit list).
+	IPListFireHOLURL string
+	IPListTorURL     string
 }
 
 func Load() (*Config, error) {
@@ -73,6 +95,11 @@ func Load() (*Config, error) {
 		PlatformHosts: envListOr("BASTIO_PLATFORM_HOSTS", []string{
 			"localhost", "127.0.0.1", "0.0.0.0",
 		}),
+		IPListEnabled:    envBoolOr("BASTIO_IPLIST_ENABLED", false),
+		IPListBlock:      envBoolOr("BASTIO_IPLIST_BLOCK", false),
+		IPListRefresh:    envDurationOr("BASTIO_IPLIST_REFRESH", 6*time.Hour),
+		IPListFireHOLURL: os.Getenv("BASTIO_IPLIST_FIREHOL_URL"),
+		IPListTorURL:     os.Getenv("BASTIO_IPLIST_TOR_URL"),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -113,6 +140,27 @@ func envIntOr(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func envBoolOr(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
+func envDurationOr(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
 		}
 	}
 	return fallback

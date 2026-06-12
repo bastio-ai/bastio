@@ -55,6 +55,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/proxy"
 	"github.com/bastio-ai/bastio/internal/security"
+	"github.com/bastio-ai/bastio/internal/security/iplist"
 	"github.com/bastio-ai/bastio/internal/security/overlay"
 	"github.com/bastio-ai/bastio/internal/workspace"
 	"github.com/bastio-ai/bastio/pkg/cache"
@@ -74,6 +75,12 @@ type Server struct {
 	ch       *clickhouse.CH
 	recorder *observability.Recorder
 	river    *river.Client[pgx.Tx]
+
+	// ipList is the optional IP threat-list manager (BASTIO_IPLIST_
+	// ENABLED). Nil when disabled — registerV1Routes only mounts the
+	// middleware when set, so the default deployment is byte-for-byte
+	// unchanged.
+	ipList *iplist.Manager
 
 	// workspaceHandler is captured during V1 route registration so the
 	// root-level Host-intercept middleware can dispatch custom-domain
@@ -435,7 +442,26 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, erro
 		return nil, fmt.Errorf("create river client: %w", err)
 	}
 
-	return &Server{cfg: cfg, db: db, redis: redisClient, ch: ch, recorder: recorder, river: rc, opts: o}, nil
+	// Optional IP threat-list manager (FireHOL level1 + Tor exit
+	// nodes). Constructed last because a feed problem must never take
+	// down core wiring — refresh failures only log, and Lookup returns
+	// unlisted verdicts until the first successful fetch. Start kicks
+	// off an immediate refresh plus the jittered background loop;
+	// Close stops it.
+	var ipListMgr *iplist.Manager
+	if cfg.IPListEnabled {
+		ipListMgr = iplist.NewManager(
+			[]iplist.Provider{
+				iplist.NewFireHOL(cfg.IPListFireHOLURL, nil),
+				iplist.NewTor(cfg.IPListTorURL, nil),
+			},
+			iplist.WithRefreshInterval(cfg.IPListRefresh),
+		)
+		ipListMgr.Start(ctx)
+		slog.Info("iplist enabled", "block", cfg.IPListBlock, "refresh", cfg.IPListRefresh)
+	}
+
+	return &Server{cfg: cfg, db: db, redis: redisClient, ch: ch, recorder: recorder, river: rc, ipList: ipListMgr, opts: o}, nil
 }
 
 // DB returns the shared PostgreSQL wrapper.
@@ -453,6 +479,9 @@ func (s *Server) Config() *config.Config { return s.cfg }
 // Close drains observability buffers then releases all backing connections.
 func (s *Server) Close() error {
 	var errs []error
+	if s.ipList != nil {
+		s.ipList.Stop()
+	}
 	if s.recorder != nil {
 		drainCtx, cancel := context.WithTimeout(context.Background(), s.opts.shutdownTimeout)
 		if err := s.recorder.Close(drainCtx); err != nil {
@@ -791,6 +820,15 @@ func (s *Server) registerV1Routes(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(authSvc.Middleware)
 			r.Use(rateLimiter.Middleware)
+			// Optional IP threat-list check. After auth/rate-limit per
+			// the documented ordering (Auth → RateLimit → context
+			// middleware → handler) and before the WithGatewayMiddleware
+			// hooks so cloud middleware can read the verdict from the
+			// request context. Health endpoints live outside this group
+			// and are additionally guarded inside the middleware itself.
+			if s.ipList != nil {
+				r.Use(iplist.Middleware(s.ipList, iplist.MiddlewareConfig{Block: s.cfg.IPListBlock}))
+			}
 			for _, mw := range s.opts.gatewayMiddleware {
 				r.Use(mw)
 			}

@@ -25,6 +25,7 @@ import { Check, Copy } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader, SectionHeader } from "@/components/card";
+import { useSettingsExtension } from "@/components/settings-extension";
 
 function gatewayBaseURL(): string {
   if (typeof window === "undefined") return "https://your-bastio.example.com";
@@ -32,6 +33,7 @@ function gatewayBaseURL(): string {
 }
 
 export function SettingsPage() {
+  const ext = useSettingsExtension();
   const [copied, setCopied] = useState(false);
   const base = gatewayBaseURL();
   const codeSnippet = `from openai import OpenAI
@@ -58,6 +60,8 @@ response = client.chat.completions.create(
         title="Settings"
         description="Account and integration helpers"
       />
+
+      {ext.accountSections}
 
       <SectionHeader
         title="Quick start"

@@ -89,6 +89,9 @@ func PreflightScan(ctx context.Context, opts PreflightOptions) *security.ScanRes
 		SkipSanitization: opts.SkipSanitization,
 		Steps:            steps,
 		Canonicalize:     opts.Profile.CanonicalizeEnabled,
+		// Session-aware detectors that are profile-gated read this
+		// flag; default-off so upgrades don't change behavior.
+		RateAnomalyEnabled: opts.Profile.RateAnomalyEnabled,
 		Normalize: normalize.Options{
 			Unicode: opts.Profile.NormalizeUnicode,
 			Decode:  opts.Profile.NormalizeDecode,

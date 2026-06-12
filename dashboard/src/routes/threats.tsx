@@ -38,7 +38,7 @@ import {
 } from "@/components/observe/threat-filter-bar";
 import { ThreatDetailSheet } from "@/components/observe/threat-detail-sheet";
 import { downloadCSV } from "@/lib/csv";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, weightedThreatScore } from "@/lib/utils";
 
 // Sort columns exposed to the backend. Keep in sync with
 // threatSortColumns in internal/observability/handler.go.
@@ -347,12 +347,12 @@ export function ThreatsPage() {
                         className="text-right w-[6rem]"
                       />
                       <SortableTh
-                        label="Score"
+                        label="Score (weighted)"
                         column="score"
                         currentSort={sort}
                         currentOrder={order}
                         onSort={setSort}
-                        className="text-right w-[6rem]"
+                        className="text-right w-[8rem]"
                       />
                       <Th className="w-[5rem]">Action</Th>
                       <Th>User</Th>
@@ -425,8 +425,18 @@ export function ThreatsPage() {
                         <TableCell className="text-right font-mono tabular-nums text-xs text-muted-foreground">
                           {(t.confidence * 100).toFixed(0)}%
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-xs text-muted-foreground">
-                          {(t.score * 100).toFixed(0)}%
+                        <TableCell
+                          className="text-right font-mono tabular-nums text-xs text-foreground/90"
+                          title={`${t.score.toFixed(2)} × ${t.confidence.toFixed(2)} — what the threshold compares against`}
+                        >
+                          {(
+                            weightedThreatScore(
+                              t.score,
+                              t.confidence,
+                              t.weighted_score,
+                            ) * 100
+                          ).toFixed(0)}
+                          %
                         </TableCell>
                         <TableCell>
                           <Badge

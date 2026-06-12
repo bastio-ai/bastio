@@ -13,6 +13,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { ThreatEvent } from "@/api/client";
+import { weightedThreatScore } from "@/lib/utils";
 
 const severityVariant = (s: string) => {
   switch (s) {
@@ -83,6 +84,7 @@ function ThreatDetailBody({ threat }: { threat: ThreatEvent }) {
         <ScoreRow
           confidence={threat.confidence}
           score={threat.score}
+          weightedScore={threat.weighted_score}
         />
 
         <Section label="Matched pattern">
@@ -158,26 +160,31 @@ function ThreatDetailBody({ threat }: { threat: ThreatEvent }) {
 function ScoreRow({
   confidence,
   score,
+  weightedScore,
 }: {
   confidence: number;
   score: number;
+  weightedScore?: number;
 }) {
   // The engine compares score × confidence against the configured
   // threshold. Showing only the raw severity-based score made customers
   // think the threshold was higher than it really effectively was —
   // they saw 85%, set threshold = 70%, and were surprised when nothing
-  // blocked because the weighted value was 68%.
-  const weighted = score * confidence;
+  // blocked because the weighted value was 68%. The weighted value is
+  // the primary number; raw severity and confidence are the detail.
+  const weighted = weightedThreatScore(score, confidence, weightedScore);
   return (
     <div className="flex items-center gap-4 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-[11px]">
-      <Metric label="Severity" value={`${(score * 100).toFixed(0)}%`} />
-      <div className="h-5 w-px bg-border" />
-      <Metric label="Confidence" value={`${(confidence * 100).toFixed(0)}%`} />
-      <div className="h-5 w-px bg-border" />
       <Metric
-        label="Triggers at"
+        label="Score (weighted)"
         value={`${(weighted * 100).toFixed(0)}%`}
         hint="Severity × Confidence — what the threshold actually compares against."
+      />
+      <div className="h-5 w-px bg-border" />
+      <Metric
+        label="Severity × Confidence"
+        value={`${score.toFixed(2)} × ${confidence.toFixed(2)}`}
+        hint="Raw severity score and detector confidence behind the weighted value."
       />
     </div>
   );

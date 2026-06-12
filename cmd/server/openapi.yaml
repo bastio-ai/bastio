@@ -2152,6 +2152,9 @@ components:
           type: string
         score:
           type: number
+        weighted_score:
+          type: number
+          description: score × confidence, clamped to [0, 1] — the value the engine's threshold check compares against. Derived server-side; 0 on rows persisted before the field existed (fall back to score).
         action_taken:
           type: string
         detector_name:
@@ -2456,6 +2459,9 @@ components:
           enum: [low, medium, high, critical]
         score:
           type: number
+        weighted_score:
+          type: number
+          description: score × confidence, clamped to [0, 1] — the value the engine's threshold check compares against. Derived server-side; 0 on rows persisted before the field existed (fall back to score).
         action_taken:
           type: string
         detector_name:
@@ -3039,6 +3045,9 @@ components:
           type: number
         confidence:
           type: number
+        weighted_score:
+          type: number
+          description: score × confidence, clamped to [0, 1] — the value compared against the step threshold.
         matched_pattern:
           type: string
         matched_content:

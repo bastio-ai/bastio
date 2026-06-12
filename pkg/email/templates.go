@@ -120,6 +120,56 @@ you'll see it the next time you visit the Governance tab.
 	}
 }
 
+// PaymentFailed renders the dunning notice sent on the
+// `invoice.payment_failed` Stripe webhook. Stripe retries the charge
+// on its own schedule (Smart Retries); this email's job is to get the
+// customer to fix the card before the subscription slides to past_due
+// — at which point the billing gate pauses workspace writes.
+//
+// productName follows the SubscriptionReceipt convention (empty falls
+// back to "Bastio"). amountLabel is the caller-formatted amount due
+// ("€29.00"). invoiceURL is Stripe's hosted invoice page where the
+// customer can pay the open invoice directly; empty omits that line
+// (Stripe occasionally sends payment_failed without a hosted URL,
+// e.g. when the invoice is already voided). portalURL points at the
+// customer portal for updating the payment method.
+func PaymentFailed(toName, productName, amountLabel, invoiceURL, portalURL string) Message {
+	if productName == "" {
+		productName = "Bastio"
+	}
+	lines := []string{
+		"Hi " + safeName(toName) + ",",
+		"",
+		fmt.Sprintf("We couldn't collect the %s payment for your %s subscription.", amountLabel, productName),
+		"",
+		"We'll retry the charge automatically over the next few days. To fix",
+		"it right away:",
+		"",
+	}
+	if invoiceURL != "" {
+		lines = append(lines, "  Pay the open invoice:      "+invoiceURL)
+	}
+	lines = append(lines,
+		"  Update your payment method: "+portalURL,
+		"",
+		"If the payment keeps failing, your subscription moves to past-due",
+		"and workspace writes pause until it's resolved. Your data and",
+		"conversations stay exactly where they are either way.",
+		"",
+		"Reply to this email if something looks wrong — a real person will",
+		"read it.",
+		"",
+		"— The Bastio team",
+	)
+
+	return Message{
+		Subject: "Payment failed for your " + productName + " subscription",
+		ToName:  toName,
+		Text:    strings.Join(lines, "\n"),
+		Tag:     "payment-failed",
+	}
+}
+
 // AuditReady renders the email sent after the 14-day audit completes.
 // activationURL is one-time-use, expires in 30 days; for the MVP
 // authenticated-customer flow this is just the workspace URL.

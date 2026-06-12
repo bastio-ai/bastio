@@ -371,7 +371,8 @@ func (h *Handler) ListThreats(w http.ResponseWriter, r *http.Request) {
 		threats = append(threats, map[string]any{
 			"id": id, "trace_id": traceID, "threat_type": threatType,
 			"severity": severity, "score": score, "action_taken": actionTaken,
-			"detector_name": detectorName, "matched_pattern": matchedPattern,
+			"weighted_score": weightedThreatScore(score, confidence),
+			"detector_name":  detectorName, "matched_pattern": matchedPattern,
 			"matched_content": matchedContent, "confidence": confidence,
 			"end_user_id": endUserID, "ip_address": ipAddress,
 			"user_agent": userAgent, "details": details,
@@ -387,6 +388,22 @@ func (h *Handler) ListThreats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(threats)
+}
+
+// weightedThreatScore derives score × confidence clamped to [0, 1] —
+// the value the security engine's threshold check compares against.
+// security_threat_logs has a fixed column list without a weighted_score
+// column, so the API layer computes it from the two stored columns
+// instead of requiring a ClickHouse migration.
+func weightedThreatScore(score, confidence float32) float32 {
+	w := score * confidence
+	if w < 0 {
+		return 0
+	}
+	if w > 1 {
+		return 1
+	}
+	return w
 }
 
 // GetThreat returns a single threat event by id, scoped to the current
@@ -436,6 +453,7 @@ func (h *Handler) GetThreat(w http.ResponseWriter, r *http.Request) {
 		"threat_type":     threatType,
 		"severity":        severity,
 		"score":           score,
+		"weighted_score":  weightedThreatScore(score, confidence),
 		"action_taken":    actionTaken,
 		"detector_name":   detectorName,
 		"matched_pattern": matchedPattern,
