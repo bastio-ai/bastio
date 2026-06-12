@@ -46,6 +46,7 @@ func runOverlayPluginsWith(
 	for _, ref := range refs {
 		out = append(out, runOnePlugin(ctx, content, ref, reg)...)
 	}
+	setWeightedScores(out)
 	return out
 }
 

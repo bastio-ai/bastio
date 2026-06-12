@@ -11,11 +11,23 @@ import (
 )
 
 // SessionDetector is the session-aware detection hook. Implemented by
-// detection.CrescendoDetector; kept as an interface so engine doesn't
-// take a runtime dependency on the detection package (which would
-// introduce a cycle — detection already imports this package).
+// detection.CrescendoDetector and detection.RateAnomalyDetector; kept
+// as an interface so engine doesn't take a runtime dependency on the
+// detection package (which would introduce a cycle — detection already
+// imports this package).
 type SessionDetector interface {
 	DetectWithSession(ctx context.Context, sessionID, content string, currentScore float64) ([]Finding, error)
+}
+
+// GatedSessionDetector is optionally implemented by session detectors
+// that are profile-gated. The engine calls EnabledFor before each scan
+// and skips the detector when it returns false. Detectors that don't
+// implement this interface always run (Crescendo's behavior since it
+// shipped). The zero value of the gating fields on ScanRequest must
+// mean "off" so new gated detectors are safe on existing deployments.
+type GatedSessionDetector interface {
+	SessionDetector
+	EnabledFor(req *ScanRequest) bool
 }
 
 // Severity levels for threat findings.
@@ -53,6 +65,15 @@ const (
 	ThreatInjection ThreatType = "injection"
 	ThreatPII       ThreatType = "pii"
 	ThreatJailbreak ThreatType = "jailbreak"
+	// ThreatAnomaly covers behavioral signals that aren't tied to the
+	// content of a single message — e.g. request-rate bursts within a
+	// session. Emitted by session-aware detectors only.
+	ThreatAnomaly ThreatType = "anomaly"
+	// ThreatIPReputation flags requests whose client IP appears on a
+	// public threat feed (FireHOL level1, Tor exit nodes). Emitted as a
+	// synthetic finding by the iplist gateway middleware rather than by
+	// a content detector.
+	ThreatIPReputation ThreatType = "ip_reputation"
 )
 
 // Finding represents a single threat detection result.
@@ -62,6 +83,13 @@ type Finding struct {
 	Severity     Severity   `json:"severity"`
 	Score        float64    `json:"score"`      // 0.0 (safe) to 1.0 (critical threat)
 	Confidence   float64    `json:"confidence"` // detector confidence 0.0-1.0
+	// WeightedScore is Score × Confidence, clamped to [0, 1] — the value
+	// the step threshold check actually compares against (steps.go).
+	// Populated when findings are finalized so the dashboard can show
+	// the number that drives block decisions instead of the raw
+	// severity score. Zero on findings persisted before this field
+	// existed; consumers fall back to Score.
+	WeightedScore float64 `json:"weighted_score"`
 	// SubCategory is the taxonomy slot within a detector's space, using
 	// dotted notation: "persona.dan", "extraction.meta", "encoding.base64",
 	// "fingerprint.skeleton_key". This is what the dashboard filters and
@@ -128,6 +156,12 @@ type ScanRequest struct {
 	// from zero-value "unspecified, use secure default". Security-
 	// critical callers should leave this false.
 	DisableNormalize bool
+	// RateAnomalyEnabled opts this scan into the rate_anomaly session
+	// detector (request-rate burst detection). Off by default — the
+	// gateway sets it from the profile's rate_anomaly_enabled column,
+	// so existing deployments see zero behavior change until they
+	// flip the toggle.
+	RateAnomalyEnabled bool
 }
 
 // ScanResult is the output of a full security scan.
@@ -165,9 +199,9 @@ type Detector interface {
 
 // Engine orchestrates all detectors and aggregates results.
 type Engine struct {
-	detectors       []Detector
-	sessionDetector SessionDetector
-	sessionStore    session.Store
+	detectors        []Detector
+	sessionDetectors []SessionDetector
+	sessionStore     session.Store
 }
 
 // NewEngine creates a security engine with the given detectors.
@@ -176,11 +210,25 @@ func NewEngine(detectors ...Detector) *Engine {
 }
 
 // SetSessionAware wires the session-history buffer (Crescendo input)
-// into the engine. Safe to call nil for either argument on startups
-// where Redis isn't configured.
+// into the engine and registers the first session-aware detector.
+// Safe to call nil for either argument on startups where Redis isn't
+// configured. Additional session detectors register via
+// AddSessionDetector — this method appends rather than replaces so
+// the historical call order keeps working.
 func (e *Engine) SetSessionAware(store session.Store, detector SessionDetector) {
 	e.sessionStore = store
-	e.sessionDetector = detector
+	e.AddSessionDetector(detector)
+}
+
+// AddSessionDetector registers an additional session-aware detector.
+// Detectors run in registration order on every session-scoped scan;
+// findings are merged into the scan result. Nil detectors are ignored
+// so callers can pass conditionally-constructed values without guards.
+func (e *Engine) AddSessionDetector(d SessionDetector) {
+	if d == nil {
+		return
+	}
+	e.sessionDetectors = append(e.sessionDetectors, d)
 }
 
 // Scan runs all detectors against the content and returns aggregated results.
@@ -221,6 +269,7 @@ func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
 		// downgrade a block.
 		mergeNormalizeIntoResult(r, normResult)
 		e.applySessionAware(ctx, req, r)
+		setWeightedScores(r.Findings)
 		return r
 	}
 
@@ -270,6 +319,7 @@ func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
 		e.applyPIIAction(req, result)
 	}
 
+	setWeightedScores(result.Findings)
 	result.ScanDuration = time.Since(start)
 
 	return result
@@ -409,6 +459,31 @@ func hasPII(findings []Finding) bool {
 		}
 	}
 	return false
+}
+
+// weightedFindingScore is Score × Confidence clamped to [0, 1] — the
+// exact value the step threshold check compares against. Kept as a
+// helper so the threshold semantics in steps.go and the display value
+// stamped onto findings can never drift apart.
+func weightedFindingScore(score, confidence float64) float64 {
+	w := score * confidence
+	if w < 0 {
+		return 0
+	}
+	if w > 1 {
+		return 1
+	}
+	return w
+}
+
+// setWeightedScores stamps WeightedScore onto every finding in place.
+// Idempotent; called wherever findings are finalized (engine scan
+// paths, step runner, overlay plugins) so every Finding that leaves
+// the security package carries the value the threshold actually uses.
+func setWeightedScores(findings []Finding) {
+	for i := range findings {
+		findings[i].WeightedScore = weightedFindingScore(findings[i].Score, findings[i].Confidence)
+	}
 }
 
 // aggregate computes the final threat score and action from all findings.

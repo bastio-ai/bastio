@@ -8,9 +8,10 @@ import (
 	"github.com/bastio-ai/bastio/internal/security/session"
 )
 
-// applySessionAware runs the Crescendo pass and updates the per-
-// session buffer. Called after aggregation so it has access to the
-// final per-turn Score and top sub_category.
+// applySessionAware runs the session-aware detectors (Crescendo,
+// rate anomaly, ...) and updates the per-session buffer. Called after
+// aggregation so it has access to the final per-turn Score and top
+// sub_category.
 //
 // Two fail-open properties:
 //   - No store set → no-op. Deployments without Redis never notice.
@@ -21,12 +22,12 @@ func (e *Engine) applySessionAware(ctx context.Context, req *ScanRequest, result
 		return
 	}
 
-	// Run the session-aware detector first so it sees the current
-	// turn's max signal as "currentScore". Findings from it get
+	// Run the session-aware detectors first so they see the current
+	// turn's max signal as "currentScore". Findings from them get
 	// appended; the aggregate Score isn't re-computed (the step /
-	// parallel paths already picked an Action, and crescendo is
-	// additive signal).
-	if e.sessionDetector != nil {
+	// parallel paths already picked an Action, and session findings
+	// are additive signal).
+	if len(e.sessionDetectors) > 0 {
 		maxScore := 0.0
 		for _, f := range result.Findings {
 			s := f.Score * f.Confidence
@@ -34,21 +35,27 @@ func (e *Engine) applySessionAware(ctx context.Context, req *ScanRequest, result
 				maxScore = s
 			}
 		}
-		extra, err := e.sessionDetector.DetectWithSession(ctx, req.SessionID, req.Content, maxScore)
-		if err != nil {
-			slog.Warn("crescendo detect error", "error", err, "session", req.SessionID)
-		}
-		if len(extra) > 0 {
+		for _, sd := range e.sessionDetectors {
+			if gated, ok := sd.(GatedSessionDetector); ok && !gated.EnabledFor(req) {
+				continue
+			}
+			extra, err := sd.DetectWithSession(ctx, req.SessionID, req.Content, maxScore)
+			if err != nil {
+				slog.Warn("session detector error", "error", err, "session", req.SessionID)
+			}
+			if len(extra) == 0 {
+				continue
+			}
 			result.Findings = append(result.Findings, extra...)
-			// Lift action if crescendo said block and we weren't
-			// already blocking.
-			if !result.ShouldBlock {
-				for _, f := range extra {
-					if f.Action == ActionBlock {
-						result.ShouldBlock = true
-						result.Action = ActionBlock
-						break
-					}
+			// Lift action upward only — block wins outright; warn
+			// lifts pass/log but never downgrades a stronger action.
+			for _, f := range extra {
+				if f.Action == ActionBlock && !result.ShouldBlock {
+					result.ShouldBlock = true
+					result.Action = ActionBlock
+				}
+				if f.Action == ActionWarn && (result.Action == ActionPass || result.Action == ActionLog || result.Action == ActionLogOnly) {
+					result.Action = ActionWarn
 				}
 			}
 		}

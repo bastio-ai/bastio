@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,6 +24,14 @@ import (
 // this is on a hot path.
 var debugSecurityEnabled = os.Getenv("BASTIO_DEBUG_SECURITY") == "1"
 
+// scanFailClosed flips the workspace scan's failure posture. Default
+// (unset / anything else) is fail-open: an infrastructure error during
+// profile lookup lets the message through unscanned — appropriate for
+// OSS standalone where availability beats enforcement. Cloud sets
+// BASTIO_SCAN_FAIL_MODE=closed so a scan that can't run blocks the
+// send instead of silently waving sensitive content through.
+var scanFailClosed = os.Getenv("BASTIO_SCAN_FAIL_MODE") == "closed"
+
 // scanUserMessage runs the workspace's pre-flight security scan against
 // the user's prompt. Mirrors what the gateway does on every API
 // request — same engine, same profile lookup, same step list. Workspace
@@ -39,17 +48,39 @@ var debugSecurityEnabled = os.Getenv("BASTIO_DEBUG_SECURITY") == "1"
 // The gateway runs its own per-message tokenization upstream of the
 // scan; the workspace lets the engine sanitize directly so
 // ScanResult.SanitizedContent is what the persisted message body uses.
-func (h *Handler) scanUserMessage(ctx context.Context, customerID uuid.UUID, userID, ipHash, userAgent, content string) (*security.ScanResult, *security.Profile, error) {
+//
+// conversationID becomes ScanRequest.SessionID (conversation-as-
+// session, the same identity recordChatTrace uses) so the engine's
+// session-aware detectors — which skip entirely on an empty
+// SessionID — scope their multi-turn state per conversation, exactly
+// like the gateway scopes by X-Bastio-Session-Id. uuid.Nil (no
+// conversation context) leaves SessionID empty: the session hook
+// skips, same as before.
+func (h *Handler) scanUserMessage(ctx context.Context, customerID, conversationID uuid.UUID, userID, ipHash, userAgent, content string) (*security.ScanResult, *security.Profile, error) {
 	if h.secEngine == nil || h.secProfiles == nil {
 		return nil, nil, nil
 	}
 	profile, err := h.secProfiles.GetDefault(ctx, customerID)
 	if err != nil {
-		// Fail open — a profile-lookup hiccup shouldn't lock chat.
-		// Return nil so the caller proceeds without scanning. A
-		// production deployment with strict policy can flip this to
-		// fail-closed via a server option later.
+		// GetDefault already maps a missing profile row to the built-in
+		// default, so reaching here means infrastructure failure (PG
+		// down, timeout, cancelled context) — never "not configured".
+		// That must not pass silently: log it unconditionally so a
+		// stretch of unscanned messages is visible in production, and
+		// honor the fail posture (BASTIO_SCAN_FAIL_MODE) — open
+		// proceeds unscanned, closed blocks the send.
+		slog.Error("workspace security scan skipped: profile lookup failed",
+			"customer_id", customerID,
+			"fail_closed", scanFailClosed,
+			"error", err)
+		if scanFailClosed {
+			return nil, nil, fmt.Errorf("security profile lookup: %w", err)
+		}
 		return nil, nil, nil
+	}
+	sessionID := ""
+	if conversationID != uuid.Nil {
+		sessionID = conversationID.String()
 	}
 	res := llmpipeline.PreflightScan(ctx, llmpipeline.PreflightOptions{
 		Engine:           h.secEngine,
@@ -59,6 +90,7 @@ func (h *Handler) scanUserMessage(ctx context.Context, customerID uuid.UUID, use
 		EndUserID:        userID,
 		IPAddress:        ipHash,
 		UserAgent:        userAgent,
+		SessionID:        sessionID,
 		SkipSanitization: false,
 		Role:             security.RoleUser,
 	})

@@ -60,6 +60,10 @@ func BuildSecurityEngine(_ context.Context, pool *pgxpool.Pool, redis *cache.Cac
 		// degraded mode for OSS deployments without Redis.
 		store := session.NewRedisStore(redis.Client())
 		engine.SetSessionAware(store, detection.NewCrescendoDetector(store))
+		// Rate anomaly shares the same session buffer. Registered
+		// unconditionally but profile-gated: it only runs on scans
+		// whose profile sets rate_anomaly_enabled (default off).
+		engine.AddSessionDetector(detection.NewRateAnomalyDetector(store, detection.DefaultRateAnomalyConfig()))
 	}
 	return engine, security.NewProfileLookup(pool)
 }

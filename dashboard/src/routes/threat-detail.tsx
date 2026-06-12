@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { EmptyState, PageHeader } from "@/components/card";
 import { SkeletonRows } from "@/components/skeleton";
+import { weightedThreatScore } from "@/lib/utils";
 
 const severityVariant = (s: string) => {
   switch (s) {
@@ -136,22 +137,24 @@ export function ThreatDetailPage() {
                     {threat.action_taken}
                   </Badge>
                 </Row>
-                <Row label="Severity">
-                  <span className="font-mono tabular-nums">
-                    {(threat.score * 100).toFixed(0)}%
-                  </span>
-                </Row>
-                <Row label="Confidence">
-                  <span className="font-mono tabular-nums">
-                    {(threat.confidence * 100).toFixed(0)}%
-                  </span>
-                </Row>
-                <Row label="Triggers at">
+                <Row label="Score (weighted)">
                   <span
                     className="font-mono tabular-nums"
                     title="Severity × Confidence — what the threshold actually compares against."
                   >
-                    {(threat.score * threat.confidence * 100).toFixed(0)}%
+                    {(
+                      weightedThreatScore(
+                        threat.score,
+                        threat.confidence,
+                        threat.weighted_score,
+                      ) * 100
+                    ).toFixed(0)}
+                    %
+                  </span>
+                </Row>
+                <Row label="Severity × Confidence">
+                  <span className="font-mono tabular-nums text-muted-foreground">
+                    {threat.score.toFixed(2)} × {threat.confidence.toFixed(2)}
                   </span>
                 </Row>
               </CardContent>

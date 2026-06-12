@@ -22,6 +22,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/proxy"
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/internal/security/detection"
+	"github.com/bastio-ai/bastio/internal/security/iplist"
 	"github.com/bastio-ai/bastio/internal/security/overlay"
 
 	"net/url"
@@ -1182,6 +1183,21 @@ func (h *Handler) runSecurityScan(r *http.Request, info *auth.APIKeyInfo, conten
 			result.ShouldBlock = true
 			result.Action = security.ActionBlock
 		}
+	}
+
+	// IP-reputation verdicts are attached to the request context by the
+	// iplist gateway middleware (annotate mode). Fold the synthetic
+	// finding into the same ScanResult so it lands in the trace's
+	// threat rows through the exact same recordTrace path as detector
+	// and plugin findings. Block mode never reaches this handler — the
+	// middleware returns 403 upstream — so the finding here is
+	// warn-only and never flips ShouldBlock.
+	if verdict, ok := iplist.VerdictFrom(r.Context()); ok && verdict.Listed {
+		if result == nil {
+			result = &security.ScanResult{}
+		}
+		result.Findings = append(result.Findings, verdict.Finding())
+		result.ThreatTypes = append(result.ThreatTypes, security.ThreatIPReputation)
 	}
 
 	status := "ok"

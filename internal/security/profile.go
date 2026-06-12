@@ -46,6 +46,11 @@ type Profile struct {
 	IndirectInjectionEnabled bool
 	OutputExfilEnabled       bool
 	TopicPolicyEnabled       bool
+	// RateAnomalyEnabled turns on the session-aware request-rate burst
+	// detector. Off by default: it needs a session-scoped traffic shape
+	// (X-Bastio-Session-Id) to be meaningful, and existing deployments
+	// shouldn't start emitting anomaly warns on upgrade.
+	RateAnomalyEnabled bool
 
 	// Per-detector strategies — what happens when the step fires.
 	// See migration 007 for the allowed values per detector.
@@ -80,6 +85,7 @@ func DefaultProfile() Profile {
 		IndirectInjectionEnabled:  true,
 		OutputExfilEnabled:        true,
 		TopicPolicyEnabled:        false,
+		RateAnomalyEnabled:        false,
 		InjectionStrategy:         ActionBlock,
 		JailbreakStrategy:         ActionBlock,
 		SecretsStrategy:           ActionMask,
@@ -131,6 +137,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		indirectInjectionEnabled  bool
 		outputExfilEnabled        bool
 		topicPolicyEnabled        bool
+		rateAnomalyEnabled        bool
 		injectionStrategy         string
 		jailbreakStrategy         string
 		secretsStrategy           string
@@ -143,6 +150,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 			jailbreak_enabled, jailbreak_threshold,
 			pii_enabled, pii_action, pii_scan_response, pii_restore_response, pii_token_style,
 			secrets_enabled, indirect_injection_enabled, output_exfil_enabled, topic_policy_enabled,
+			rate_anomaly_enabled,
 			injection_strategy, jailbreak_strategy, secrets_strategy,
 			indirect_injection_strategy, output_exfil_strategy
 		FROM security_profiles
@@ -154,6 +162,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		&jailbreakEnabled, &jailbreakThreshold,
 		&piiEnabled, &piiAction, &piiScanResponse, &piiRestoreResponse, &piiTokenStyle,
 		&secretsEnabled, &indirectInjectionEnabled, &outputExfilEnabled, &topicPolicyEnabled,
+		&rateAnomalyEnabled,
 		&injectionStrategy, &jailbreakStrategy, &secretsStrategy,
 		&indirectInjectionStrategy, &outputExfilStrategy,
 	)
@@ -194,6 +203,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		IndirectInjectionEnabled:  indirectInjectionEnabled,
 		OutputExfilEnabled:        outputExfilEnabled,
 		TopicPolicyEnabled:        topicPolicyEnabled,
+		RateAnomalyEnabled:        rateAnomalyEnabled,
 		InjectionStrategy:         normalizeStrategy(injectionStrategy, ActionBlock),
 		JailbreakStrategy:         normalizeStrategy(jailbreakStrategy, ActionBlock),
 		SecretsStrategy:           normalizeStrategy(secretsStrategy, ActionMask),

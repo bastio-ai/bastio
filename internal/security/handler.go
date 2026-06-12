@@ -59,6 +59,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			bot_detection_enabled, custom_patterns_enabled,
 			canonicalize_enabled, secrets_enabled,
 			indirect_injection_enabled, output_exfil_enabled, topic_policy_enabled,
+			rate_anomaly_enabled,
 			injection_strategy, jailbreak_strategy, secrets_strategy,
 			indirect_injection_strategy, output_exfil_strategy,
 			created_at::text, updated_at::text
@@ -95,6 +96,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			indirectInjectionEnabled  bool
 			outputExfilEnabled        bool
 			topicPolicyEnabled        bool
+			rateAnomalyEnabled        bool
 			injectionStrategy         string
 			jailbreakStrategy         string
 			secretsStrategy           string
@@ -111,6 +113,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			&botDetectionEnabled, &customPatternsEnabled,
 			&canonicalizeEnabled, &secretsEnabled,
 			&indirectInjectionEnabled, &outputExfilEnabled, &topicPolicyEnabled,
+			&rateAnomalyEnabled,
 			&injectionStrategy, &jailbreakStrategy, &secretsStrategy,
 			&indirectInjectionStrategy, &outputExfilStrategy,
 			&createdAt, &updatedAt,
@@ -139,6 +142,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			"indirect_injection_enabled":  indirectInjectionEnabled,
 			"output_exfil_enabled":        outputExfilEnabled,
 			"topic_policy_enabled":        topicPolicyEnabled,
+			"rate_anomaly_enabled":        rateAnomalyEnabled,
 			"injection_strategy":          injectionStrategy,
 			"jailbreak_strategy":          jailbreakStrategy,
 			"secrets_strategy":            secretsStrategy,
@@ -184,6 +188,7 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		"indirect_injection_enabled":  "indirect_injection_enabled",
 		"output_exfil_enabled":        "output_exfil_enabled",
 		"topic_policy_enabled":        "topic_policy_enabled",
+		"rate_anomaly_enabled":        "rate_anomaly_enabled",
 		"injection_strategy":          "injection_strategy",
 		"jailbreak_strategy":          "jailbreak_strategy",
 		"secrets_strategy":            "secrets_strategy",

@@ -1,0 +1,20 @@
+#
+# firehol_level1.netset (test fixture)
+#
+# Maintainer      : FireHOL team
+# List source URL : https://iplists.firehol.org/
+;
+; alternate comment style some mirrors use
+
+192.0.2.0/24
+198.51.100.7
+203.0.113.0/25
+10.0.0.0/8
+10.1.0.0/16
+2001:db8::/32
+2001:db8:ffff::1
+
+not-an-ip-line
+300.300.300.300
+192.0.2.0/33
+1.2.3.0/24 # trailing inline comment

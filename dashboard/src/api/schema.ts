@@ -1307,6 +1307,8 @@ export interface components {
             source?: string;
             severity: string;
             score: number;
+            /** @description score × confidence, clamped to [0, 1] — the value the engine's threshold check compares against. Derived server-side; 0 on rows persisted before the field existed (fall back to score). */
+            weighted_score?: number;
             action_taken: string;
             detector_name: string;
             matched_pattern: string;
@@ -1479,6 +1481,8 @@ export interface components {
             /** @enum {string} */
             severity: "low" | "medium" | "high" | "critical";
             score?: number;
+            /** @description score × confidence, clamped to [0, 1] — the value the engine's threshold check compares against. Derived server-side; 0 on rows persisted before the field existed (fall back to score). */
+            weighted_score?: number;
             action_taken?: string;
             detector_name: string;
             matched_pattern?: string;
@@ -1771,6 +1775,8 @@ export interface components {
             severity?: "critical" | "high" | "medium" | "low" | "info";
             score?: number;
             confidence?: number;
+            /** @description score × confidence, clamped to [0, 1] — the value compared against the step threshold. */
+            weighted_score?: number;
             matched_pattern?: string;
             matched_content?: string;
             action?: string;

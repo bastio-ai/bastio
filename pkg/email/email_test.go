@@ -202,6 +202,39 @@ func TestSubscriptionReceiptShape(t *testing.T) {
 	}
 }
 
+func TestPaymentFailedShape(t *testing.T) {
+	t.Parallel()
+	msg := PaymentFailed("Alice", "Bastio Cloud Pro", "€99.00",
+		"https://invoice.stripe.com/i/abc", "https://cloud.bastio.com/billing")
+	if !strings.Contains(msg.Text, "€99.00") {
+		t.Fatalf("missing amount: %q", msg.Text)
+	}
+	if !strings.Contains(msg.Text, "https://invoice.stripe.com/i/abc") ||
+		!strings.Contains(msg.Text, "https://cloud.bastio.com/billing") {
+		t.Fatalf("missing invoice or portal link: %q", msg.Text)
+	}
+	if !strings.Contains(msg.Subject, "Bastio Cloud Pro") {
+		t.Fatalf("product name missing from subject: %q", msg.Subject)
+	}
+	if msg.Tag != "payment-failed" {
+		t.Fatalf("tag: %q", msg.Tag)
+	}
+}
+
+func TestPaymentFailedOmitsEmptyInvoiceURL(t *testing.T) {
+	t.Parallel()
+	msg := PaymentFailed("", "", "€29.00", "", "https://cloud.bastio.com/billing")
+	if strings.Contains(msg.Text, "Pay the open invoice") {
+		t.Fatalf("invoice line should be omitted when URL empty: %q", msg.Text)
+	}
+	if !strings.Contains(msg.Text, "Hi there") {
+		t.Fatalf("expected fallback greeting, got %q", msg.Text)
+	}
+	if !strings.Contains(msg.Subject, "Bastio subscription") {
+		t.Fatalf("expected generic product fallback in subject: %q", msg.Subject)
+	}
+}
+
 func TestRenderTemplate(t *testing.T) {
 	t.Parallel()
 	out, err := Render("Hi {{.Name}}, you have {{.N}} seats.", map[string]any{

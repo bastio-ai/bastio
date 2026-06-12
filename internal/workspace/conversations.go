@@ -405,7 +405,14 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	// call. Scan the text only; recompose with images afterwards.
 	latestUser := lastUserContent(msgs)
 	latestUserText, latestUserImages := extractImagesForProvider(latestUser)
-	scan, _, _ := h.scanUserMessage(r.Context(), customerID, userID, ipHash, userAgent, latestUserText)
+	scan, _, scanErr := h.scanUserMessage(r.Context(), customerID, conversationID, userID, ipHash, userAgent, latestUserText)
+	if scanErr != nil {
+		// Only set in fail-closed mode (BASTIO_SCAN_FAIL_MODE=closed):
+		// the scan couldn't run, so the prompt must not reach the
+		// provider. The caller's error branch persists an assistant
+		// error message, so the chat UI shows why nothing came back.
+		return nil, fmt.Errorf("security scan unavailable, message not sent: %w", scanErr)
+	}
 	if scan != nil && scan.ShouldBlock {
 		// Persist a "blocked" assistant message so the chat UI shows
 		// the policy hit. No provider call; cost stays zero.
