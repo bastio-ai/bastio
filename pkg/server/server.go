@@ -50,11 +50,14 @@ import (
 	"github.com/bastio-ai/bastio/internal/auth"
 	"github.com/bastio-ai/bastio/pkg/config"
 	"github.com/bastio-ai/bastio/internal/gateway"
+	"github.com/bastio-ai/bastio/internal/license"
+	"github.com/bastio-ai/bastio/internal/notify"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/prompts"
 	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/proxy"
 	"github.com/bastio-ai/bastio/internal/security"
+	"github.com/bastio-ai/bastio/internal/security/detection"
 	"github.com/bastio-ai/bastio/internal/security/iplist"
 	"github.com/bastio-ai/bastio/internal/security/overlay"
 	"github.com/bastio-ai/bastio/internal/workspace"
@@ -693,8 +696,51 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	apiKeyHandler := auth.NewAPIKeyHandler(s.db.Pool)
 	secProfileHandler := security.NewProfileHandler(s.db.Pool)
 	detectHandler := security.NewDetectHandler(secEngine, profileLookup, s.db.Pool)
+	detectHandler.SetCache(s.redis)
 	detectHandler.SetOverlayLoader(overlayLoader)
 	detectHandler.SetOverlayStore(overlayStore)
+	detectHandler.SetTraceListener(func(ev security.TraceEvent) {
+		s.recorder.RecordTrace(&observability.TraceRecord{
+			ID:             ev.ID,
+			CustomerID:     ev.CustomerID,
+			ProxyID:        ev.ProxyID,
+			Method:         ev.Method,
+			Path:           ev.Path,
+			Provider:       ev.Provider,
+			Model:          ev.Model,
+			StartedAt:      ev.StartedAt,
+			CompletedAt:    ev.CompletedAt,
+			DurationMs:     ev.DurationMs,
+			Status:         ev.Status,
+			HTTPStatus:     ev.HTTPStatus,
+			ThreatDetected: ev.ThreatDetected,
+			ThreatTypes:    ev.ThreatTypes,
+			ThreatScore:    ev.ThreatScore,
+			SecurityAction: ev.SecurityAction,
+			RequestBody:    ev.RequestBody,
+			ResponseBody:   ev.ResponseBody,
+			TraceName:      ev.TraceName,
+		})
+
+		for _, ft := range ev.FiredThreats {
+			s.recorder.RecordThreatEvent(&observability.ThreatEvent{
+				ID:             uuid.New(),
+				TraceID:        ev.ID,
+				CustomerID:     ev.CustomerID,
+				ProxyID:        ev.ProxyID,
+				ThreatType:     ft.DetectorName,
+				ThreatSubtype:  "detection.fired",
+				Severity:       ft.Severity,
+				Score:          ft.Score,
+				Action:         ev.SecurityAction,
+				DetectorName:   ft.DetectorName,
+				MatchedPattern: ft.MatchedPattern,
+				MatchedContent: ft.MatchedContent,
+				Confidence:     0.9,
+				DetectedAt:     time.Now().UTC(),
+			})
+		}
+	})
 	playgroundHandler := security.NewPlaygroundHandler(s.db.Pool)
 	providerKeyHandler := proxy.NewProviderKeyHandler(s.db.Pool)
 	if s.opts.encryption != nil {
@@ -797,6 +843,20 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.Mount("/proxies", proxySvc.Routes(providerKeyHandler))
 			r.Mount("/provider-keys", providerKeyHandler.Routes())
 			r.Mount("/prompts", promptHandler.Routes())
+			piiHandler := detection.NewPIIMaskHandler()
+			piiHandler.SetCache(s.redis)
+			r.Mount("/pii", piiHandler.Routes())
+
+			agentActionHandler := security.NewAgentActionHandler()
+			agentActionHandler.SetCache(s.redis)
+			r.Mount("/guardrails", agentActionHandler.Routes())
+			r.Mount("/webhooks", notify.NewHandler(notify.NewDispatcher()).Routes())
+			r.Mount("/license", license.NewService().Routes())
+			cacheHandler := observability.NewCacheHandler(s.ch, s.redis)
+			r.Get("/dashboard/cache-settings", cacheHandler.GetSettings)
+			r.Put("/dashboard/cache-settings", cacheHandler.UpdateSettings)
+			r.Delete("/dashboard/cache", cacheHandler.FlushCache)
+			r.Get("/cache/stats", cacheHandler.GetSettings)
 			r.Get("/config", configHandler.GetConfig)
 
 			// Cloud-only dashboard route registrations (e.g. /v1/governance/

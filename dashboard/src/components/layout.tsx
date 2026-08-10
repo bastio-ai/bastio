@@ -10,14 +10,14 @@ import {
   Key,
   Layers,
   MessagesSquare,
-  Users as UsersIcon,
-  FileText,
-  Settings,
   Sun,
   Moon,
   BookOpen,
   FlaskConical,
   Sparkles,
+  Zap,
+  Bell,
+  FileCheck,
 } from "lucide-react";
 import { Search, Menu } from "lucide-react";
 import { Fragment, useState } from "react";
@@ -39,43 +39,41 @@ const BUILD_SHA =
   (typeof import.meta !== "undefined" && (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env?.VITE_BUILD_SHA) ||
   "dev";
 
+import { UserProfileWidget } from "@/components/user-profile-widget";
+
 const navSections = [
   {
     label: "Observe",
     items: [
       { to: "/", label: "Overview", icon: LayoutDashboard },
       { to: "/traces", label: "Traces", icon: Activity },
+      { to: "/cache", label: "Response Cache", icon: Zap },
       { to: "/sessions", label: "Sessions", icon: MessagesSquare },
-      { to: "/users", label: "Users", icon: UsersIcon },
       { to: "/analytics", label: "Analytics", icon: BarChart3 },
     ],
   },
   {
-    label: "Security",
+    label: "Security & Guardrails",
     items: [
       { to: "/threats", label: "Threats", icon: ShieldAlert },
       { to: "/security-settings", label: "Security Center", icon: Shield },
       { to: "/overlays", label: "Custom Policies", icon: Layers },
-      { to: "/playground", label: "Playground", icon: FlaskConical },
+      { to: "/playground", label: "API Sandbox", icon: FlaskConical },
+      { to: "/webhooks", label: "SIEM & Webhooks", icon: Bell },
+      { to: "/compliance", label: "Compliance & Audit", icon: FileCheck },
     ],
   },
   {
-    label: "Workspace",
+    label: "Workforce",
     items: [
-      { to: "/workspace", label: "Workspace", icon: Sparkles },
+      { to: "/workspace", label: "Private AI Portal", icon: Sparkles },
     ],
   },
   {
-    label: "Build",
+    label: "Developer API",
     items: [
-      { to: "/prompts", label: "Prompts", icon: FileText },
-    ],
-  },
-  {
-    label: "Platform",
-    items: [
-      { to: "/proxies", label: "Proxies", icon: Server },
       { to: "/api-keys", label: "API Keys", icon: Key },
+      { to: "/proxies", label: "LLM Gateways", icon: Server },
     ],
   },
 ] as const;
@@ -87,8 +85,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const palette = useCommandPalette();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Extension nav (cloud-dashboard injects "Shadow AI" → /governance via
-  // LayoutNavExtensionProvider). Empty in OSS standalone.
+  // Extension nav (cloud-dashboard injects extension routes). Empty in OSS standalone.
   const navExt = useLayoutNav();
 
   // Close mobile drawer whenever the route changes.
@@ -178,7 +175,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     return (
                       <Link
                         key={to}
-                        to={to}
+                        to={to as never}
                         className={cn(
                           "flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-all duration-150",
                           isActive
@@ -193,57 +190,46 @@ export function Layout({ children }: { children: ReactNode }) {
                   })}
                 </div>
               </div>
-              {/* Cloud-injected sections anchored to this OSS section.
-                  Rendering inside the same Fragment keeps them visually
-                  attached to the section they trail. */}
+              {/* Cloud-injected sections anchored to this OSS section. */}
               {(navExt.sectionsAfter?.[section.label.toLowerCase()] ?? []).map((extSection) =>
                 renderExtSection(extSection, currentPath),
               )}
             </Fragment>
           ))}
-          {/* Trailing append-only extension sections (no anchor specified). */}
+          {/* Trailing append-only extension sections. */}
           {navExt.sections?.map((section) => renderExtSection(section, currentPath))}
         </nav>
 
-        {/* Footer */}
+        {/* Footer & User Profile Widget */}
         <Separator className="opacity-50" />
-        <div className="px-3 py-3">
-          <a
-            href="/docs"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-all duration-150 mb-1 text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
-          >
-            <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground/70" />
-            API Docs
-          </a>
-          <Link
-            to="/settings"
-            className={cn(
-              "flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] transition-all duration-150 mb-2",
-              currentPath === "/settings"
-                ? "bg-foreground/[0.08] text-foreground font-medium shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
-            )}
-          >
-            <Settings className={cn("h-4 w-4 flex-shrink-0", currentPath === "/settings" ? "text-foreground" : "text-muted-foreground/70")} />
-            Settings
-          </Link>
-          <div className="flex items-center justify-between px-2.5">
-            <span className="text-[10px] text-muted-foreground/50 font-medium">v0.1.0 OSS</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground/50 hover:text-foreground"
-              onClick={toggleTheme}
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+        <div className="px-3 py-3 space-y-2">
+          <UserProfileWidget />
+
+          <div className="flex items-center justify-between px-2 pt-1">
+            <a
+              href="/docs"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
             >
-              {theme === "dark" ? (
-                <Sun className="h-3 w-3" />
-              ) : (
-                <Moon className="h-3 w-3" />
-              )}
-            </Button>
+              <BookOpen className="h-3 w-3" /> Docs
+            </a>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground/50 font-medium">v0.1.0</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground/50 hover:text-foreground"
+                onClick={toggleTheme}
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-3 w-3" />
+                ) : (
+                  <Moon className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </aside>

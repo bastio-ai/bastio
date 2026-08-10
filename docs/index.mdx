@@ -1,18 +1,27 @@
 ---
 title: What is Bastio?
-description: Open-source AI security gateway for production LLM apps.
+description: Open-source AI Security Gateway, Standalone Guardrail APIs, and Enterprise Private AI Portal.
 ---
 
-Bastio is an open-source security gateway that sits between your application and any LLM provider. It detects PII, jailbreaks, prompt injection, and bots in real time — with a latency budget of under 50ms across all detectors combined.
+# Bastio AI Security Platform
 
-## Why Bastio
+Bastio is an open-source AI security gateway and standalone guardrail API engine. It scans prompts, RAG documents, and agent tool calls for prompt injection, jailbreaks, PII, secrets, and dangerous shell commands in **under 20ms**.
 
-- **Provider-agnostic.** OpenAI, Anthropic, Bedrock, Vertex, Azure, Ollama.
-- **Inline, not async.** Threats are blocked before the request reaches the provider, not logged after the fact.
-- **Self-host or cloud.** Single Go binary + Docker Compose for OSS. Managed SaaS at `cloud.bastio.com`.
-- **Multi-tenant at the core.** Every SQL query includes `customer_id`. No exceptions.
+Bastio operates across two core entry points powered by the exact same Go & ClickHouse threat engine:
 
-## Next steps
+1. **Pillar 1: Bastio AI Guardrails & Security Gateway (Developer APIs)**: Drop-in OpenAI/Anthropic SDK replacement (`base_url="https://api.bastio.com/v1"`) or direct REST APIs (`/v1/detect`, `/v1/pii/mask`, `/v1/guardrails/agent-action`).
+2. **Pillar 2: Bastio Enterprise Private AI Portal**: Managed private chat portal for employees providing multi-provider LLM access behind strict zero-data retention and automated GDPR Article 30 audit trails.
 
-- [Get started](/docs/getting-started) — spin up Bastio locally in five minutes.
-- [Bastio Cloud](/docs/cloud) — what the hosted, multi-tenant version adds on top of OSS.
+## Major Platform Features
+
+- **Inline Threat Intercept (under 20ms)**: Block prompt injection, DAN jailbreaks, toxicity, and secret leaks before requests leave your network.
+- **Reversible PII & Secret Redaction**: Replace SSNs, Credit Cards, API Keys, and Emails with synthetic placeholders (`<PII_EMAIL_1>`) before hitting third-party LLMs, and restore output.
+- **Autonomous Agent Action Guardrails**: Intercept dangerous shell commands (`rm -rf`), SQL injections, and path traversals in tool-call arguments before execution.
+- **Real-Time SIEM Webhook Dispatcher**: Trigger instant alert notifications to Slack, Splunk HEC, Datadog Event API, or custom HTTP webhooks.
+- **1-Click EU AI Act & ISO 42001 Compliance Auditor**: Download audit-ready evidence JSON reports summarizing controls for EU AI Act Articles 14, 15, 50 and ISO/IEC 42001:2023.
+
+## Quick Links
+
+- [Standalone Developer APIs](/docs/developer-apis) — Integration guide for threat detection, PII tokenization, and agent action guardrails.
+- [Getting Started](/docs/getting-started) — Run Bastio locally in 5 minutes with Docker Compose or Go single binary.
+- [API Reference](/docs/api-reference) — Complete route specs for gateway proxies, standalone APIs, and admin routes.

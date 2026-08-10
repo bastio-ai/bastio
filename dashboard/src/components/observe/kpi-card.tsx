@@ -56,19 +56,30 @@ export function KpiCard({
     sparklineTone ??
     (tone === "danger" ? "danger" : tone === "success" ? "success" : tone === "warn" ? "warn" : "neutral");
 
+  const strValue = String(value);
+  const isLongText = typeof value === "string" && strValue.length > 10;
+
   return (
-    <div className={cn("surface-card p-4 flex flex-col gap-0", className)}>
-      <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-text-muted">
+    <div className={cn("surface-card p-4 flex flex-col gap-0 min-w-0 overflow-hidden", className)}>
+      <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-text-muted truncate">
         {label}
       </p>
 
-      <p className="mt-3 font-mono text-[28px] leading-none font-medium tracking-[-0.01em] text-text-primary tabular-nums">
-        {String(value)}
+      <p
+        className={cn(
+          "mt-3 font-mono font-medium tracking-tight text-text-primary truncate min-w-0",
+          isLongText
+            ? "text-sm sm:text-base leading-snug font-semibold"
+            : "text-[24px] sm:text-[28px] leading-none tracking-[-0.01em] tabular-nums"
+        )}
+        title={strValue}
+      >
+        {strValue}
         {unit && <span className="ml-0.5 text-[18px] text-text-secondary">{unit}</span>}
       </p>
 
       {delta ? (
-        <p className={cn("mt-1.5 font-mono text-[11px] tabular-nums", deltaClass[delta.tone])}>
+        <p className={cn("mt-1.5 font-mono text-[11px] tabular-nums truncate", deltaClass[delta.tone])}>
           {delta.direction === "up" ? "↗" : "↘"} {delta.value}
         </p>
       ) : (
@@ -76,7 +87,7 @@ export function KpiCard({
       )}
 
       {sub && (
-        <p className="mt-2 font-mono text-[10px] text-text-muted tabular-nums">
+        <p className="mt-2 font-mono text-[10px] text-text-muted tabular-nums truncate" title={sub}>
           {sub}
         </p>
       )}

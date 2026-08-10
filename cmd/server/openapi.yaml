@@ -11,6 +11,16 @@ servers:
   - url: http://localhost:4000
     description: Local development
 
+tags:
+  - name: Developer APIs
+    description: Standalone inline threat scanning, reversible PII redaction, and autonomous agent tool call guardrails.
+  - name: Gateway
+    description: OpenAI and Anthropic compatible LLM security proxies.
+  - name: Observability
+    description: Traces, sessions, user metrics, and Redis response cache settings.
+  - name: Security
+    description: Security profile rules and configuration.
+
 paths:
   /health:
     get:
@@ -953,7 +963,7 @@ paths:
         and the dashboard playground. Does not call an upstream LLM — it
         returns the per-step decisions and the sanitized content produced
         by the profile's input/output pipeline.
-      tags: [Security]
+      tags: [Developer APIs]
       requestBody:
         required: true
         content:
@@ -963,12 +973,129 @@ paths:
       responses:
         "200":
           description: Detection outcome per message
+          headers:
+            X-Bastio-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+              description: Cache status header
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DetectResponse"
         "400":
           description: Invalid request body
+
+  /v1/pii/mask:
+    post:
+      operationId: maskPII
+      summary: Standalone PII & Secret Redaction and Tokenization
+      description: Mask sensitive data (emails, phone numbers, SSNs, credit cards, AWS keys, JWTs) into synthetic placeholders.
+      tags: [Developer APIs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PIIMaskRequest"
+      responses:
+        "200":
+          description: Masked and tokenized content
+          headers:
+            X-Bastio-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+              description: Cache status header
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PIIMaskResponse"
+
+  /v1/pii/unmask:
+    post:
+      operationId: unmaskPII
+      summary: Restore original PII tokens in LLM output
+      description: Replace synthetic placeholders with original sensitive values.
+      tags: [Developer APIs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PIIUnmaskRequest"
+      responses:
+        "200":
+          description: Unmasked content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PIIUnmaskResponse"
+
+  /v1/guardrails/agent-action:
+    post:
+      operationId: inspectAgentAction
+      summary: Autonomous Agent Tool Call & Action Guardrails
+      description: Inspect proposed tool call arguments for system injection, dangerous commands, or path traversal.
+      tags: [Developer APIs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentActionRequest"
+      responses:
+        "200":
+          description: Inspection outcome
+          headers:
+            X-Bastio-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+              description: Cache status header
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentActionResponse"
+
+  /v1/dashboard/cache-settings:
+    get:
+      operationId: getCacheSettings
+      summary: Retrieve Redis cache status and metrics
+      tags: [Observability]
+      responses:
+        "200":
+          description: Cache configuration and live hit/miss metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheSettings"
+    put:
+      operationId: updateCacheSettings
+      summary: Update Redis response cache settings
+      tags: [Observability]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CacheSettings"
+      responses:
+        "200":
+          description: Updated cache settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheSettings"
+
+  /v1/dashboard/cache:
+    delete:
+      operationId: flushCache
+      summary: Flush Redis response cache and reset counters
+      tags: [Observability]
+      responses:
+        "200":
+          description: Cache flushed successfully
 
   /v1/playground/runs:
     get:
@@ -3029,6 +3156,108 @@ components:
           type: string
           format: uuid
           description: "Optional proxy association, recorded on playground runs so the history panel can scope by proxy."
+        bypass_cache:
+          type: boolean
+          default: false
+          description: "Set true to force a live scan and bypass Redis response cache."
+
+    PIIMaskRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: "Raw input text to scan and mask."
+        mode:
+          type: string
+          enum: [tokenize, mask, redact]
+          default: tokenize
+          description: "Masking strategy. tokenize creates reversible placeholders, mask obfuscates with ***, redact replaces with [REDACTED]."
+        bypass_cache:
+          type: boolean
+          default: false
+
+    PIIMaskResponse:
+      type: object
+      properties:
+        original_text:
+          type: string
+        processed_text:
+          type: string
+        tokens:
+          type: object
+          additionalProperties:
+            type: string
+        detected_types:
+          type: array
+          items:
+            type: string
+
+    PIIUnmaskRequest:
+      type: object
+      required: [text, tokens]
+      properties:
+        text:
+          type: string
+        tokens:
+          type: object
+          additionalProperties:
+            type: string
+
+    PIIUnmaskResponse:
+      type: object
+      properties:
+        unmasked_text:
+          type: string
+
+    AgentActionRequest:
+      type: object
+      required: [tool_name, arguments]
+      properties:
+        tool_name:
+          type: string
+        arguments:
+          type: object
+        agent_role:
+          type: string
+        context:
+          type: string
+
+    AgentActionResponse:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        action:
+          type: string
+          enum: [allow, block, flag]
+        risk_score:
+          type: number
+        reasons:
+          type: array
+          items:
+            type: string
+        sanitized_arguments:
+          type: object
+
+    CacheSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        ttl_seconds:
+          type: integer
+        mode:
+          type: string
+          enum: [redis, memory, disabled]
+        hit_count:
+          type: integer
+        miss_count:
+          type: integer
+        hit_rate_pct:
+          type: number
+        avg_latency_saved_ms:
+          type: number
 
     DetectFinding:
       type: object

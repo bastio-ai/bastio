@@ -440,8 +440,8 @@ export function PlaygroundPage() {
   return (
     <>
       <PageHeader
-        title="Playground"
-        description="Send a test prompt, see which detectors fire, and preview the sanitized output before deploying a profile change."
+        title="API Sandbox & Code Generator"
+        description="Test threat inspection, preview detector verdicts, and export production code snippets in cURL, Python, and TypeScript."
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] gap-4 mt-4">

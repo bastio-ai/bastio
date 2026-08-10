@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -87,4 +88,45 @@ func (c *Cache) Incr(ctx context.Context, key string) (int64, error) {
 // Expire sets a TTL on an existing key.
 func (c *Cache) Expire(ctx context.Context, key string, ttl time.Duration) error {
 	return c.client.Expire(ctx, key, ttl).Err()
+}
+
+type CacheConfig struct {
+	Enabled               bool     `json:"enabled"`
+	TTLSeconds            int      `json:"ttl_seconds"`
+	CacheNondeterministic bool     `json:"cache_nondeterministic"`
+	OptOutModels          []string `json:"opt_out_models"`
+	OptOutRoutes          []string `json:"opt_out_routes"`
+}
+
+// ShouldBypass checks if caching is disabled or if model/path match opt-out exclusions.
+func (c *Cache) ShouldBypass(ctx context.Context, model, path string) bool {
+	if c == nil {
+		return true
+	}
+	var cfg CacheConfig
+	found, err := c.Get(ctx, "cache:config", &cfg)
+	if !found || err != nil {
+		return false
+	}
+
+	if !cfg.Enabled {
+		return true
+	}
+
+	normModel := strings.ToLower(strings.TrimSpace(model))
+	normPath := strings.ToLower(strings.TrimSpace(path))
+
+	for _, opt := range cfg.OptOutModels {
+		if normModel != "" && strings.EqualFold(strings.TrimSpace(opt), normModel) {
+			return true
+		}
+	}
+
+	for _, route := range cfg.OptOutRoutes {
+		if normPath != "" && strings.EqualFold(strings.TrimSpace(route), normPath) {
+			return true
+		}
+	}
+
+	return false
 }

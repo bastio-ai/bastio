@@ -13,8 +13,6 @@ import { SessionsPage } from "./sessions";
 import { SessionDetailPage } from "./session-detail";
 import { UsersPage } from "./users";
 import { UserDetailPage } from "./user-detail";
-import { PromptsPage } from "./prompts";
-import { PromptDetailPage } from "./prompt-detail";
 import { ThreatsPage, validateThreatsSearch } from "./threats";
 import { ThreatDetailPage } from "./threat-detail";
 import { AnalyticsPage } from "./analytics";
@@ -30,6 +28,8 @@ import { OverlayTemplatesPage } from "./overlay-templates";
 import { OverlayNewPage } from "./overlays-new";
 import { OverlayVersionNewPage } from "./overlay-version-new";
 import { ChatsPage } from "./chats";
+import { WebhooksPage } from "./webhooks";
+import { CompliancePage } from "./compliance";
 
 // Workspace admin console — configure assistants, knowledge, settings.
 // The chat surface is also reachable in-app at /workspace/chat for OSS
@@ -72,12 +72,15 @@ function WorkspaceChatLazyRoute() {
   );
 }
 
+import { AntigravityCloud404 } from "@/components/antigravity-404";
+
 const rootRoute = createRootRoute({
   component: () => (
     <Layout>
       <Outlet />
     </Layout>
   ),
+  notFoundComponent: AntigravityCloud404,
 });
 
 const indexRoute = createRoute({
@@ -125,13 +128,19 @@ const userDetailRoute = createRoute({
 const promptsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/prompts",
-  component: PromptsPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/workspace" });
+  },
+  component: () => null,
 });
 
 const promptDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/prompts/$name",
-  component: PromptDetailPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/workspace" });
+  },
+  component: () => null,
 });
 
 const threatsRoute = createRoute({
@@ -297,10 +306,45 @@ const conversationDeepLinkRoute = createRoute({
   component: WorkspaceChatLazyRoute,
 });
 
+import { ProfilePage } from "./profile";
+
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile",
+  component: ProfilePage,
+});
+
+const webhooksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/webhooks",
+  component: WebhooksPage,
+});
+
+import { CachePage } from "./cache";
+
+const cacheRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/cache",
+  component: CachePage,
+});
+
+const complianceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compliance",
+  component: CompliancePage,
+});
+
+const billingRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/billing",
+  beforeLoad: () => {
+    throw redirect({ to: "/settings" });
+  },
+  component: () => null,
+});
+
 // rootRoute + ossChildRoutes are exported so bastio-cloud's dashboard
-// can compose its own route tree (with the Governance route layered
-// on top) without duplicating this list. OSS standalone keeps using
-// the routeTree export below.
+// can compose its own route tree without duplicating this list.
 export { rootRoute };
 
 export const ossChildRoutes = [
@@ -322,6 +366,10 @@ export const ossChildRoutes = [
   securityRedirectRoute,
   playgroundRoute,
   apiKeysRoute,
+  profileRoute,
+  webhooksRoute,
+  complianceRoute,
+  cacheRoute,
   settingsRoute,
   overlaysRoute,
   overlayNewRoute,
@@ -334,4 +382,5 @@ export const ossChildRoutes = [
   conversationDeepLinkRoute,
 ];
 
-export const routeTree = rootRoute.addChildren(ossChildRoutes);
+export const routeTree = rootRoute.addChildren([...ossChildRoutes, billingRedirectRoute]);
+
