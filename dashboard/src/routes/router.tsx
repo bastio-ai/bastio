@@ -71,7 +71,7 @@ function WorkspaceChatLazyRoute() {
   );
 }
 
-import { AntigravityCloud404 } from "@/components/antigravity-404";
+import { NotFound } from "@/components/not-found";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -79,7 +79,7 @@ const rootRoute = createRootRoute({
       <Outlet />
     </Layout>
   ),
-  notFoundComponent: AntigravityCloud404,
+  notFoundComponent: NotFound,
 });
 
 const indexRoute = createRoute({
