@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/pkg/cache"
+	"github.com/bastio-ai/bastio/pkg/tenant"
 )
 
 // PIIMaskHandler provides standalone API endpoints for PII and Secret masking,
@@ -47,7 +48,6 @@ type PIIMaskRequest struct {
 }
 
 type PIIMaskResponse struct {
-	OriginalText  string            `json:"original_text"`
 	ProcessedText string            `json:"processed_text"`
 	Tokens        map[string]string `json:"tokens,omitempty"`
 	DetectedTypes []string          `json:"detected_types"`
@@ -87,11 +87,21 @@ func (h *PIIMaskHandler) Mask(w http.ResponseWriter, r *http.Request) {
 		r.Header.Get("X-Cache-Bypass") == "1"
 	bypass := req.BypassCache || bypassHeader
 
+	// Tokenize responses carry the placeholder -> original PII map, which is
+	// reversible. Never persist those; only irreversible mask/redact output is
+	// cacheable. Keys are scoped per customer so tenants can never observe each
+	// other's entries.
+	cacheable := mode != "tokenize"
+
 	var cacheKey string
-	if h.cache != nil && !bypass && !h.cache.ShouldBypass(r.Context(), "bastio-pii-v1", r.URL.Path) {
+	if h.cache != nil && cacheable && !bypass && !h.cache.ShouldBypass(r.Context(), "bastio-pii-v1", r.URL.Path) {
+		customerID := tenant.DefaultOSSID
+		if id, err := tenant.FromContext(r.Context()); err == nil {
+			customerID = id
+		}
 		hasher := sha256.New()
-		hasher.Write([]byte(mode + ":" + req.Text))
-		cacheKey = "devapi:pii:mask:" + hex.EncodeToString(hasher.Sum(nil))
+		hasher.Write([]byte(customerID.String() + ":" + mode + ":" + req.Text))
+		cacheKey = "devapi:pii:mask:" + customerID.String() + ":" + hex.EncodeToString(hasher.Sum(nil))
 
 		var cachedResp PIIMaskResponse
 		if found, _ := h.cache.Get(r.Context(), cacheKey, &cachedResp); found {
@@ -104,7 +114,6 @@ func (h *PIIMaskHandler) Mask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := PIIMaskResponse{
-		OriginalText:  req.Text,
 		DetectedTypes: []string{},
 	}
 

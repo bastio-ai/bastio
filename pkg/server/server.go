@@ -50,8 +50,6 @@ import (
 	"github.com/bastio-ai/bastio/internal/auth"
 	"github.com/bastio-ai/bastio/pkg/config"
 	"github.com/bastio-ai/bastio/internal/gateway"
-	"github.com/bastio-ai/bastio/internal/license"
-	"github.com/bastio-ai/bastio/internal/notify"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/prompts"
 	"github.com/bastio-ai/bastio/internal/providers"
@@ -850,8 +848,6 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			agentActionHandler := security.NewAgentActionHandler()
 			agentActionHandler.SetCache(s.redis)
 			r.Mount("/guardrails", agentActionHandler.Routes())
-			r.Mount("/webhooks", notify.NewHandler(notify.NewDispatcher()).Routes())
-			r.Mount("/license", license.NewService().Routes())
 			cacheHandler := observability.NewCacheHandler(s.ch, s.redis)
 			r.Get("/dashboard/cache-settings", cacheHandler.GetSettings)
 			r.Put("/dashboard/cache-settings", cacheHandler.UpdateSettings)

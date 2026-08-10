@@ -84,7 +84,6 @@ const gPrefixMap: Record<string, string> = {
   s: "/sessions",
   u: "/users",
   a: "/analytics",
-  w: "/webhooks",
   k: "/api-keys",
   ",": "/settings",
 };
@@ -116,7 +115,6 @@ export function CommandPalette({ open, onOpenChange }: Props) {
       { id: "nav-workspace",  group: "Workforce",  label: "Go to Private AI Portal",                  onSelect: () => navigate({ to: "/workspace" }) },
       { id: "nav-threats",    group: "Security",   label: "Go to Threats",           shortcut: "G H", onSelect: () => navigate({ to: "/threats" }) },
       { id: "nav-security",   group: "Security",   label: "Go to Security Policies",                 onSelect: () => navigate({ to: "/security-settings" }) },
-      { id: "nav-webhooks",   group: "Security",   label: "Go to SIEM Webhooks",     shortcut: "G W", onSelect: () => navigate({ to: "/webhooks" }) },
       { id: "nav-compliance", group: "Security",   label: "Go to Compliance & Audits",                onSelect: () => navigate({ to: "/compliance" }) },
       { id: "nav-cache",      group: "Platform",   label: "Go to Response Cache",                     onSelect: () => navigate({ to: "/cache" }) },
       { id: "nav-proxies",    group: "Platform",   label: "Go to Proxies",                            onSelect: () => navigate({ to: "/proxies" }) },

@@ -28,7 +28,6 @@ import { OverlayTemplatesPage } from "./overlay-templates";
 import { OverlayNewPage } from "./overlays-new";
 import { OverlayVersionNewPage } from "./overlay-version-new";
 import { ChatsPage } from "./chats";
-import { WebhooksPage } from "./webhooks";
 import { CompliancePage } from "./compliance";
 
 // Workspace admin console — configure assistants, knowledge, settings.
@@ -314,12 +313,6 @@ const profileRoute = createRoute({
   component: ProfilePage,
 });
 
-const webhooksRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/webhooks",
-  component: WebhooksPage,
-});
-
 import { CachePage } from "./cache";
 
 const cacheRoute = createRoute({
@@ -367,7 +360,6 @@ export const ossChildRoutes = [
   playgroundRoute,
   apiKeysRoute,
   profileRoute,
-  webhooksRoute,
   complianceRoute,
   cacheRoute,
   settingsRoute,

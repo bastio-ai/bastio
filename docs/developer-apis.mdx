@@ -94,7 +94,6 @@ curl -X POST "http://localhost:4000/v1/pii/mask" \
 **Response**:
 ```json
 {
-  "original_text": "Please send report to John Doe at john.doe@acme-corp.com or call 555-0199.",
   "processed_text": "Please send report to John Doe at [EMAIL_1] or call [PHONE_1].",
   "tokens": {
     "[EMAIL_1]": "john.doe@acme-corp.com",
@@ -220,26 +219,7 @@ curl -X DELETE "http://localhost:4000/v1/dashboard/cache" \
 
 ---
 
-## 5. Real-Time SIEM & Webhook Connectors (`POST /v1/webhooks`)
-
-Configure automated alert dispatches to Slack, Splunk HTTP Event Collector (HEC), Datadog Event API, or custom HTTP POST endpoints when threats are detected.
-
-```bash
-curl -X POST "http://localhost:4000/v1/webhooks" \
-  -H "Authorization: Bearer sk-bastio-..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "SOC Slack Alert Channel",
-    "type": "slack",
-    "url": "https://hooks.slack.com/services/T00/B00/XXXXXX",
-    "min_severity": "high",
-    "enabled": true
-  }'
-```
-
----
-
-## 6. 1-Click EU AI Act & ISO 42001 Audit Exporter (`GET /v1/audit/export`)
+## 5. 1-Click EU AI Act & ISO 42001 Audit Exporter (`GET /v1/audit/export`)
 
 Generate audit-ready evidence reports mapping technical controls to EU AI Act Articles 14, 15, 50 and ISO/IEC 42001:2023.
 
@@ -249,24 +229,3 @@ curl -X GET "http://localhost:4000/v1/audit/export?format=json" \
 ```
 
 ---
-
-## 7. Air-Gapped Ed25519 Cryptographic Licensing (`GET /v1/license/status`)
-
-For self-hosted single-binary enterprise deployments running in air-gapped environments without internet access:
-
-```bash
-curl -X GET "http://localhost:4000/v1/license/status"
-```
-
-**Response**:
-```json
-{
-  "valid": true,
-  "tier": "Enterprise Airgap",
-  "customer": "Acme Corp Europe",
-  "expires_at": "2027-12-31T23:59:59Z",
-  "days_remaining": 512,
-  "airgap_enabled": true,
-  "message": "Valid Ed25519 offline license key detected."
-}
-```

@@ -16,7 +16,6 @@ import {
   FlaskConical,
   Sparkles,
   Zap,
-  Bell,
   FileCheck,
 } from "lucide-react";
 import { Search, Menu } from "lucide-react";
@@ -59,7 +58,6 @@ const navSections = [
       { to: "/security-settings", label: "Security Center", icon: Shield },
       { to: "/overlays", label: "Custom Policies", icon: Layers },
       { to: "/playground", label: "API Sandbox", icon: FlaskConical },
-      { to: "/webhooks", label: "SIEM & Webhooks", icon: Bell },
       { to: "/compliance", label: "Compliance & Audit", icon: FileCheck },
     ],
   },

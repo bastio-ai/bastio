@@ -28,16 +28,6 @@ interface ComplianceReport {
   compliance_controls: ComplianceControl[];
 }
 
-interface LicenseStatus {
-  valid: boolean;
-  tier: string;
-  customer: string;
-  expires_at: string;
-  days_remaining: number;
-  airgap_enabled: boolean;
-  message: string;
-}
-
 export function CompliancePage() {
   const [downloading, setDownloading] = useState(false);
 
@@ -46,15 +36,6 @@ export function CompliancePage() {
     queryFn: async () => {
       const res = await fetch("/v1/audit/export");
       if (!res.ok) throw new Error("Failed to load compliance report");
-      return res.json();
-    },
-  });
-
-  const { data: license } = useQuery<LicenseStatus>({
-    queryKey: ["license-status"],
-    queryFn: async () => {
-      const res = await fetch("/v1/license/status");
-      if (!res.ok) return null;
       return res.json();
     },
   });
@@ -157,17 +138,15 @@ export function CompliancePage() {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <Lock className="h-4 w-4 text-emerald-500" />
-              <span className="font-semibold text-sm">Deployment License & Airgap Verification</span>
+              <span className="font-semibold text-sm">Deployment</span>
               <Badge variant="outline" className="text-[10px] font-mono uppercase bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                {license?.tier || "Community OSS"}
+                Community OSS
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              {license?.message || "Running Bastio Open Source Community Edition with local Ed25519 offline verification."}
+              Self-hosted Bastio open-source gateway. All evidence below is generated
+              from this deployment's own traces.
             </p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-            <span>Expires: {license?.expires_at || "Never"}</span>
           </div>
         </CardContent>
       </Card>

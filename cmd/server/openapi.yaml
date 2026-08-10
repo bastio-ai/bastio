@@ -3180,8 +3180,6 @@ components:
     PIIMaskResponse:
       type: object
       properties:
-        original_text:
-          type: string
         processed_text:
           type: string
         tokens:
