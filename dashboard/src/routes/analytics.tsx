@@ -129,7 +129,11 @@ export function AnalyticsPage() {
                     fontSize: "11px",
                     fontFamily: "var(--font-mono)",
                   }}
-                  labelFormatter={(v) => new Date(v).toLocaleString()}
+                  labelFormatter={(v) =>
+                    typeof v === "string" || typeof v === "number"
+                      ? new Date(v).toLocaleString()
+                      : ""
+                  }
                 />
                 <Area type="monotone" dataKey="count" stroke="var(--text-secondary)" strokeWidth={1} fill="url(#reqGrad)" />
               </AreaChart>
