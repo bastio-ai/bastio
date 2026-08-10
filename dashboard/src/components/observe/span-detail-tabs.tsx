@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { Link } from "@tanstack/react-router";
 import type { Observation, TraceThreatDetection } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -58,19 +57,10 @@ export function SpanDetailTabs({ span, threats = [], activeTab, onTabChange }: P
           ) : null}
           {span.cost_cents ? <Meta label="Cost" value={formatCost(span.cost_cents)} /> : null}
           {span.prompt_name ? (
-            <Link
-              to="/prompts/$name"
-              params={{ name: span.prompt_name }}
-              className="inline-flex items-baseline gap-1 font-mono tabular-nums hover:underline"
-            >
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50">
-                Prompt
-              </span>
-              <span className="text-foreground/90">
-                {span.prompt_name}
-                {span.prompt_version ? ` v${span.prompt_version}` : ""}
-              </span>
-            </Link>
+            <Meta
+              label="Prompt"
+              value={`${span.prompt_name}${span.prompt_version ? ` v${span.prompt_version}` : ""}`}
+            />
           ) : null}
           {span.tool_name ? <Meta label="Tool" value={span.tool_name} /> : null}
         </div>

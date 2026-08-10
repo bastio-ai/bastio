@@ -1,0 +1,26 @@
+---
+title: Terms of Service
+description: Terms of Service for Bastio AI Security Gateway & Platform.
+---
+
+# Bastio Platform — Terms of Service
+
+*Effective Date: August 6, 2026*
+
+## 1. Overview & Acceptable Use
+Bastio provides an open-source AI security gateway, standalone guardrail APIs, and managed enterprise private AI chat portals. By accessing Bastio Cloud or running self-hosted Bastio binaries, you agree to these terms.
+
+## 2. API Usage & Free Tier Policy
+- **Free Developer Tier**: Includes **2,500 inspected requests per month** at no cost.
+- **Overages & Paid Plans**: Requests exceeding the free tier require upgrading to a paid tier (Starter at $49/mo, Growth at $249/mo, or Enterprise at $999+/mo). Automated rate-limiting or soft caps apply at 2,500 requests unless a paid billing account is attached.
+- **Prohibited Conduct**: You may not attempt to reverse engineer detector signatures, bypass cryptographic licensing keys, or execute denial-of-service attacks against Bastio infrastructure.
+
+## 3. Data Processing & Privacy Guarantees
+- **Zero Data Retention**: Bastio does not store full prompt contents or LLM completions unless explicit audit logging is enabled by the customer.
+- **Reversible PII Redaction**: PII token maps are held exclusively in volatile RAM during request lifetime and are destroyed immediately upon request completion.
+
+## 4. Single-Binary Enterprise Licensing
+Enterprise single-binary offline instances operate under Ed25519 cryptographic license verification (`bastio.lic`). License keys remain valid for the duration specified in your customer agreement and do not require external phone-home internet connectivity.
+
+## 5. Contact & Legal Inquiries
+For legal, SLA, or custom Enterprise DPA inquiries, contact `legal@bastio.com`.

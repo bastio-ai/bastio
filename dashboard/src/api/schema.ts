@@ -560,6 +560,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pii/mask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Standalone PII & Secret Redaction and Tokenization
+         * @description Mask sensitive data (emails, phone numbers, SSNs, credit cards, AWS keys, JWTs) into synthetic placeholders.
+         */
+        post: operations["maskPII"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pii/unmask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore original PII tokens in LLM output
+         * @description Replace synthetic placeholders with original sensitive values.
+         */
+        post: operations["unmaskPII"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/guardrails/agent-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Autonomous Agent Tool Call & Action Guardrails
+         * @description Inspect proposed tool call arguments for system injection, dangerous commands, or path traversal.
+         */
+        post: operations["inspectAgentAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/dashboard/cache-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Retrieve Redis cache status and metrics */
+        get: operations["getCacheSettings"];
+        /** Update Redis response cache settings */
+        put: operations["updateCacheSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/dashboard/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Flush Redis response cache and reset counters */
+        delete: operations["flushCache"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/playground/runs": {
         parameters: {
             query?: never;
@@ -1766,6 +1861,63 @@ export interface components {
              * @description Optional proxy association, recorded on playground runs so the history panel can scope by proxy.
              */
             proxy_id?: string;
+            /**
+             * @description Set true to force a live scan and bypass Redis response cache.
+             * @default false
+             */
+            bypass_cache: boolean;
+        };
+        PIIMaskRequest: {
+            /** @description Raw input text to scan and mask. */
+            text: string;
+            /**
+             * @description Masking strategy. tokenize creates reversible placeholders, mask obfuscates with ***, redact replaces with [REDACTED].
+             * @default tokenize
+             * @enum {string}
+             */
+            mode: "tokenize" | "mask" | "redact";
+            /** @default false */
+            bypass_cache: boolean;
+        };
+        PIIMaskResponse: {
+            processed_text?: string;
+            tokens?: {
+                [key: string]: string;
+            };
+            detected_types?: string[];
+        };
+        PIIUnmaskRequest: {
+            text: string;
+            tokens: {
+                [key: string]: string;
+            };
+        };
+        PIIUnmaskResponse: {
+            unmasked_text?: string;
+        };
+        AgentActionRequest: {
+            tool_name: string;
+            arguments: Record<string, never>;
+            agent_role?: string;
+            context?: string;
+        };
+        AgentActionResponse: {
+            allowed?: boolean;
+            /** @enum {string} */
+            action?: "allow" | "block" | "flag";
+            risk_score?: number;
+            reasons?: string[];
+            sanitized_arguments?: Record<string, never>;
+        };
+        CacheSettings: {
+            enabled?: boolean;
+            ttl_seconds?: number;
+            /** @enum {string} */
+            mode?: "redis" | "memory" | "disabled";
+            hit_count?: number;
+            miss_count?: number;
+            hit_rate_pct?: number;
+            avg_latency_saved_ms?: number;
         };
         DetectFinding: {
             /** @enum {string} */
@@ -3582,6 +3734,8 @@ export interface operations {
             /** @description Detection outcome per message */
             200: {
                 headers: {
+                    /** @description Cache status header */
+                    "X-Bastio-Cache"?: "HIT" | "MISS";
                     [name: string]: unknown;
                 };
                 content: {
@@ -3590,6 +3744,144 @@ export interface operations {
             };
             /** @description Invalid request body */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    maskPII: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PIIMaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Masked and tokenized content */
+            200: {
+                headers: {
+                    /** @description Cache status header */
+                    "X-Bastio-Cache"?: "HIT" | "MISS";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PIIMaskResponse"];
+                };
+            };
+        };
+    };
+    unmaskPII: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PIIUnmaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Unmasked content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PIIUnmaskResponse"];
+                };
+            };
+        };
+    };
+    inspectAgentAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Inspection outcome */
+            200: {
+                headers: {
+                    /** @description Cache status header */
+                    "X-Bastio-Cache"?: "HIT" | "MISS";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentActionResponse"];
+                };
+            };
+        };
+    };
+    getCacheSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cache configuration and live hit/miss metrics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheSettings"];
+                };
+            };
+        };
+    };
+    updateCacheSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CacheSettings"];
+            };
+        };
+        responses: {
+            /** @description Updated cache settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheSettings"];
+                };
+            };
+        };
+    };
+    flushCache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cache flushed successfully */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -2,6 +2,8 @@ package security
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,8 +18,42 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/bastio-ai/bastio/internal/security/overlay"
+	"github.com/bastio-ai/bastio/pkg/cache"
 	"github.com/bastio-ai/bastio/pkg/tenant"
 )
+
+type FiredThreat struct {
+	DetectorName   string
+	Severity       string
+	Score          float32
+	MatchedPattern string
+	MatchedContent string
+	Message        string
+}
+
+// TraceEvent represents a completed detection event passed to observability.
+type TraceEvent struct {
+	ID             uuid.UUID
+	CustomerID     uuid.UUID
+	ProxyID        uuid.UUID
+	Method         string
+	Path           string
+	Provider       string
+	Model          string
+	StartedAt      time.Time
+	CompletedAt    time.Time
+	DurationMs     uint32
+	Status         string
+	HTTPStatus     uint16
+	ThreatDetected bool
+	ThreatTypes    []string
+	ThreatScore    float32
+	SecurityAction string
+	RequestBody    string
+	ResponseBody   string
+	TraceName      string
+	FiredThreats   []FiredThreat
+}
 
 // DetectHandler exposes POST /v1/detect, the endpoint the TypeScript
 // SDKs (Mastra processor, Vercel AI middleware) and the dashboard
@@ -32,6 +68,18 @@ type DetectHandler struct {
 	overlayLoader *overlay.Loader
 	overlayStore  *overlay.Store
 	shadowDedup   *overlay.ShadowEventDeduper
+	onTrace       func(ev TraceEvent)
+	cache         *cache.Cache
+}
+
+// SetCache injects the Redis cache instance for fast response caching.
+func (h *DetectHandler) SetCache(c *cache.Cache) {
+	h.cache = c
+}
+
+// SetTraceListener installs a listener called when a detection trace completes.
+func (h *DetectHandler) SetTraceListener(fn func(ev TraceEvent)) {
+	h.onTrace = fn
 }
 
 // NewDetectHandler wires the engine and profile lookup the handler uses
@@ -121,6 +169,7 @@ type detectRequest struct {
 	InlineSteps []Step          `json:"steps,omitempty"` // override; the playground uses this
 	Source      string          `json:"source,omitempty"`
 	ProxyID     string          `json:"proxy_id,omitempty"`
+	BypassCache bool            `json:"bypass_cache,omitempty"`
 }
 
 // detectMessageResult reports what happened to a single message.
@@ -147,6 +196,7 @@ type detectResponse struct {
 // sequentially per message but messages are independent; the aggregate
 // action is the strongest across all messages.
 func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 	var req detectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -179,6 +229,55 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 	if req.ProxyID != "" {
 		if id, perr := uuid.Parse(req.ProxyID); perr == nil {
 			proxyID = id
+		}
+	}
+
+	bypassHeader := strings.EqualFold(r.Header.Get("Cache-Control"), "no-cache") ||
+		strings.EqualFold(r.Header.Get("X-Bastio-Bypass-Cache"), "true") ||
+		r.Header.Get("X-Bastio-Bypass-Cache") == "1" ||
+		strings.EqualFold(r.Header.Get("X-Cache-Bypass"), "true") ||
+		r.Header.Get("X-Cache-Bypass") == "1"
+	bypass := req.BypassCache || bypassHeader
+
+	var cacheKey string
+	if h.cache != nil && !bypass && req.Source != "playground" && len(req.InlineSteps) == 0 && !h.cache.ShouldBypass(r.Context(), "bastio-detect-v1", r.URL.Path) {
+		reqBytes, _ := json.Marshal(req)
+		hasher := sha256.New()
+		hasher.Write([]byte(h.tenant(r.Context()).String()))
+		hasher.Write([]byte(":"))
+		hasher.Write(reqBytes)
+		cacheKey = "devapi:detect:" + hex.EncodeToString(hasher.Sum(nil))
+
+		var cachedResp detectResponse
+		if found, _ := h.cache.Get(r.Context(), cacheKey, &cachedResp); found {
+			_, _ = h.cache.Incr(r.Context(), "cache:hits")
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Bastio-Cache", "HIT")
+			_ = json.NewEncoder(w).Encode(cachedResp)
+
+			if h.onTrace != nil {
+				respBytes, _ := json.Marshal(cachedResp)
+				h.onTrace(TraceEvent{
+					ID:             uuid.New(),
+					CustomerID:     h.tenant(r.Context()),
+					ProxyID:        proxyID,
+					Method:         r.Method,
+					Path:           r.URL.Path,
+					Provider:       "developer-api",
+					Model:          "bastio-detect-v1",
+					StartedAt:      startTime,
+					CompletedAt:    time.Now(),
+					DurationMs:     uint32(time.Since(startTime).Milliseconds()),
+					Status:         "ok",
+					HTTPStatus:     200,
+					ThreatDetected: cachedResp.ShouldBlock || cachedResp.Action == ActionBlock,
+					SecurityAction: string(cachedResp.Action),
+					RequestBody:    string(reqBytes),
+					ResponseBody:   string(respBytes),
+					TraceName:      "POST /v1/detect (cache hit)",
+				})
+			}
+			return
 		}
 	}
 
@@ -271,7 +370,85 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	if bypass {
+		w.Header().Set("X-Bastio-Cache", "BYPASS")
+	} else {
+		w.Header().Set("X-Bastio-Cache", "MISS")
+	}
 	_ = json.NewEncoder(w).Encode(resp)
+
+	if h.cache != nil && cacheKey != "" && !bypass {
+		_, _ = h.cache.Incr(r.Context(), "cache:misses")
+		_ = h.cache.Set(r.Context(), cacheKey, resp, 1*time.Hour)
+	}
+
+	if h.onTrace != nil {
+		threatDetected := resp.ShouldBlock || resp.Action == ActionBlock
+		var threatTypes []string
+		var firedThreats []FiredThreat
+		var maxScore float32
+		for _, msg := range resp.Messages {
+			for _, step := range msg.Steps {
+				if step.Fired {
+					threatTypes = append(threatTypes, step.Detector)
+					if float32(step.Score) > maxScore {
+						maxScore = float32(step.Score)
+					}
+					sev := "high"
+					if step.Score >= 0.8 {
+						sev = "critical"
+					} else if step.Score < 0.5 {
+						sev = "medium"
+					}
+					matchedPattern := "override"
+					matchedContent := msg.Original
+					if len(step.Findings) > 0 {
+						matchedPattern = step.Findings[0].MatchedPattern
+						matchedContent = step.Findings[0].MatchedContent
+					}
+					firedThreats = append(firedThreats, FiredThreat{
+						DetectorName:   step.Detector,
+						Severity:       sev,
+						Score:          float32(step.Score),
+						MatchedPattern: matchedPattern,
+						MatchedContent: matchedContent,
+						Message:        fmt.Sprintf("%s detector fired", step.Detector),
+					})
+				}
+			}
+		}
+
+		status := "ok"
+		if resp.ShouldBlock || resp.Action == ActionBlock {
+			status = "blocked"
+		}
+
+		reqBytes, _ := json.Marshal(req)
+		respBytes, _ := json.Marshal(resp)
+
+		h.onTrace(TraceEvent{
+			ID:             uuid.New(),
+			CustomerID:     h.tenant(r.Context()),
+			ProxyID:        proxyID,
+			Method:         r.Method,
+			Path:           r.URL.Path,
+			Provider:       "developer-api",
+			Model:          "bastio-detect-v1",
+			StartedAt:      startTime,
+			CompletedAt:    time.Now(),
+			DurationMs:     uint32(time.Since(startTime).Milliseconds()),
+			Status:         status,
+			HTTPStatus:     200,
+			ThreatDetected: threatDetected,
+			ThreatTypes:    threatTypes,
+			ThreatScore:    maxScore,
+			SecurityAction: string(resp.Action),
+			RequestBody:    string(reqBytes),
+			ResponseBody:   string(respBytes),
+			TraceName:      "POST /v1/detect",
+			FiredThreats:   firedThreats,
+		})
+	}
 
 	// Playground runs are persisted for the dashboard history panel
 	// after the response is written, so the client never waits on DB

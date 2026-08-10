@@ -218,3 +218,113 @@ export function stateTone(
       return "outline";
   }
 }
+
+// Built-in template presets fallback map
+export const BUILTIN_TEMPLATES: Record<string, Template> = {
+  healthcare: {
+    id: "tpl_healthcare",
+    slug: "healthcare",
+    name: "Healthcare / HIPAA Shield",
+    description: "Tighter PII tokenization and indirect-injection defaults for healthcare workloads handling protected health information (PHI).",
+    is_builtin: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    snapshot: {
+      schema_version: 1,
+      additional_patterns: [
+        { name: "mrn_reference", pattern_type: "keyword", pattern: "mrn medical record number patient id", action: "warn", severity: "medium" },
+        { name: "insurance_id", pattern_type: "keyword", pattern: "insurance id member id policy number", action: "warn", severity: "medium" },
+        { name: "icd10_diagnosis", pattern_type: "regex", pattern: "(?i)\\b[A-Z][0-9]{2}(\\.[0-9]{1,4})?\\b", action: "log", severity: "low" }
+      ],
+      detector_overrides: {
+        pii: { action: "tokenize" },
+        indirect_injection: { strategy: "block" },
+        output_exfil: { strategy: "block" }
+      }
+    }
+  },
+  fintech: {
+    id: "tpl_fintech",
+    slug: "fintech",
+    name: "Financial Services Guardrail",
+    description: "Tighter handling of account identifiers, IBAN/SWIFT codes, routing numbers, and API keys for banking and payments.",
+    is_builtin: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    snapshot: {
+      schema_version: 1,
+      additional_patterns: [
+        { name: "iban_keyword", pattern_type: "keyword", pattern: "iban swift bic credit card cvv", action: "block", severity: "high" },
+        { name: "routing_number", pattern_type: "regex", pattern: "\\b0[0-9]{8}\\b|\\b1[0-3][0-9]{7}\\b", action: "warn", severity: "high" }
+      ],
+      detector_overrides: {
+        secrets: { strategy: "block" },
+        injection: { threshold: 0.6, strategy: "block" },
+        output_exfil: { strategy: "block" }
+      }
+    }
+  },
+  code_assistant: {
+    id: "tpl_code_assistant",
+    slug: "code_assistant",
+    name: "Code Assistant Guard",
+    description: "Tuned for developer tools to prevent destructive shell commands (rm -rf, drop table) and secret leakage.",
+    is_builtin: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    snapshot: {
+      schema_version: 1,
+      additional_patterns: [
+        { name: "env_var_secret", pattern_type: "regex", pattern: "(?i)\\b[A-Z][A-Z0-9_]*_(TOKEN|SECRET|KEY|PASSWORD)\\s*=", action: "warn", severity: "high" },
+        { name: "destructive_command", pattern_type: "regex", pattern: "(?i)(rm\\s+-rf|drop\\s+table|chmod\\s+777)", action: "block", severity: "critical" }
+      ],
+      detector_overrides: {
+        secrets: { strategy: "block" },
+        jailbreak: { threshold: 0.7, strategy: "block" }
+      }
+    }
+  },
+  customer_support: {
+    id: "tpl_customer_support",
+    slug: "customer_support",
+    name: "Customer Support Assistant",
+    description: "PII masking with explicit block on raw exfiltration attempts in outbound responses.",
+    is_builtin: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    snapshot: {
+      schema_version: 1,
+      additional_patterns: [
+        { name: "ticket_id", pattern_type: "regex", pattern: "(?i)\\b(ticket|case)[-_ ]?#?[0-9]{4,}", action: "log", severity: "low" }
+      ],
+      detector_overrides: {
+        pii: { action: "mask" },
+        output_exfil: { strategy: "block" }
+      }
+    }
+  },
+  consumer_chat: {
+    id: "tpl_consumer_chat",
+    slug: "consumer_chat",
+    name: "Consumer Chat Assistant",
+    description: "Balanced jailbreak and prompt injection thresholds optimized for consumer UX with low false positives.",
+    is_builtin: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    snapshot: {
+      schema_version: 1,
+      detector_overrides: {
+        jailbreak: { threshold: 0.75, strategy: "warn" },
+        injection: { threshold: 0.75, strategy: "warn" }
+      }
+    }
+  }
+};
+
+// Aliases mapping slug variations to canonical built-in templates
+export const TEMPLATE_SLUG_ALIASES: Record<string, string> = {
+  "hipaa-phi-guardrail": "healthcare",
+  "financial-sec-compliance": "fintech",
+  "code-execution-defense": "code_assistant",
+  "strict-prompt-protection": "customer_support"
+};

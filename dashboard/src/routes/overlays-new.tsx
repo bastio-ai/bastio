@@ -5,6 +5,8 @@ import { ArrowLeft, ChevronRight, Plus, ShieldX, Sparkles } from "lucide-react";
 
 import { api } from "@/api/client";
 import {
+  BUILTIN_TEMPLATES,
+  TEMPLATE_SLUG_ALIASES,
   emptySnapshot,
   overlayApi,
   overlayKeys,
@@ -49,6 +51,10 @@ export function OverlayNewPage() {
   const templateSlug = search.template;
   const fromThreatID = search.from_threat;
 
+  const resolvedSlug = templateSlug
+    ? TEMPLATE_SLUG_ALIASES[templateSlug] || templateSlug
+    : undefined;
+
   // Templates list is cheap — one query, cached by TanStack Query.
   // We only use it when a template slug is in the URL, but requesting
   // it unconditionally lets us show the selected template's name
@@ -58,10 +64,22 @@ export function OverlayNewPage() {
     queryFn: overlayApi.templates,
     enabled: !!templateSlug,
   });
-  const template = useMemo(
-    () => templatesQuery.data?.find((t) => t.slug === templateSlug) ?? null,
-    [templatesQuery.data, templateSlug],
-  );
+
+  const template = useMemo(() => {
+    if (!resolvedSlug && !templateSlug) return null;
+    const key = resolvedSlug || templateSlug || "";
+    const fromApi = templatesQuery.data?.find(
+      (t) => t.slug === key || t.slug === templateSlug,
+    );
+    if (fromApi && fromApi.snapshot && Object.keys(fromApi.snapshot).length > 1) {
+      return fromApi;
+    }
+    return (
+      BUILTIN_TEMPLATES[key] ??
+      BUILTIN_TEMPLATES[templateSlug || ""] ??
+      null
+    );
+  }, [templatesQuery.data, resolvedSlug, templateSlug]);
 
   // Threat source prefill. Fetched only when from_threat is set.
   const threatQuery = useQuery({

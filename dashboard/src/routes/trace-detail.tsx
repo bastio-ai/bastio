@@ -203,8 +203,18 @@ function KpiStrip({
       <KpiCard label="Cost" value={formatCost(trace.cost_cents ?? 0)} />
       <KpiCard
         label="Security"
-        value={threatCount === 0 ? "Clean" : `${threatCount} hit`}
-        tone={threatCount === 0 ? "success" : "danger"}
+        value={
+          threatCount > 0
+            ? `${threatCount} hit${threatCount > 1 ? "s" : ""}`
+            : trace.status === "blocked" || trace.threat_detected
+            ? "Blocked"
+            : "Clean"
+        }
+        tone={
+          threatCount > 0 || trace.status === "blocked" || trace.threat_detected
+            ? "danger"
+            : "success"
+        }
         sub={trace.security_action ?? "pass"}
       />
       <KpiCard
@@ -372,33 +382,47 @@ function ScoresPanel({ traceId }: { traceId: string }) {
   });
 
   return (
-    <div className="space-y-2">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-        Scores ({scores.length})
-      </p>
+    <div className="space-y-3">
+      <div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-foreground">Evaluation Scores</span>
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+            {scores.length}
+          </Badge>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+          Record human feedback or LLM-as-a-judge quality metrics (e.g. correctness, toxicity) for dataset evaluation.
+        </p>
+      </div>
+
       {scores.length ? (
-        <div className="divide-y divide-border/30">
+        <div className="space-y-1.5">
           {scores.map((s: TraceScore) => (
             <div
               key={s.id}
-              className="grid grid-cols-[9rem_1fr_7rem] gap-2 py-1 text-xs"
+              className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/40 text-xs"
             >
-              <span className="truncate font-mono">{s.name}</span>
-              <span className="truncate text-muted-foreground">
-                {s.value_type === "numeric"
-                  ? s.numeric_value?.toFixed(3)
-                  : s.string_value}
-                {s.comment ? ` — ${s.comment}` : ""}
-              </span>
-              <span className="truncate text-right text-[11px] text-muted-foreground">
-                {s.evaluator || "—"}
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono font-medium text-foreground truncate">{s.name}</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
+                  {s.value_type === "numeric" ? s.numeric_value?.toFixed(3) : s.string_value}
+                </Badge>
+                {s.comment && (
+                  <span className="text-[11px] text-muted-foreground truncate max-w-[120px]">
+                    — {s.comment}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-muted-foreground/70 shrink-0 ml-2">
+                {s.evaluator || "human"}
               </span>
             </div>
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">No scores yet.</p>
+        <p className="text-[11px] text-muted-foreground/70 italic">No evaluation scores recorded yet.</p>
       )}
+
       <AddScoreForm onSubmit={(req) => create.mutate(req)} isPending={create.isPending} />
     </div>
   );
@@ -415,16 +439,15 @@ function AddScoreForm({
   const [valueType, setValueType] = useState<"numeric" | "categorical" | "boolean">("numeric");
   const [numeric, setNumeric] = useState("");
   const [str, setStr] = useState("");
-  const [comment, setComment] = useState("");
   const [evaluator, setEvaluator] = useState("human");
 
-  const submit = () => {
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
     if (!name) return;
     const req: CreateTraceScoreRequest = {
-      name,
+      name: name.trim(),
       value_type: valueType,
-      comment: comment || undefined,
-      evaluator: evaluator || undefined,
+      evaluator: evaluator.trim() || "human",
     };
     if (valueType === "numeric") {
       const n = parseFloat(numeric);
@@ -438,51 +461,64 @@ function AddScoreForm({
     setName("");
     setNumeric("");
     setStr("");
-    setComment("");
   };
 
   return (
-    <div className="grid grid-cols-[1fr_8rem_1fr_1fr_auto] gap-2 pt-2">
-      <Input
-        placeholder="name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="h-7 text-xs"
-      />
-      <Select value={valueType} onValueChange={(v) => setValueType(v as typeof valueType)}>
-        <SelectTrigger className="h-7 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="numeric">numeric</SelectItem>
-          <SelectItem value="categorical">categorical</SelectItem>
-          <SelectItem value="boolean">boolean</SelectItem>
-        </SelectContent>
-      </Select>
-      {valueType === "numeric" ? (
+    <form onSubmit={submit} className="p-2.5 rounded-lg border border-border/40 bg-muted/10 space-y-2.5">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Add New Score</p>
+      <div className="grid grid-cols-2 gap-2">
         <Input
-          placeholder="value"
-          value={numeric}
-          onChange={(e) => setNumeric(e.target.value)}
+          placeholder="Score Name (e.g. correctness)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="h-7 text-xs"
+          required
+        />
+        <Select value={valueType} onValueChange={(v) => setValueType(v as typeof valueType)}>
+          <SelectTrigger className="h-7 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="numeric">Numeric (0.0 - 1.0)</SelectItem>
+            <SelectItem value="categorical">Categorical</SelectItem>
+            <SelectItem value="boolean">Boolean (pass/fail)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {valueType === "numeric" ? (
+          <Input
+            type="number"
+            step="0.01"
+            placeholder="Score Value (e.g. 0.95)"
+            value={numeric}
+            onChange={(e) => setNumeric(e.target.value)}
+            className="h-7 text-xs"
+            required
+          />
+        ) : (
+          <Input
+            placeholder={valueType === "boolean" ? "true / false" : "Value (e.g. pass)"}
+            value={str}
+            onChange={(e) => setStr(e.target.value)}
+            className="h-7 text-xs"
+            required
+          />
+        )}
+        <Input
+          placeholder="Evaluator (e.g. human, gpt-4o)"
+          value={evaluator}
+          onChange={(e) => setEvaluator(e.target.value)}
           className="h-7 text-xs"
         />
-      ) : (
-        <Input
-          placeholder={valueType === "boolean" ? "true/false" : "value"}
-          value={str}
-          onChange={(e) => setStr(e.target.value)}
-          className="h-7 text-xs"
-        />
-      )}
-      <Input
-        placeholder="evaluator"
-        value={evaluator}
-        onChange={(e) => setEvaluator(e.target.value)}
-        className="h-7 text-xs"
-      />
-      <Button onClick={submit} disabled={!name || isPending} size="sm" className="h-7 text-xs">
-        <Plus className="h-3 w-3" /> Add
-      </Button>
-    </div>
+      </div>
+
+      <div className="flex justify-end pt-1">
+        <Button type="submit" disabled={!name || isPending} size="sm" className="h-7 text-xs gap-1">
+          <Plus className="h-3 w-3" /> Add Score
+        </Button>
+      </div>
+    </form>
   );
 }

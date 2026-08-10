@@ -220,11 +220,15 @@ func (r *Recorder) Dropped() (traces, threats, analytics, observations uint64) {
 // RecordTrace enqueues a trace for batched insertion. Non-blocking; drops
 // the event if the buffer is full.
 func (r *Recorder) RecordTrace(trace *TraceRecord) {
+	if trace == nil {
+		return
+	}
 	select {
 	case r.traceCh <- trace:
 	default:
 		r.tracesDropped.Add(1)
 	}
+	r.RecordAnalytics(trace)
 }
 
 // RecordAnalytics enqueues a per-request analytics row. Non-blocking.
@@ -246,6 +250,18 @@ func (r *Recorder) RecordObservation(obs *ObservationRecord) {
 	case r.observationCh <- obs:
 	default:
 		r.observationsDropped.Add(1)
+	}
+}
+
+// RecordThreatEvent enqueues a single ThreatEvent. Non-blocking.
+func (r *Recorder) RecordThreatEvent(ev *ThreatEvent) {
+	if ev == nil {
+		return
+	}
+	select {
+	case r.threatCh <- ev:
+	default:
+		r.threatsDropped.Add(1)
 	}
 }
 

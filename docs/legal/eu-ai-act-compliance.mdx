@@ -1,0 +1,24 @@
+---
+title: EU AI Act & ISO 42001 Compliance Matrix
+description: Detailed control mapping guide for EU AI Act Articles 14, 15, 50 and ISO/IEC 42001:2023.
+---
+
+# EU AI Act & ISO/IEC 42001 Compliance Control Matrix
+
+Bastio provides automated audit trails and technical controls designed to satisfy key European Union AI Act requirements and ISO/IEC 42001:2023 AI Management System standards.
+
+| Standard / Regulation | Control Section | Requirement Summary | Bastio Technical Implementation |
+|---|---|---|---|
+| **EU AI Act** | Article 14 | Human Oversight & Operational Intercepts | Real-time threat intercept engine blocks high-risk prompts before execution; dashboard trace viewer allows human security team oversight. |
+| **EU AI Act** | Article 15 | Cybersecurity, Robustness & Prompt Injection Shield | Neural and heuristic prompt injection detectors run at &lt;20ms latency to neutralize indirect injection and jailbreak attacks. |
+| **EU AI Act** | Article 50 | Transparency & Output Labeling | Cryptographic trace hashing and request/response metadata tagging for verifiable AI provenance. |
+| **ISO/IEC 42001:2023** | Control A.6.2 | AI System Impact & Risk Assessment | `/v1/guardrails/agent-action` provides real-time risk scoring on tool calls, shell execution, and database queries. |
+| **ISO/IEC 42001:2023** | Control A.7.4 | Data Governance & PII Redaction | Reversible tokenization and masking for SSNs, IBANs, Credit Cards, API Keys, and custom regular expressions. |
+| **SOC 2 Type II** | CC6.1, CC6.6 | Boundary Protection & Event Auditing | ClickHouse request/response audit logs with configurable 30 to 365 day retention windows and SIEM webhook integration. |
+
+## Generating Audit Reports
+1-Click compliance reports can be downloaded directly from the Bastio Dashboard under **Security & Guardrails > Compliance & Audit**, or via API:
+```bash
+curl -X GET "https://api.bastio.com/v1/audit/export?format=json" \
+  -H "Authorization: Bearer bst_live_..."
+```

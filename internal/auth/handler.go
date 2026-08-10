@@ -45,6 +45,7 @@ func (h *APIKeyHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/", h.List)
 	r.Post("/", h.Create)
+	r.Put("/{id}", h.Update)
 	r.Delete("/{id}", h.Revoke)
 	return r
 }
@@ -79,6 +80,9 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 			slog.Error("scan api key row", "error", err)
 			continue
 		}
+		if scopes == nil {
+			scopes = []string{}
+		}
 		keys = append(keys, map[string]any{
 			"id":             id,
 			"name":           name,
@@ -102,8 +106,10 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 // Create generates a new API key.
 func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name         string `json:"name"`
-		RateLimitRPM *int   `json:"rate_limit_rpm"`
+		Name         string   `json:"name"`
+		RateLimitRPM *int     `json:"rate_limit_rpm"`
+		Scopes       []string `json:"scopes"`
+		ProxyID      *string  `json:"proxy_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -111,7 +117,19 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name == "" {
-		req.Name = "Unnamed Key"
+		req.Name = "Developer API Key"
+	}
+
+	scopes := req.Scopes
+	if req.ProxyID != nil {
+		if *req.ProxyID == "" || *req.ProxyID == "global" {
+			scopes = []string{}
+		} else {
+			scopes = []string{"proxy:" + *req.ProxyID}
+		}
+	}
+	if scopes == nil {
+		scopes = []string{}
 	}
 
 	// Generate the key
@@ -125,7 +143,7 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO gateway_api_keys (id, customer_id, name, key_hash, key_prefix, scopes, rate_limit_rpm)
 		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)
 		RETURNING created_at::text
-	`, id, tenantIDFromCtx(r.Context()), req.Name, keyHash, keyPrefix, []string{}, req.RateLimitRPM).Scan(&createdAt)
+	`, id, tenantIDFromCtx(r.Context()), req.Name, keyHash, keyPrefix, scopes, req.RateLimitRPM).Scan(&createdAt)
 	if err != nil {
 		slog.Error("create api key failed", "error", err)
 		http.Error(w, `{"error":"failed to create api key"}`, http.StatusInternalServerError)
@@ -135,12 +153,72 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
-		"id":         id.String(),
-		"name":       req.Name,
-		"key":        plainKey,
-		"key_prefix": keyPrefix,
-		"is_active":  true,
-		"created_at": createdAt,
+		"id":             id.String(),
+		"name":           req.Name,
+		"key":            plainKey,
+		"key_prefix":     keyPrefix,
+		"scopes":         scopes,
+		"rate_limit_rpm": req.RateLimitRPM,
+		"is_active":      true,
+		"created_at":     createdAt,
+	})
+}
+
+// Update updates an API key's name, rate limit, or scopes.
+func (h *APIKeyHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name         *string  `json:"name"`
+		RateLimitRPM *int     `json:"rate_limit_rpm"`
+		Scopes       []string `json:"scopes"`
+		ProxyID      *string  `json:"proxy_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	scopes := req.Scopes
+	if req.ProxyID != nil {
+		if *req.ProxyID == "" || *req.ProxyID == "global" {
+			scopes = []string{}
+		} else {
+			scopes = []string{"proxy:" + *req.ProxyID}
+		}
+	}
+	if scopes == nil {
+		scopes = []string{}
+	}
+
+	var name string
+	if req.Name != nil {
+		name = *req.Name
+	}
+
+	_, err = h.db.Exec(r.Context(), `
+		UPDATE gateway_api_keys
+		SET scopes = $1,
+		    name = COALESCE(NULLIF($2, ''), name),
+		    rate_limit_rpm = COALESCE($3, rate_limit_rpm)
+		WHERE id = $4 AND customer_id = $5::uuid
+	`, scopes, name, req.RateLimitRPM, id, tenantIDFromCtx(r.Context()))
+
+	if err != nil {
+		slog.Error("update api key failed", "error", err)
+		http.Error(w, `{"error":"failed to update api key"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status": "ok",
+		"id":     id.String(),
+		"scopes": scopes,
 	})
 }
 

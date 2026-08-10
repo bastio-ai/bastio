@@ -11,6 +11,16 @@ servers:
   - url: http://localhost:4000
     description: Local development
 
+tags:
+  - name: Developer APIs
+    description: Standalone inline threat scanning, reversible PII redaction, and autonomous agent tool call guardrails.
+  - name: Gateway
+    description: OpenAI and Anthropic compatible LLM security proxies.
+  - name: Observability
+    description: Traces, sessions, user metrics, and Redis response cache settings.
+  - name: Security
+    description: Security profile rules and configuration.
+
 paths:
   /health:
     get:
@@ -45,7 +55,94 @@ paths:
                   version:
                     type: string
 
-  # Gateway proxy endpoints (Phase 2)
+  # Standalone Developer APIs & Guardrails
+  /v1/detect:
+    post:
+      operationId: detect
+      summary: Inline Threat & Prompt Injection Scanner
+      description: Run security profile steps against prompt text without proxying a full LLM call.
+      tags: [Developer APIs]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetectRequest"
+      responses:
+        "200":
+          description: Detection outcome
+          headers:
+            X-Bastio-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+              description: Cache status header
+
+  /v1/pii/mask:
+    post:
+      operationId: maskPII
+      summary: Standalone PII & Secret Redaction and Tokenization
+      description: Mask sensitive data into synthetic placeholders.
+      tags: [Developer APIs]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PIIMaskRequest"
+      responses:
+        "200":
+          description: Masked and tokenized content
+          headers:
+            X-Bastio-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+
+  /v1/pii/unmask:
+    post:
+      operationId: unmaskPII
+      summary: Restore original PII tokens in LLM output
+      tags: [Developer APIs]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PIIUnmaskRequest"
+      responses:
+        "200":
+          description: Unmasked content
+
+  /v1/guardrails/agent-action:
+    post:
+      operationId: inspectAgentAction
+      summary: Autonomous Agent Tool Call Guardrails
+      tags: [Developer APIs]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentActionRequest"
+      responses:
+        "200":
+          description: Tool call guardrail decision
+          headers:
+            X-Bastio-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+
+  # Gateway proxy endpoints
   /v1/chat/completions:
     post:
       operationId: chatCompletions
@@ -87,111 +184,24 @@ paths:
         "403":
           description: Request blocked by security policy
 
-  # Management API
-  /v1/proxies:
+  /v1/dashboard/cache-settings:
     get:
-      operationId: listProxies
-      summary: List proxies
-      tags: [Proxies]
-      responses:
-        "200":
-          description: List of proxies
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Proxy"
-    post:
-      operationId: createProxy
-      summary: Create a proxy
-      tags: [Proxies]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateProxyRequest"
-      responses:
-        "201":
-          description: Proxy created
-
-  /v1/api-keys:
-    get:
-      operationId: listApiKeys
-      summary: List API keys
-      tags: [API Keys]
-      responses:
-        "200":
-          description: List of API keys
-    post:
-      operationId: createApiKey
-      summary: Create an API key
-      tags: [API Keys]
-      responses:
-        "201":
-          description: API key created (key shown only once)
-
-  /v1/traces:
-    get:
-      operationId: listTraces
-      summary: List traces with filters
+      operationId: getCacheSettings
+      summary: Retrieve Redis cache metrics and status
       tags: [Observability]
-      parameters:
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-        - name: status
-          in: query
-          schema:
-            type: string
-        - name: from
-          in: query
-          schema:
-            type: string
-            format: date-time
-        - name: to
-          in: query
-          schema:
-            type: string
-            format: date-time
       responses:
         "200":
-          description: Paginated traces
+          description: Cache configuration and live hit/miss metrics
+    put:
+      operationId: updateCacheSettings
+      summary: Update Redis response cache settings
+      tags: [Observability]
 
-  /v1/threats:
-    get:
-      operationId: listThreats
-      summary: List security threat events
-      tags: [Security]
-      responses:
-        "200":
-          description: Threat events
-
-  /v1/analytics/overview:
-    get:
-      operationId: getAnalyticsOverview
-      summary: Dashboard overview metrics
-      tags: [Analytics]
-      responses:
-        "200":
-          description: Overview metrics
-
-  /v1/security/profiles:
-    get:
-      operationId: listSecurityProfiles
-      summary: List security profiles
-      tags: [Security]
-      responses:
-        "200":
-          description: Security profiles
+  /v1/dashboard/cache:
+    delete:
+      operationId: flushCache
+      summary: Flush Redis response cache
+      tags: [Observability]
 
 components:
   securitySchemes:
@@ -208,55 +218,11 @@ components:
         status:
           type: string
           enum: [healthy, unhealthy]
-        postgres:
-          type: string
-        redis:
-          type: string
-        clickhouse:
-          type: string
 
-    Proxy:
+    DetectRequest:
       type: object
+      required: [messages]
       properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        slug:
-          type: string
-        listen_path:
-          type: string
-        target_provider:
-          type: string
-        target_model:
-          type: string
-        is_active:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-
-    CreateProxyRequest:
-      type: object
-      required: [name, target_provider]
-      properties:
-        name:
-          type: string
-        target_provider:
-          type: string
-          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
-        target_model:
-          type: string
-        settings:
-          type: object
-
-    ChatCompletionRequest:
-      type: object
-      required: [model, messages]
-      properties:
-        model:
-          type: string
         messages:
           type: array
           items:
@@ -266,10 +232,45 @@ components:
                 type: string
               content:
                 type: string
-        stream:
+        profile:
+          type: string
+        direction:
+          type: string
+          enum: [input, output]
+        bypass_cache:
           type: boolean
           default: false
-        temperature:
-          type: number
-        max_tokens:
-          type: integer
+
+    PIIMaskRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        mode:
+          type: string
+          enum: [tokenize, mask, redact]
+        bypass_cache:
+          type: boolean
+
+    PIIUnmaskRequest:
+      type: object
+      required: [text, tokens]
+      properties:
+        text:
+          type: string
+        tokens:
+          type: object
+
+    AgentActionRequest:
+      type: object
+      required: [tool_name, arguments]
+      properties:
+        tool_name:
+          type: string
+        arguments:
+          type: object
+        agent_role:
+          type: string
+        context:
+          type: string

@@ -1,0 +1,24 @@
+---
+title: Privacy Policy
+description: Privacy Policy and Data Handling Commitments for Bastio.
+---
+
+# Bastio Privacy & Data Protection Policy
+
+*Effective Date: August 6, 2026*
+
+## 1. Core Data Protection Commitments
+Bastio is engineered from the ground up for strict European and International data privacy standards:
+- **No Training on Customer Data**: Customer prompts, LLM responses, and scanned data are **never** used to train foundation models.
+- **Inline Processing**: Security scanning occurs in real-time under 20ms latency.
+- **EU Data Residency**: Hosted Bastio Cloud services run exclusively in ISO 27001 / SOC 2 certified AWS Frankfurt (`eu-central-1`) infrastructure.
+
+## 2. PII & Secret Redaction Mechanics
+When PII masking (`POST /v1/pii/mask`) or Gateway PII filters are active:
+1. Sensitive values (SSNs, IBANs, Credit Cards, API Keys, Emails, Phone Numbers) are replaced with synthetic placeholders (e.g. `<PII_EMAIL_1>`).
+2. The mapping dictionary lives in volatile RAM during the request life cycle and is never persisted to disk or external databases.
+
+## 3. GDPR Compliance (Articles 28 & 30)
+Bastio provides pre-signed Data Processing Addendums (DPAs) and automated Article 30 Records of Processing Activities for all Enterprise accounts.
+
+For inquiries or DPA execution, email `privacy@bastio.com`.

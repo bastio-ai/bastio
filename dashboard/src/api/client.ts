@@ -236,8 +236,10 @@ export const api = {
 
   apiKeys: {
     list: () => unwrap(http.GET("/v1/api-keys", {})),
-    create: (data: CreateAPIKeyRequest) =>
+    create: (data: CreateAPIKeyRequest & { scopes?: string[]; proxy_id?: string }) =>
       unwrap(http.POST("/v1/api-keys", { body: data })),
+    update: (id: string, data: { name?: string; rate_limit_rpm?: number; scopes?: string[]; proxy_id?: string }) =>
+      unwrap(http.PUT("/v1/api-keys/{id}" as any, { params: { path: { id } }, body: data })),
     revoke: (id: string) =>
       unwrap(http.DELETE("/v1/api-keys/{id}", { params: { path: { id } } })),
   },
