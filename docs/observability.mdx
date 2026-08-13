@@ -48,7 +48,6 @@ running scheduled reports.
 
 ```bash
 curl http://localhost:4000/v1/traces \
-  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
   -G \
   --data-urlencode "after=2026-04-01T00:00:00Z" \
   --data-urlencode "limit=100"
@@ -60,6 +59,8 @@ Filters: `customer_id`, `proxy_id`, `provider`, `model`,
 
 Pagination is cursor-based — every response includes a
 `next_cursor` to walk the next page.
+
+This is a self-hosted management route. Keep it on a trusted network or authenticate it at your ingress; a gateway API key does not authenticate dashboard management APIs.
 
 The full schema lives in the OpenAPI spec at `/docs` on your
 gateway.
@@ -228,6 +229,7 @@ To enrich traces with your application's context, send headers:
 |---|---|
 | `X-End-User-Id` | Hashed and stored on every trace; used for per-user analytics + the threats user-grouping above |
 | `X-Bastio-Trace-Tags` | Comma-separated key=value tags, persisted as JSON on the trace |
+| `X-Bastio-Environment` | Optional override for shared-ingress credentials that explicitly allow it. The value must be a managed environment in the same workspace. Normal application keys derive their environment from the credential and should omit this header. |
 
 Example:
 

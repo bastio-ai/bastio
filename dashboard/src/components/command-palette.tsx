@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Search, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DOCS_URL } from "@/lib/external-links";
 
 type Command = {
   id: string;
@@ -120,7 +121,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
       { id: "nav-proxies",    group: "Platform",   label: "Go to Proxies",                            onSelect: () => navigate({ to: "/proxies" }) },
       { id: "nav-api-keys",   group: "Platform",   label: "Go to API Keys",          shortcut: "G K", onSelect: () => navigate({ to: "/api-keys" }) },
       { id: "nav-settings",   group: "Platform",   label: "Go to Settings",          shortcut: "G ,", onSelect: () => navigate({ to: "/settings" }) },
-      { id: "nav-docs",       group: "Resources",  label: "Open API Docs",           hint: "↗ /docs", onSelect: () => window.open("/docs", "_blank", "noopener") },
+      { id: "nav-docs",       group: "Resources",  label: "Open documentation",      hint: "↗ bastio.com/docs", onSelect: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
     ],
     [navigate],
   );

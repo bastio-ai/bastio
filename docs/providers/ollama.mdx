@@ -16,6 +16,8 @@ This is the right setup for:
 - Anyone who wants to evaluate Bastio without provider account
   setup
 
+> The repository includes an Ollama client, but the public gateway's model router currently falls back unknown model names to OpenAI. Until explicit Ollama routing is added, scan with [`/v1/detect`](/docs/developer-apis/detect) and call Ollama directly.
+
 ## Prerequisites
 
 - An Ollama install running somewhere reachable from your Bastio
@@ -31,17 +33,17 @@ Ollama doesn't authenticate. The proxy just needs the URL.
 ## Create the proxy
 
 ```bash
-curl -X POST http://localhost:4000/api/v1/proxies \
+curl -X POST http://localhost:4000/v1/proxies \
   -H "Content-Type: application/json" \
   -d '{
     "name": "local-ollama",
-    "provider": "ollama",
-    "provider_endpoint": "http://localhost:11434"
+    "slug": "local-ollama",
+    "target_provider": "ollama",
+    "target_model": "llama3.3:70b"
   }'
 ```
 
-For a remote Ollama, use that host: `http://ollama.internal:11434`
-or `https://ollama.your-vpn.example`.
+Configure the Ollama endpoint in the server deployment or provider settings. The proxy management request stores routing metadata, not provider credentials or endpoints.
 
 ## Send a request
 
@@ -83,9 +85,7 @@ resp = client.chat.completions.create(
   same OpenAI-compatible shape.
 - **Multimodal** — vision models (`llava`, `llama3.2-vision`)
   accept `image_url` blocks.
-- **Embeddings** — `POST /v1/embeddings` is proxied; pick a
-  small embedding model (`nomic-embed-text`,
-  `mxbai-embed-large`).
+- Embeddings are not exposed by the Bastio gateway route today.
 
 ## Models
 

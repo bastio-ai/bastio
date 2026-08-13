@@ -29,6 +29,7 @@ import { OverlayNewPage } from "./overlays-new";
 import { OverlayVersionNewPage } from "./overlay-version-new";
 import { ChatsPage } from "./chats";
 import { CompliancePage } from "./compliance";
+import { WorkspacesPage } from "./workspaces";
 
 // Workspace admin console — configure assistants, knowledge, settings.
 // The chat surface is also reachable in-app at /workspace/chat for OSS
@@ -208,6 +209,12 @@ const apiKeysRoute = createRoute({
   component: ApiKeysPage,
 });
 
+const workspacesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workspaces",
+  component: WorkspacesPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -359,6 +366,7 @@ export const ossChildRoutes = [
   securityRedirectRoute,
   playgroundRoute,
   apiKeysRoute,
+  workspacesRoute,
   profileRoute,
   complianceRoute,
   cacheRoute,
@@ -375,4 +383,3 @@ export const ossChildRoutes = [
 ];
 
 export const routeTree = rootRoute.addChildren([...ossChildRoutes, billingRedirectRoute]);
-

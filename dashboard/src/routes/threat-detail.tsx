@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EmptyState, PageHeader } from "@/components/card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
 import { weightedThreatScore } from "@/lib/utils";
 
@@ -77,10 +78,12 @@ export function ThreatDetailPage() {
   const userAgent = (threat as ThreatEvent & { user_agent?: string }).user_agent;
   const details = (threat as ThreatEvent & { details?: Record<string, string> })
     .details;
+  const weightedScore = weightedThreatScore(threat.score, threat.confidence, threat.weighted_score);
 
   return (
     <>
-      <PageHeader
+      <AdminPageHeader
+        eyebrow="Security investigation"
         title={threat.threat_type}
         description={`Detected by ${threat.detector_name} · ${new Date(
           threat.detected_at,
@@ -93,13 +96,20 @@ export function ThreatDetailPage() {
             {threat.severity}
           </Badge>
         }
-        action={
+        actions={
           <div className="flex items-center gap-2">
             <CapturePolicyAction threatID={threat.id} />
             <BackToThreats />
           </div>
         }
       />
+
+      <AdminSummaryStrip items={[
+        { label: "Severity", value: threat.severity, detail: `Confidence ${(threat.confidence * 100).toFixed(0)}%`, tone: threat.severity === "critical" || threat.severity === "high" ? "danger" : "warning" },
+        { label: "Action", value: threat.action_taken, detail: threat.action_taken === "block" ? "Request prevented" : "Event recorded", tone: threat.action_taken === "block" ? "danger" : "warning" },
+        { label: "Weighted score", value: `${(weightedScore * 100).toFixed(0)}%`, detail: "Severity × confidence" },
+        { label: "Detector", value: threat.detector_name, detail: threat.threat_subtype || "No subtype" },
+      ]} />
 
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="space-y-3">
@@ -143,11 +153,7 @@ export function ThreatDetailPage() {
                     title="Severity × Confidence — what the threshold actually compares against."
                   >
                     {(
-                      weightedThreatScore(
-                        threat.score,
-                        threat.confidence,
-                        threat.weighted_score,
-                      ) * 100
+                      weightedScore * 100
                     ).toFixed(0)}
                     %
                   </span>

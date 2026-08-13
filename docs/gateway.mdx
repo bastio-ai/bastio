@@ -4,7 +4,7 @@ description: Proxy your existing LLM client through Bastio with zero code change
 ---
 
 The gateway is the simplest way to put Bastio in the request path.
-Point your existing OpenAI / Anthropic / Bedrock client at Bastio's
+Point your existing OpenAI or Anthropic client at Bastio's
 URL, and every prompt + response is scanned before it leaves your
 network.
 
@@ -14,8 +14,8 @@ Bastio supports two ways to insert security into the LLM call:
 
 | Pattern | What you do | When |
 |---|---|---|
-| **Gateway** (this page) | Change `baseURL` on your existing LLM client | Zero code changes, works with any OpenAI-compatible client |
-| [**SDK**](/docs/sdks) | Add a Bastio middleware around your model | More control, keep your direct provider connection |
+| **Gateway** (this page) | Change `baseURL` on your existing LLM client | OpenAI chat completions or Anthropic Messages |
+| [**Developer APIs**](/docs/developer-apis) | Call a focused security endpoint before your provider | More control, custom block UX, and any provider |
 
 Both end up at the same security engine. Choose the gateway when
 you want a drop-in install; choose the SDK when you need finer
@@ -34,38 +34,35 @@ your client ──▶ Bastio ──▶ provider
 A request through the gateway:
 
 1. Bastio authenticates the request via API key.
-2. Maps the API key to a **proxy** — a stored binding of
-   `(provider, provider API key, security profile)`.
-3. Runs the security scan against the user message.
-4. If allowed: forwards the request to the resolved provider,
+2. Resolves the customer and environment from the key.
+3. Resolves the provider from the model or proxy-specific route and loads that customer's stored provider credential.
+4. Runs the security scan against the user message.
+5. If allowed: forwards the request to the resolved provider,
    stripping internal headers, optionally rewriting redacted
    content.
-5. Streams the response back. Streaming chunks are scanned in
-   flight; redactions are restored before the chunk reaches the
-   client.
-6. Records a trace row (PostgreSQL + ClickHouse).
+6. Streams the response back. In-flight streaming protection currently masks detected secrets; complete response policies run on non-streaming responses.
+7. Records a trace row (PostgreSQL + ClickHouse).
 
 ## Set up a proxy
 
-A proxy is the binding between an API key your app uses and a
-provider account Bastio relays to.
+A proxy stores provider routing metadata. Provider credentials and Bastio gateway keys are managed separately.
+
+Store a provider key in the dashboard, then create the routing proxy:
 
 ```bash
-curl -X POST http://localhost:4000/api/v1/proxies \
+curl -X POST http://localhost:4000/v1/proxies \
   -H "Content-Type: application/json" \
   -d '{
     "name": "prod-openai",
-    "provider": "openai",
-    "provider_api_key": "sk-..."
+    "slug": "prod-openai",
+    "target_provider": "openai",
+    "target_model": "gpt-4o"
   }'
 ```
 
-The response includes:
+The response includes the proxy `id`, slug, listen path, provider, and model. Create the gateway key separately from **Developer API → API Keys** in the dashboard; plaintext API keys are shown only once.
 
-- `id` — the proxy's UUID, used in URLs / dashboard.
-- `gateway_api_key` — the key your application passes to Bastio.
-  Treat this like any other API key. It cannot be retrieved
-  again — copy it now.
+Provider credentials and Bastio gateway keys have different jobs: the provider credential lets Bastio call the LLM provider; the Bastio key authenticates your application to Bastio.
 
 ## Send a request
 
@@ -81,10 +78,10 @@ curl http://localhost:4000/v1/chat/completions \
   }'
 ```
 
-Anthropic-compatible:
+Anthropic-compatible proxies use the proxy id in the route:
 
 ```bash
-curl http://localhost:4000/v1/messages \
+curl http://localhost:4000/v1/guard/$BASTIO_PROXY_ID/v1/messages \
   -H "x-api-key: $BASTIO_GATEWAY_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
@@ -95,37 +92,26 @@ curl http://localhost:4000/v1/messages \
   }'
 ```
 
-The OpenAI route accepts every request shape OpenAI's `/v1/chat/completions`
-accepts (streaming, tool calls, multimodal). The Anthropic route
-mirrors `/v1/messages`.
+The OpenAI route passes the `/v1/chat/completions` JSON body upstream. Bastio's inbound text scan currently extracts string content from `role: "user"` messages; test richer content-part and tool-call payloads against your policy before production. The Anthropic route mirrors the Messages contract behind the proxy-specific path and scans user text blocks.
 
 ## Provider routing
 
-Bastio infers the provider from the model name when possible
-(`gpt-*` → OpenAI, `claude-*` → Anthropic, `meta.llama*` → Bedrock).
-When the model is ambiguous, the proxy's stored `provider` wins.
+Bastio currently infers `gpt-*`, `o1-*`, `o3-*`, and `o4-*` as OpenAI and `claude-*` as Anthropic. Unknown model prefixes fall back to OpenAI. The request body does not currently expose a provider override.
 
-You can also force a provider by setting an explicit field in the
-request body:
-
-```json
-{
-  "model": "gpt-4o",
-  "messages": [...],
-  "bastio_provider": "azure"
-}
-```
-
-This lets one Bastio key fan out to many providers in your account
-— a common pattern for fallback strategies.
+| Provider | Public gateway status | Recommended integration |
+|---|---|---|
+| OpenAI | Available | `POST /v1/chat/completions` |
+| Anthropic | Available | `POST /v1/guard/{proxyId}/v1/messages` |
+| AWS Bedrock | Provider client exists, public model routing incomplete | Call Bedrock directly after [`/v1/detect`](/docs/developer-apis/detect) |
+| Azure OpenAI | Not registered on the public gateway | Call Azure directly after `/v1/detect` |
+| Vertex AI / Gemini | Not registered on the public gateway | Call Google directly after `/v1/detect` |
+| Ollama | Provider client exists, public model routing incomplete | Call Ollama directly after `/v1/detect` |
 
 ## Streaming
 
-`stream: true` works without extra config. Bastio passes through
-SSE chunks, scans content as it arrives, and rewrites in-flight
-when the security profile chooses `mask` or `tokenize`.
+`stream: true` works without extra config. Bastio passes through SSE chunks and masks secret patterns it can identify inside OpenAI-shaped `choices[].delta.content`. Other detector families require complete-document context and do not block individual chunks today.
 
-The `bastio` envelope lands as a final SSE event after the
+The `bastio` envelope lands as a final SSE event immediately before the
 provider's `[DONE]`, so existing clients that only consume
 `choices[].delta.content` keep working.
 
@@ -133,8 +119,7 @@ provider's `[DONE]`, so existing clients that only consume
 
 API keys are SHA-256-hashed in the database. Bastio looks them up
 in Redis (cached) on every request. Rate limits are per-key,
-per-minute, configurable via the `rate_limit_rpm` field on
-the proxy.
+per-minute, configurable on the API key.
 
 ## Self-hosted vs. cloud
 

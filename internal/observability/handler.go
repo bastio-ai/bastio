@@ -151,21 +151,21 @@ func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
 	var traces []map[string]any
 	for rows.Next() {
 		var (
-			id, customerID, proxyID                 string
-			method, path, provider, model           string
-			startedAt, completedAt                  time.Time
-			durationMs                              uint32
-			inputTokens, outputTokens               uint32
-			totalTokens                             uint32
-			costCents                               float64
-			status                                  string
-			threatDetected                          bool
-			threatTypes                             []string
-			threatScore                             float32
-			securityAction                          string
-			endUserID, sessionID                    string
-			environment, release, traceName         string
-			tags                                    map[string]string
+			id, customerID, proxyID         string
+			method, path, provider, model   string
+			startedAt, completedAt          time.Time
+			durationMs                      uint32
+			inputTokens, outputTokens       uint32
+			totalTokens                     uint32
+			costCents                       float64
+			status                          string
+			threatDetected                  bool
+			threatTypes                     []string
+			threatScore                     float32
+			securityAction                  string
+			endUserID, sessionID            string
+			environment, release, traceName string
+			tags                            map[string]string
 		)
 
 		if err := rows.Scan(
@@ -184,7 +184,7 @@ func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
 			"method": method, "path": path, "provider": provider, "model": model,
 			"started_at":   startedAt.UTC().Format(time.RFC3339Nano),
 			"completed_at": completedAt.UTC().Format(time.RFC3339Nano),
-			"duration_ms": durationMs,
+			"duration_ms":  durationMs,
 			"input_tokens": inputTokens, "output_tokens": outputTokens,
 			"total_tokens": totalTokens, "cost_cents": costCents,
 			"status": status, "threat_detected": threatDetected,
@@ -296,6 +296,11 @@ func buildThreatsQuery(customerID string, q url.Values) (sql string, args []any)
 		b.WriteString(f.column)
 		b.WriteString(" = ?")
 		args = append(args, v)
+	}
+
+	if environment := q.Get("environment"); environment != "" {
+		b.WriteString(" AND trace_id IN (SELECT id FROM bastio.analytics_request_logs WHERE customer_id = toUUID(?) AND environment = ?)")
+		args = append(args, customerID, environment)
 	}
 
 	if v := q.Get("from"); v != "" {
@@ -477,6 +482,7 @@ func (h *Handler) AnalyticsOverview(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	from := q.Get("from")
 	to := q.Get("to")
+	environment := q.Get("environment")
 
 	// Build a reusable WHERE clause with optional time range.
 	rangeClause := ""
@@ -489,6 +495,10 @@ func (h *Handler) AnalyticsOverview(w http.ResponseWriter, r *http.Request) {
 		rangeClause += " AND timestamp <= parseDateTime64BestEffort(?)"
 		rangeArgs = append(rangeArgs, to)
 	}
+	if environment != "" {
+		rangeClause += " AND environment = ?"
+		rangeArgs = append(rangeArgs, environment)
+	}
 	threatRange := ""
 	threatRangeArgs := []any{}
 	if from != "" {
@@ -499,12 +509,16 @@ func (h *Handler) AnalyticsOverview(w http.ResponseWriter, r *http.Request) {
 		threatRange += " AND detected_at <= parseDateTime64BestEffort(?)"
 		threatRangeArgs = append(threatRangeArgs, to)
 	}
+	if environment != "" {
+		threatRange += " AND trace_id IN (SELECT id FROM bastio.analytics_request_logs WHERE customer_id = toUUID(?) AND environment = ?)"
+		threatRangeArgs = append(threatRangeArgs, tenantIDFromCtx(r.Context()), environment)
+	}
 
 	var totalReqs, totalThreats, totalBlocked uint64
 	var totalCost float64
 	var avgDuration float64
 
-	overviewArgs := append([]any{tenantIDFromCtx(r.Context())},rangeArgs...)
+	overviewArgs := append([]any{tenantIDFromCtx(r.Context())}, rangeArgs...)
 	_ = h.ch.Conn.QueryRow(ctx, `
 		SELECT
 			count() AS total_requests,
@@ -517,7 +531,7 @@ func (h *Handler) AnalyticsOverview(w http.ResponseWriter, r *http.Request) {
 		overviewArgs...).Scan(&totalReqs, &totalThreats, &totalBlocked, &totalCost, &avgDuration)
 
 	requestsByHour := []map[string]any{}
-	hourlyArgs := append([]any{tenantIDFromCtx(r.Context())},rangeArgs...)
+	hourlyArgs := append([]any{tenantIDFromCtx(r.Context())}, rangeArgs...)
 	if rows, err := h.ch.Conn.Query(ctx, `
 		SELECT toStartOfHour(timestamp) AS hour, count() AS cnt
 		FROM bastio.analytics_request_logs
@@ -538,7 +552,7 @@ func (h *Handler) AnalyticsOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var threatsByType []map[string]any
-	threatsArgs := append([]any{tenantIDFromCtx(r.Context())},threatRangeArgs...)
+	threatsArgs := append([]any{tenantIDFromCtx(r.Context())}, threatRangeArgs...)
 	if rows, err := h.ch.Conn.Query(ctx, `
 		SELECT threat_type, count() AS cnt
 		FROM bastio.security_threat_logs
@@ -556,7 +570,7 @@ func (h *Handler) AnalyticsOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var topModels []map[string]any
-	modelsArgs := append([]any{tenantIDFromCtx(r.Context())},rangeArgs...)
+	modelsArgs := append([]any{tenantIDFromCtx(r.Context())}, rangeArgs...)
 	if rows, err := h.ch.Conn.Query(ctx, `
 		SELECT model, count() AS cnt, sum(cost_cents) AS cost
 		FROM bastio.analytics_request_logs

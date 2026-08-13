@@ -1,76 +1,92 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Server, Plus, X, Trash2, KeyRound, Check, Copy, ChevronDown, ChevronRight, Zap, Pencil } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Link } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  Copy,
+  KeyRound,
+  LockKeyhole,
+  Pencil,
+  Plus,
+  Route,
+  Server,
+  Trash2,
+  X,
+} from "lucide-react";
+import { AdminSummaryStrip, FieldLabel, MonoValue, SecurityNotice } from "@/components/admin/admin-primitives";
+import { EmptyState, PageHeader } from "@/components/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PageHeader, EmptyState } from "@/components/card";
 import { api } from "@/api/client";
-import type { Proxy, ProviderKey, APIKey, UpdateProxyRequest, CreateProviderKeyRequest } from "@/api/client";
+import type { APIKey, CreateProviderKeyRequest, ProviderKey, Proxy, UpdateProxyRequest } from "@/api/client";
+import { cn } from "@/lib/utils";
 
-function ProxyCard({ proxy, onDelete, onToggle }: {
-  proxy: Proxy;
-  onDelete: () => void;
-  onToggle: () => void;
-}) {
+const providerLabels: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  bedrock: "Amazon Bedrock",
+  vertex: "Vertex AI",
+  azure: "Azure OpenAI",
+  ollama: "Ollama",
+};
+
+function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: () => void; onToggle: () => void }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
-  const [showAddKey, setShowAddKey] = useState(false);
-  const [keyValue, setKeyValue] = useState("");
-  const [showGenApiKey, setShowGenApiKey] = useState(false);
-  const [apiKeyName, setApiKeyName] = useState("");
+  const [showProviderKey, setShowProviderKey] = useState(false);
+  const [providerKey, setProviderKey] = useState("");
+  const [showGatewayKey, setShowGatewayKey] = useState(false);
+  const [gatewayKeyName, setGatewayKeyName] = useState("");
+  const [gatewayEnvironment, setGatewayEnvironment] = useState("");
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const [editingModel, setEditingModel] = useState(false);
   const [modelValue, setModelValue] = useState(proxy.target_model);
 
-  const { data: providerKeys } = useQuery({
+  const { data: providerKeys, isLoading: providerKeysLoading } = useQuery({
     queryKey: ["proxy-provider-keys", proxy.id],
     queryFn: () => api.proxies.providerKeys(proxy.id),
     enabled: expanded,
   });
+  const { data: apiKeys } = useQuery({ queryKey: ["api-keys"], queryFn: api.apiKeys.list, enabled: expanded });
+  const { data: environments = [] } = useQuery({ queryKey: ["environments"], queryFn: api.environments.list, enabled: expanded });
 
-  const createKey = useMutation({
+  const refreshProviderKeys = () => {
+    queryClient.invalidateQueries({ queryKey: ["proxy-provider-keys", proxy.id] });
+    queryClient.invalidateQueries({ queryKey: ["provider-keys"] });
+  };
+
+  const createProviderKey = useMutation({
     mutationFn: api.providerKeys.create,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["proxy-provider-keys", proxy.id] });
-      queryClient.invalidateQueries({ queryKey: ["provider-keys"] });
-      setShowAddKey(false);
-      setKeyValue("");
+      refreshProviderKeys();
+      setShowProviderKey(false);
+      setProviderKey("");
     },
   });
-
-  const deleteProviderKey = useMutation({
-    mutationFn: api.providerKeys.delete,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["proxy-provider-keys", proxy.id] });
-      queryClient.invalidateQueries({ queryKey: ["provider-keys"] });
-    },
-  });
-
-  const { data: apiKeys } = useQuery({
-    queryKey: ["api-keys"],
-    queryFn: api.apiKeys.list,
-    enabled: expanded,
-  });
-
+  const deleteProviderKey = useMutation({ mutationFn: api.providerKeys.delete, onSuccess: refreshProviderKeys });
   const createApiKey = useMutation({
     mutationFn: api.apiKeys.create,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["api-keys"] });
       setGeneratedKey(data.key);
-      setApiKeyName("");
+      setGatewayKeyName("");
+      setGatewayEnvironment("");
     },
   });
-
-  const revokeApiKey = useMutation({
-    mutationFn: api.apiKeys.revoke,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-keys"] }),
-  });
-
+  const revokeApiKey = useMutation({ mutationFn: api.apiKeys.revoke, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-keys"] }) });
   const updateProxy = useMutation({
     mutationFn: (data: UpdateProxyRequest) => api.proxies.update(proxy.id, data),
     onSuccess: () => {
@@ -79,372 +95,174 @@ function ProxyCard({ proxy, onDelete, onToggle }: {
     },
   });
 
-  const hasProviderKey = (providerKeys?.length ?? 0) > 0;
-  const activeApiKeys = apiKeys?.filter((k: APIKey) => k.is_active) ?? [];
+  const proxyApiKeys = (apiKeys ?? []).filter((key: APIKey) => {
+    const scopes = (key as APIKey & { scopes?: string[] }).scopes ?? [];
+    return key.is_active && scopes.includes(`proxy:${proxy.id}`);
+  });
+  const hasProviderKey = Boolean(providerKeys?.length);
 
-  const handleCopy = () => {
-    if (generatedKey) {
-      navigator.clipboard.writeText(generatedKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const copyValue = async (value: string, name: string) => {
+    await navigator.clipboard.writeText(value);
+    setCopied(name);
+    window.setTimeout(() => setCopied(null), 1800);
   };
 
   return (
-    <div className="border-b border-border/30 last:border-b-0">
-      {/* Proxy header row */}
-      <div
-        className="flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="flex items-center gap-3">
-          <button className="text-muted-foreground/50">
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="text-[13px] font-medium">{proxy.name}</span>
-              <Badge variant={proxy.is_active ? "success" : "secondary"} className="text-[10px] px-1.5 py-0">
-                {proxy.is_active ? "active" : "inactive"}
-              </Badge>
-              {expanded && hasProviderKey && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-success border-success-border">
-                  <KeyRound className="h-2.5 w-2.5 mr-1" /> key configured
-                </Badge>
-              )}
-              {expanded && !hasProviderKey && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-warn border-warn-border">
-                  no provider key
-                </Badge>
-              )}
+    <article className="border-b border-border/60 last:border-b-0">
+      <div className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center">
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+          <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg border", proxy.is_active ? "border-success-border bg-success-bg text-success" : "border-border bg-muted/40 text-muted-foreground")}>
+            <Route className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-[13px] font-medium text-foreground">{proxy.name}</span>
+              <Badge variant={proxy.is_active ? "success" : "secondary"} className="h-4 px-1.5 text-[9px]">{proxy.is_active ? "active" : "inactive"}</Badge>
+              {expanded && !providerKeysLoading ? <Badge variant={hasProviderKey ? "outline" : "warning"} className="h-4 px-1.5 text-[9px]">{hasProviderKey ? "provider auth ready" : "provider key required"}</Badge> : null}
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-muted-foreground">{proxy.target_provider}</span>
-              {proxy.target_model && (
-                <>
-                  <span className="text-border">/</span>
-                  <span className="text-xs text-muted-foreground font-mono">{proxy.target_model}</span>
-                </>
-              )}
-              <span className="text-border">-</span>
-              <code className="text-[11px] text-muted-foreground/60 font-mono">{proxy.listen_path}</code>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+              <span>{providerLabels[proxy.target_provider] ?? proxy.target_provider}</span><span>·</span>
+              <code className="font-mono">{proxy.target_model || "request-defined model"}</code><span>·</span>
+              <code className="font-mono">{proxy.listen_path}</code>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          <Link
-            to="/proxies/$id"
-            params={{ id: proxy.id }}
-            className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
-          >
-            Details
-          </Link>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={onToggle}>
-            {proxy.is_active ? "Disable" : "Enable"}
-          </Button>
-          <Button
-            variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/50 hover:text-destructive"
-            onClick={() => { if (confirm(`Delete proxy "${proxy.name}"?`)) onDelete(); }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+        </button>
+        <div className="flex items-center justify-end gap-1 sm:pl-3">
+          <Button variant="ghost" size="sm" render={<Link to="/proxies/$id" params={{ id: proxy.id }} />}><ArrowUpRight /> Details</Button>
+          <Button variant="ghost" size="sm" onClick={onToggle}>{proxy.is_active ? "Disable" : "Enable"}</Button>
+          <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" onClick={onDelete} aria-label={`Delete ${proxy.name}`}><Trash2 /></Button>
         </div>
       </div>
 
-      {/* Expanded panel */}
-      {expanded && (
-        <div className="px-5 pb-5 pl-12 space-y-4">
-          {/* Model Configuration */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-medium text-muted-foreground">Default Model</p>
-              {!editingModel && (
-                <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1" onClick={() => { setEditingModel(true); setModelValue(proxy.target_model); }}>
-                  <Pencil className="h-3 w-3" /> Edit
-                </Button>
-              )}
-            </div>
-            {editingModel ? (
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Model name (e.g., gpt-4o, claude-sonnet-4-20250514)"
-                  value={modelValue} onChange={(e) => setModelValue(e.target.value)}
-                  className="h-8 text-xs"
-                />
-                <Button
-                  size="sm" className="h-8 text-xs shrink-0"
-                  onClick={() => updateProxy.mutate({ name: proxy.name, target_provider: proxy.target_provider as UpdateProxyRequest["target_provider"], target_model: modelValue, is_active: proxy.is_active })}
-                  disabled={updateProxy.isPending}
-                >
-                  {updateProxy.isPending ? "Saving..." : "Save"}
-                </Button>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0" onClick={() => setEditingModel(false)}>
-                  <X className="h-3.5 w-3.5" />
-                </Button>
+      {expanded ? (
+        <div className="border-t border-border/50 bg-muted/10 px-4 py-4 sm:pl-16">
+          <div className="grid gap-4 xl:grid-cols-3">
+            <section className="rounded-xl border border-border/70 bg-background p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">01 · Provider routing</p><h3 className="mt-1 text-[12px] font-medium">Model destination</h3></div>
+                <Badge variant="success" className="h-4 px-1.5 text-[9px]">configured</Badge>
               </div>
-            ) : (
-              <p className="text-[11px] text-muted-foreground/80 py-1 font-mono">
-                {proxy.target_model || <span className="text-muted-foreground/40 font-sans italic">No default model — requests must specify a model</span>}
-              </p>
-            )}
-          </div>
-
-          {/* Provider Keys Section */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-medium text-muted-foreground">Provider API Key ({proxy.target_provider})</p>
-              {!showAddKey && (
-                <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1" onClick={() => setShowAddKey(true)}>
-                  <Plus className="h-3 w-3" /> {hasProviderKey ? "Replace" : "Add Key"}
-                </Button>
-              )}
-            </div>
-
-            {showAddKey && (
-              <div className="flex items-center gap-2 mb-3">
-                <Input
-                  type="password" placeholder={`${proxy.target_provider} API key (sk-...)`}
-                  value={keyValue} onChange={(e) => setKeyValue(e.target.value)}
-                  className="h-8 text-xs"
-                />
-                <Button
-                  size="sm" className="h-8 text-xs shrink-0"
-                  onClick={() => createKey.mutate({ provider: proxy.target_provider as CreateProviderKeyRequest["provider"], key: keyValue, proxy_id: proxy.id })}
-                  disabled={!keyValue || createKey.isPending}
-                >
-                  {createKey.isPending ? "Saving..." : "Save"}
-                </Button>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0" onClick={() => { setShowAddKey(false); setKeyValue(""); }}>
-                  <X className="h-3.5 w-3.5" />
-                </Button>
+              <dl className="mt-4 space-y-3 text-[11px]">
+                <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Provider</dt><dd>{providerLabels[proxy.target_provider] ?? proxy.target_provider}</dd></div>
+                <div className="flex items-start justify-between gap-4"><dt className="text-muted-foreground">Default model</dt><dd className="text-right font-mono">{proxy.target_model || "Not set"}</dd></div>
+                <div className="flex items-center justify-between gap-2"><dt className="text-muted-foreground">Endpoint</dt><dd className="flex items-center gap-1"><code className="font-mono">{proxy.listen_path}</code><Button size="icon-xs" variant="ghost" onClick={() => copyValue(proxy.listen_path, "endpoint")} aria-label="Copy endpoint">{copied === "endpoint" ? <Check /> : <Copy />}</Button></dd></div>
+              </dl>
+              <div className="mt-4 border-t border-border/60 pt-3">
+                {editingModel ? (
+                  <div className="flex gap-2"><Input value={modelValue} onChange={(e) => setModelValue(e.target.value)} placeholder="Model identifier" className="h-8 text-xs" /><Button size="sm" onClick={() => updateProxy.mutate({ name: proxy.name, target_provider: proxy.target_provider as UpdateProxyRequest["target_provider"], target_model: modelValue, is_active: proxy.is_active })} disabled={updateProxy.isPending}>{updateProxy.isPending ? "Saving…" : "Save"}</Button><Button variant="ghost" size="icon-sm" onClick={() => setEditingModel(false)}><X /></Button></div>
+                ) : <Button variant="ghost" size="sm" onClick={() => setEditingModel(true)}><Pencil /> Edit default model</Button>}
               </div>
-            )}
+            </section>
 
-            {providerKeys?.map((k: ProviderKey) => (
-              <div key={k.id} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-muted/30 text-xs">
-                <div className="flex items-center gap-2">
-                  <KeyRound className="h-3 w-3 text-muted-foreground/50" />
-                  <code className="text-[11px] text-muted-foreground font-mono">{k.key_masked}</code>
-                  {k.is_default && <Badge variant="secondary" className="text-[9px] px-1 py-0">default</Badge>}
-                </div>
-                <Button
-                  variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive"
-                  onClick={() => { if (confirm("Delete this provider key?")) deleteProviderKey.mutate(k.id); }}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+            <section className="rounded-xl border border-border/70 bg-background p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">02 · Provider credential</p><h3 className="mt-1 text-[12px] font-medium">Upstream authentication</h3></div>
+                <Badge variant={hasProviderKey ? "success" : "warning"} className="h-4 px-1.5 text-[9px]">{hasProviderKey ? "ready" : "action required"}</Badge>
               </div>
-            ))}
-
-            {!hasProviderKey && !showAddKey && (
-              <p className="text-[11px] text-warn py-1">
-                Add your {proxy.target_provider} API key to start proxying requests.
-              </p>
-            )}
-          </div>
-
-          {/* Gateway API Keys */}
-          {hasProviderKey && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-muted-foreground">Gateway API Keys</p>
-                {!showGenApiKey && (
-                  <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1" onClick={() => { setShowGenApiKey(true); setGeneratedKey(null); }}>
-                    <Zap className="h-3 w-3" /> Generate Key
-                  </Button>
-                )}
-              </div>
-
-              {/* Generate form */}
-              {showGenApiKey && !generatedKey && (
-                <div className="flex items-center gap-2 mb-3">
-                  <Input
-                    placeholder="Key name (e.g., my-app)" value={apiKeyName}
-                    onChange={(e) => setApiKeyName(e.target.value)} className="h-8 text-xs"
-                  />
-                  <Button
-                    size="sm" className="h-8 text-xs shrink-0"
-                    onClick={() => createApiKey.mutate({ name: apiKeyName || `${proxy.name}-key` })}
-                    disabled={createApiKey.isPending}
-                  >
-                    {createApiKey.isPending ? "Generating..." : "Generate"}
-                  </Button>
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0" onClick={() => setShowGenApiKey(false)}>
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Just-generated key banner */}
-              {generatedKey && (
-                <div className="p-3 rounded-lg bg-success-bg border border-success-border mb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Check className="h-3.5 w-3.5 text-success" />
-                    <span className="text-xs font-medium text-success">API Key Generated</span>
+              <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Encrypted at rest and never returned after submission.</p>
+              <div className="mt-4 space-y-2">
+                {providerKeysLoading ? <p className="text-[11px] text-muted-foreground">Checking credential…</p> : providerKeys?.map((key: ProviderKey) => (
+                  <div key={key.id} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2">
+                    <KeyRound className="size-3.5 text-muted-foreground" /><code className="min-w-0 flex-1 truncate font-mono text-[10px]">{key.key_masked}</code>{key.is_default ? <Badge variant="secondary" className="h-4 px-1 text-[8px]">default</Badge> : null}
+                    <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive" onClick={() => window.confirm("Delete this provider credential? Requests may stop working immediately.") && deleteProviderKey.mutate(key.id)}><Trash2 /></Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-[11px] font-mono bg-muted/50 px-2 py-1.5 rounded border border-border/30 break-all">
-                      {generatedKey}
-                    </code>
-                    <Button variant="outline" size="sm" className="h-7 text-[11px] shrink-0 gap-1" onClick={handleCopy}>
-                      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                      {copied ? "Copied" : "Copy"}
-                    </Button>
+                ))}
+                {showProviderKey ? (
+                  <div className="space-y-2"><Input autoFocus type="password" value={providerKey} onChange={(e) => setProviderKey(e.target.value)} placeholder={`${proxy.target_provider} secret key`} className="h-8 text-xs" /><div className="flex gap-2"><Button size="sm" disabled={!providerKey || createProviderKey.isPending} onClick={() => createProviderKey.mutate({ provider: proxy.target_provider as CreateProviderKeyRequest["provider"], key: providerKey, proxy_id: proxy.id })}>{createProviderKey.isPending ? "Saving…" : "Store credential"}</Button><Button variant="ghost" size="sm" onClick={() => { setShowProviderKey(false); setProviderKey(""); }}>Cancel</Button></div></div>
+                ) : <Button variant="outline" size="sm" className="w-full" onClick={() => setShowProviderKey(true)}><Plus /> {hasProviderKey ? "Replace credential" : "Add provider credential"}</Button>}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border/70 bg-background p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">03 · Client authentication</p><h3 className="mt-1 text-[12px] font-medium">Gateway API keys</h3></div>
+                <Badge variant={proxyApiKeys.length ? "success" : "outline"} className="h-4 px-1.5 text-[9px]">{proxyApiKeys.length} active</Badge>
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Only keys explicitly bound to this gateway are shown.</p>
+              <div className="mt-4 space-y-2">
+                {proxyApiKeys.map((key: APIKey) => (
+                  <div key={key.id} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-2"><LockKeyhole className="size-3.5 text-success" /><span className="min-w-0 flex-1 truncate text-[10px] font-medium">{key.name}</span><code className="font-mono text-[9px] text-muted-foreground">{key.key_prefix}…</code><Button variant="ghost" size="xs" className="text-muted-foreground hover:text-destructive" onClick={() => window.confirm(`Revoke key “${key.name}”?`) && revokeApiKey.mutate(key.id)}>Revoke</Button></div>
+                ))}
+                {generatedKey ? (
+                  <div className="rounded-lg border border-success-border bg-success-bg p-2.5"><p className="mb-2 text-[10px] font-medium text-success">Copy now — shown once</p><div className="flex gap-2"><MonoValue className="min-w-0 flex-1 truncate">{generatedKey}</MonoValue><Button variant="outline" size="icon-sm" onClick={() => copyValue(generatedKey, "gateway-key")}>{copied === "gateway-key" ? <Check /> : <Copy />}</Button></div></div>
+                ) : null}
+                {showGatewayKey && !generatedKey ? (
+                  <div className="space-y-2">
+                    <Input autoFocus value={gatewayKeyName} onChange={(e) => setGatewayKeyName(e.target.value)} placeholder="Credential name" className="h-8 text-xs" />
+                    <select value={gatewayEnvironment} onChange={(event) => setGatewayEnvironment(event.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-xs">
+                      <option value="" disabled>Select environment</option>
+                      {environments.map((environment) => <option key={environment.id} value={environment.name}>{environment.name} — {environment.kind}</option>)}
+                    </select>
+                    <div className="flex gap-2"><Button size="sm" disabled={createApiKey.isPending || !gatewayEnvironment} onClick={() => createApiKey.mutate({ name: gatewayKeyName.trim() || `${proxy.name}-key`, proxy_id: proxy.id, environment: gatewayEnvironment, allow_environment_override: false })}>{createApiKey.isPending ? "Generating…" : "Generate scoped key"}</Button><Button variant="ghost" size="sm" onClick={() => setShowGatewayKey(false)}>Cancel</Button></div>
                   </div>
-                  <p className="text-[10px] text-muted-foreground/60 mt-2">
-                    Copy this key now — you won't be able to see the full key again.
-                  </p>
-                </div>
-              )}
-
-              {/* Existing API keys list */}
-              {activeApiKeys.length > 0 && (
-                <div className="space-y-1.5">
-                  {activeApiKeys.map((k: APIKey) => (
-                    <div key={k.id} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-muted/30 text-xs">
-                      <div className="flex items-center gap-2">
-                        <Zap className="h-3 w-3 text-muted-foreground/50" />
-                        <span className="text-[11px] font-medium">{k.name || "Unnamed"}</span>
-                        <code className="text-[11px] text-muted-foreground font-mono">{k.key_prefix}...</code>
-                        <Badge variant="success" className="text-[9px] px-1 py-0">active</Badge>
-                      </div>
-                      <Button
-                        variant="ghost" size="sm" className="h-6 text-[10px] text-muted-foreground/40 hover:text-destructive"
-                        onClick={() => { if (confirm(`Revoke key "${k.name}"?`)) revokeApiKey.mutate(k.id); }}
-                      >
-                        Revoke
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {activeApiKeys.length === 0 && !generatedKey && !showGenApiKey && (
-                <p className="text-[11px] text-muted-foreground/60 py-1">
-                  No gateway keys yet. Generate one to authenticate requests.
-                </p>
-              )}
-            </div>
-          )}
+                ) : !generatedKey ? <Button variant="outline" size="sm" className="w-full" disabled={!hasProviderKey} onClick={() => setShowGatewayKey(true)}><Plus /> Generate scoped key</Button> : null}
+              </div>
+            </section>
+          </div>
         </div>
-      )}
-    </div>
+      ) : null}
+    </article>
   );
 }
 
 export function ProxiesPage() {
   const queryClient = useQueryClient();
   const { data: proxies, isLoading } = useQuery({ queryKey: ["proxies"], queryFn: api.proxies.list });
-
-  const [showCreate, setShowCreate] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Proxy | null>(null);
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<
-    "openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama"
-  >("openai");
+  const [provider, setProvider] = useState<"openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama">("openai");
   const [model, setModel] = useState("");
 
   const createProxy = useMutation({
     mutationFn: api.proxies.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["proxies"] });
-      setShowCreate(false);
-      setName("");
-      setModel("");
+      setCreateOpen(false); setName(""); setModel("");
     },
   });
-
-  const deleteProxy = useMutation({
-    mutationFn: api.proxies.delete,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proxies"] }),
-  });
-
+  const deleteProxy = useMutation({ mutationFn: api.proxies.delete, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["proxies"] }); setDeleteTarget(null); } });
   const toggleProxy = useMutation({
-    mutationFn: ({ p, active }: { p: Proxy; active: boolean }) =>
-      api.proxies.update(p.id, {
-        name: p.name,
-        target_provider: p.target_provider as UpdateProxyRequest["target_provider"],
-        target_model: p.target_model,
-        is_active: active,
-      }),
+    mutationFn: ({ proxy, active }: { proxy: Proxy; active: boolean }) => api.proxies.update(proxy.id, { name: proxy.name, target_provider: proxy.target_provider as UpdateProxyRequest["target_provider"], target_model: proxy.target_model, is_active: active }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proxies"] }),
   });
+
+  const activeCount = proxies?.filter((proxy: Proxy) => proxy.is_active).length ?? 0;
+  const providers = new Set(proxies?.map((proxy: Proxy) => proxy.target_provider) ?? []).size;
 
   return (
     <>
-      <PageHeader
-        title="Proxies"
-        description="Gateway endpoints that route to LLM providers"
-        action={
-          <Button size="sm" onClick={() => setShowCreate(!showCreate)} className="gap-1.5 text-xs">
-            {showCreate ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-            {showCreate ? "Cancel" : "Create Proxy"}
-          </Button>
-        }
-      />
+      <PageHeader title="LLM Gateways" description="Secure, authenticated endpoints that route application traffic to model providers." action={<Button size="sm" onClick={() => setCreateOpen(true)}><Plus /> Create gateway</Button>} />
+      <AdminSummaryStrip items={[
+        { label: "Gateways", value: proxies?.length ?? 0, detail: "Configured endpoints" },
+        { label: "Active", value: activeCount, detail: `${Math.max((proxies?.length ?? 0) - activeCount, 0)} disabled`, tone: "success" },
+        { label: "Providers", value: providers, detail: "Upstream integrations" },
+        { label: "Security path", value: "3 stages", detail: "Route · provider auth · client auth" },
+      ]} />
+      <SecurityNotice title="A gateway is ready only when both sides are authenticated" className="mb-5">Open a gateway to verify its upstream provider credential and issue a gateway-scoped client key. Secrets are never displayed again after creation.</SecurityNotice>
 
-      {showCreate && (
-        <Card className="mb-6 border-border/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold">New Proxy</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="h-9 text-sm" />
-              <Select value={provider} onValueChange={(v) => v && setProvider(v as typeof provider)}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                  <SelectItem value="anthropic">Anthropic</SelectItem>
-                  <SelectItem value="bedrock">Bedrock</SelectItem>
-                  <SelectItem value="vertex">Vertex AI</SelectItem>
-                  <SelectItem value="azure">Azure OpenAI</SelectItem>
-                  <SelectItem value="ollama">Ollama</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input placeholder="Default model (e.g., gpt-4o)" value={model} onChange={(e) => setModel(e.target.value)} className="h-9 text-sm" />
-            </div>
-            <Button
-              size="sm" className="mt-3 text-xs"
-              onClick={() => createProxy.mutate({ name, target_provider: provider, target_model: model })}
-              disabled={!name || createProxy.isPending}
-            >
-              {createProxy.isPending ? "Creating..." : "Create Proxy"}
-            </Button>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              After creating, expand the proxy to add your provider API key and generate a gateway key.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <section className="overflow-hidden rounded-xl border border-border/70 bg-card">
+        <div className="flex items-center justify-between border-b border-border/60 px-4 py-3"><div><h2 className="text-[12px] font-medium">Gateway inventory</h2><p className="mt-0.5 text-[10px] text-muted-foreground">Expand a record to review the complete trust path.</p></div><Badge variant="outline" className="font-mono text-[9px]">{proxies?.length ?? 0} total</Badge></div>
+        {isLoading ? <div className="py-16 text-center text-xs text-muted-foreground">Loading gateways…</div> : !proxies?.length ? <EmptyState icon={<Server className="size-5" />} title="No gateways configured" description="Create a gateway, store its upstream provider credential, then issue a scoped key to your application." action={<Button size="sm" onClick={() => setCreateOpen(true)}>Create first gateway</Button>} /> : proxies.map((proxy: Proxy) => <GatewayRecord key={proxy.id} proxy={proxy} onDelete={() => setDeleteTarget(proxy)} onToggle={() => toggleProxy.mutate({ proxy, active: !proxy.is_active })} />)}
+      </section>
 
-      <Card className="border-border/50">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-                Loading proxies...
-              </div>
-            </div>
-          ) : !proxies?.length ? (
-            <EmptyState
-              icon={<Server className="h-6 w-6" />}
-              title="No proxies configured"
-              description="Create a proxy to route requests through the gateway with security scanning. You'll add your provider API key and generate a gateway key in the next steps."
-              action={<Button variant="outline" size="sm" className="text-xs" onClick={() => setShowCreate(true)}>Create First Proxy</Button>}
-            />
-          ) : (
-            proxies.map((p: Proxy) => (
-              <ProxyCard
-                key={p.id}
-                proxy={p}
-                onDelete={() => deleteProxy.mutate(p.id)}
-                onToggle={() => toggleProxy.mutate({ p, active: !p.is_active })}
-              />
-            ))
-          )}
-        </CardContent>
-      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Create LLM gateway</DialogTitle><DialogDescription>Define the route first. Provider and client credentials are configured after creation.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><FieldLabel>Gateway name</FieldLabel><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="production-chat" /></div>
+            <div><FieldLabel>Model provider</FieldLabel><Select value={provider} onValueChange={(value) => value && setProvider(value as typeof provider)}><SelectTrigger className="w-full"><SelectValue>{providerLabels[provider]}</SelectValue></SelectTrigger><SelectContent>{Object.entries(providerLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div><FieldLabel optional>Default model</FieldLabel><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. gpt-4o" /><p className="mt-1.5 text-[10px] text-muted-foreground">Leave blank to require every request to specify a model.</p></div>
+            <SecurityNotice title="Credential setup follows" tone="info">After creation, add an upstream provider key and a gateway-scoped client key before sending production traffic.</SecurityNotice>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button disabled={!name.trim() || createProxy.isPending} onClick={() => createProxy.mutate({ name: name.trim(), target_provider: provider, target_model: model.trim() })}>{createProxy.isPending ? "Creating…" : "Create gateway"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent><DialogHeader><DialogTitle>Delete gateway?</DialogTitle><DialogDescription>The <strong>{deleteTarget?.name}</strong> endpoint and its bindings will be removed. Active application requests to this route will fail.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button><Button variant="destructive" disabled={deleteProxy.isPending} onClick={() => deleteTarget && deleteProxy.mutate(deleteTarget.id)}>{deleteProxy.isPending ? "Deleting…" : "Delete gateway"}</Button></DialogFooter></DialogContent>
+      </Dialog>
     </>
   );
 }

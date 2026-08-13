@@ -26,7 +26,8 @@ reach either side.
 ## Components
 
 - **Gateway** (`internal/gateway/`) — accepts OpenAI-compatible
-  `POST /v1/chat/completions` and Anthropic `POST /v1/messages`.
+  `POST /v1/chat/completions` and Anthropic-compatible
+  `POST /v1/guard/{proxyId}/v1/messages`.
   Authenticates via API key, runs the security pipeline, forwards
   to the chosen provider, scans the response, and emits a trace.
 - **Security engine** (`internal/security/`) — three modules:
@@ -34,9 +35,7 @@ reach either side.
   `prevention/` (block / mask / tokenize / warn / log-only
   actions), `scoring/` (per-request risk score 0-100).
   Latency budget: `<50ms` total across all detectors.
-- **Provider clients** (`internal/providers/`) — typed clients
-  for OpenAI, Anthropic, Bedrock, Vertex, Azure, Ollama, Google.
-  Connection pooling, retry, streaming pass-through.
+- **Provider clients** (`internal/providers/`) — registered clients for OpenAI, Anthropic, Bedrock, and Ollama. The public gateway router currently selects OpenAI and Anthropic model families; Azure and Vertex identifiers are reserved but their clients are not registered.
 - **Observability** (`internal/observability/`) — structured
   trace per request written to PostgreSQL (real-time inspection)
   and ClickHouse (historical analytics).

@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PageHeader } from "@/components/card";
+import { AdminPageHeader, SecurityNotice } from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
 import {
   SnapshotEditor,
@@ -186,7 +186,8 @@ export function OverlayNewPage() {
         <span>New policy</span>
       </div>
 
-      <PageHeader
+      <AdminPageHeader
+        eyebrow="Policy authoring"
         title="New custom policy"
         description={
           fromThreatID
@@ -195,7 +196,13 @@ export function OverlayNewPage() {
               ? "Seeded from a built-in template. Review the rules, tweak anything you like, then create the policy as a draft."
               : "Define extra patterns, access rules, and detector overrides on top of your core security profile. Starts as a draft — nothing is activated automatically."
         }
+        badge={<span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Draft only</span>}
+        actions={<Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => navigate({ to: "/overlay-templates" })}><Sparkles className="size-3.5" /> Browse templates</Button>}
       />
+
+      <SecurityNotice title="No live traffic changes" className="mb-4">
+        Creating this policy stores version 1 as a draft. Review it, promote it to shadow, and activate only after the observed matches are correct.
+      </SecurityNotice>
 
       {(templateSlug && templatesQuery.isLoading) ||
       (fromThreatID && threatQuery.isLoading) ? (
@@ -277,8 +284,8 @@ export function OverlayNewPage() {
         </Card>
       ) : null}
 
-      <Card className="border-border/50 mt-4">
-        <CardContent className="p-3 space-y-2">
+      <Card className="mt-4 border-border/70">
+        <CardContent className="space-y-3 p-4">
           <div className="grid grid-cols-2 gap-2">
             <Input
               placeholder="name (e.g. strict-pii, consumer-chat)"

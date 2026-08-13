@@ -17,15 +17,17 @@ interface UserProfileProps {
   usageLimit?: number;
   planName?: string;
   onLogout?: () => void;
+  variant?: "sidebar" | "header";
 }
 
 export function UserProfileWidget({
-  name = "Developer User",
-  email = "developer@bastio.ai",
-  usageCount = 342,
-  usageLimit = 2500,
-  planName = "Free Tier",
+  name = "Local operator",
+  email = "",
+  usageCount,
+  usageLimit,
+  planName,
   onLogout,
+  variant = "sidebar",
 }: UserProfileProps) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -37,35 +39,44 @@ export function UserProfileWidget({
         setOpen(false);
       }
     }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
-  const usagePercent = Math.min(100, Math.round((usageCount / usageLimit) * 100));
+  const hasUsage = typeof usageCount === "number" && typeof usageLimit === "number" && usageLimit > 0;
+  const usagePercent = hasUsage ? Math.min(100, Math.round((usageCount / usageLimit) * 100)) : 0;
 
   const handleLogout = () => {
     setOpen(false);
-    if (onLogout) {
-      onLogout();
-    } else {
-      // Default logout handler: clear token and redirect
-      localStorage.removeItem("bastio_token");
-      window.location.href = "/";
-    }
+    onLogout?.();
   };
 
   return (
-    <div className="relative w-full" ref={dropdownRef}>
+    <div className={cn("relative", variant === "header" ? "w-auto" : "w-full")} ref={dropdownRef}>
       {/* Dropdown Menu Popup */}
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-full bg-card border border-border-subtle rounded-xl shadow-xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div
+          className={cn(
+            "absolute z-50 w-64 rounded-xl border border-border-subtle bg-popover p-2 shadow-md animate-in fade-in duration-150",
+            variant === "header"
+              ? "right-0 top-full mt-2 slide-in-from-top-2"
+              : "bottom-full left-0 mb-2 slide-in-from-bottom-2",
+          )}
+        >
           {/* User Info Header */}
           <div className="px-3 py-2 border-b border-border-subtle/60 mb-1">
             <p className="text-[13px] font-semibold text-foreground truncate">{name}</p>
-            <p className="text-[11px] text-muted-foreground truncate">{email}</p>
+            {email ? <p className="text-[11px] text-muted-foreground truncate">{email}</p> : null}
             
             {/* Monthly Usage Pill */}
-            <div className="mt-2 pt-2 border-t border-border-subtle/40">
+            {hasUsage ? <div className="mt-2 pt-2 border-t border-border-subtle/40">
               <div className="flex items-center justify-between text-[11px] mb-1">
                 <span className="text-muted-foreground flex items-center gap-1">
                   <Zap className="h-3 w-3 text-amber-500" /> Usage
@@ -83,7 +94,7 @@ export function UserProfileWidget({
                   style={{ width: `${usagePercent}%` }}
                 />
               </div>
-            </div>
+            </div> : null}
           </div>
 
           {/* Action Links */}
@@ -110,11 +121,11 @@ export function UserProfileWidget({
               className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
             >
               <CreditCard className="h-3.5 w-3.5" />
-              Billing & Upgrade ({planName})
+              Billing & Subscription{planName ? ` (${planName})` : ""}
             </Link>
           </div>
 
-          <div className="border-t border-border-subtle/60 mt-1 pt-1">
+          {onLogout ? <div className="border-t border-border-subtle/60 mt-1 pt-1">
             <button
               type="button"
               onClick={handleLogout}
@@ -123,7 +134,7 @@ export function UserProfileWidget({
               <LogOut className="h-3.5 w-3.5" />
               Log Out
             </button>
-          </div>
+          </div> : null}
         </div>
       )}
 
@@ -131,22 +142,27 @@ export function UserProfileWidget({
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        aria-label="Open account menu"
+        aria-expanded={open}
         className={cn(
-          "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left border border-border-subtle/60 hover:border-border-default transition-all duration-150",
-          open ? "bg-surface-2 border-border-default" : "bg-card/80 hover:bg-surface-2/60"
+          "flex items-center text-left transition-colors duration-150",
+          variant === "header"
+            ? "h-8 w-8 justify-center rounded-full hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            : "w-full gap-2.5 rounded-xl border border-border-subtle/60 bg-card/80 px-2.5 py-2 hover:border-border-default hover:bg-surface-2/60",
+          variant === "sidebar" && open && "border-border-default bg-surface-2",
         )}
       >
         {/* Avatar circle */}
-        <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-amber-500 to-amber-300 text-black font-semibold text-[11px] flex items-center justify-center flex-shrink-0 shadow-sm">
-          {name.slice(0, 2).toUpperCase()}
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-amber-500 to-amber-300 text-[11px] font-semibold text-black shadow-sm">
+          {name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "LO"}
         </div>
         
-        <div className="flex-1 min-w-0">
+        {variant === "sidebar" ? <div className="min-w-0 flex-1">
           <p className="text-[12px] font-medium text-foreground truncate leading-none mb-0.5">{name}</p>
-          <p className="text-[10px] text-muted-foreground truncate leading-none">{email}</p>
-        </div>
+          {email ? <p className="text-[10px] text-muted-foreground truncate leading-none">{email}</p> : null}
+        </div> : null}
 
-        <ChevronUp className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform duration-200", open ? "rotate-0" : "rotate-180")} />
+        {variant === "sidebar" ? <ChevronUp className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform duration-200", open ? "rotate-0" : "rotate-180")} /> : null}
       </button>
     </div>
   );

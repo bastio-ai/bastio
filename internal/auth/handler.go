@@ -53,12 +53,13 @@ func (h *APIKeyHandler) Routes() chi.Router {
 // List returns all API keys for the default customer.
 func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(), `
-		SELECT id::text, name, key_prefix, scopes,
-			rate_limit_rpm, is_active,
-			last_used_at::text, created_at::text
-		FROM gateway_api_keys
-		WHERE customer_id = $1::uuid
-		ORDER BY created_at DESC
+		SELECT k.id::text, k.name, k.key_prefix, k.scopes,
+			k.rate_limit_rpm, COALESCE(e.name, ''), k.allow_environment_override, k.is_active,
+			k.last_used_at::text, k.created_at::text
+		FROM gateway_api_keys k
+		LEFT JOIN environments e ON e.id = k.environment_id
+		WHERE k.customer_id = $1::uuid
+		ORDER BY k.created_at DESC
 	`, tenantIDFromCtx(r.Context()))
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"query api keys: %s"}`, err), http.StatusInternalServerError)
@@ -69,14 +70,16 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	var keys []map[string]any
 	for rows.Next() {
 		var (
-			id, name, keyPrefix string
-			scopes              []string
-			rateLimitRPM        *int32
-			isActive            bool
-			lastUsedAt          *string
-			createdAt           string
+			id, name, keyPrefix      string
+			scopes                   []string
+			rateLimitRPM             *int32
+			environment              string
+			allowEnvironmentOverride bool
+			isActive                 bool
+			lastUsedAt               *string
+			createdAt                string
 		)
-		if err := rows.Scan(&id, &name, &keyPrefix, &scopes, &rateLimitRPM, &isActive, &lastUsedAt, &createdAt); err != nil {
+		if err := rows.Scan(&id, &name, &keyPrefix, &scopes, &rateLimitRPM, &environment, &allowEnvironmentOverride, &isActive, &lastUsedAt, &createdAt); err != nil {
 			slog.Error("scan api key row", "error", err)
 			continue
 		}
@@ -84,14 +87,16 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 			scopes = []string{}
 		}
 		keys = append(keys, map[string]any{
-			"id":             id,
-			"name":           name,
-			"key_prefix":     keyPrefix,
-			"scopes":         scopes,
-			"rate_limit_rpm": rateLimitRPM,
-			"is_active":      isActive,
-			"last_used_at":   lastUsedAt,
-			"created_at":     createdAt,
+			"id":                         id,
+			"name":                       name,
+			"key_prefix":                 keyPrefix,
+			"scopes":                     scopes,
+			"rate_limit_rpm":             rateLimitRPM,
+			"environment":                environment,
+			"allow_environment_override": allowEnvironmentOverride,
+			"is_active":                  isActive,
+			"last_used_at":               lastUsedAt,
+			"created_at":                 createdAt,
 		})
 	}
 
@@ -106,10 +111,12 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 // Create generates a new API key.
 func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name         string   `json:"name"`
-		RateLimitRPM *int     `json:"rate_limit_rpm"`
-		Scopes       []string `json:"scopes"`
-		ProxyID      *string  `json:"proxy_id"`
+		Name                     string   `json:"name"`
+		RateLimitRPM             *int     `json:"rate_limit_rpm"`
+		Scopes                   []string `json:"scopes"`
+		ProxyID                  *string  `json:"proxy_id"`
+		Environment              string   `json:"environment"`
+		AllowEnvironmentOverride bool     `json:"allow_environment_override"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -118,6 +125,9 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" {
 		req.Name = "Developer API Key"
+	}
+	if req.Environment == "" {
+		req.Environment = "production"
 	}
 
 	scopes := req.Scopes
@@ -140,10 +150,15 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New()
 	var createdAt string
 	err := h.db.QueryRow(r.Context(), `
-		INSERT INTO gateway_api_keys (id, customer_id, name, key_hash, key_prefix, scopes, rate_limit_rpm)
-		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)
+		INSERT INTO gateway_api_keys
+		  (id, customer_id, name, key_hash, key_prefix, scopes, rate_limit_rpm,
+		   environment_id, allow_environment_override)
+		SELECT $1, $2::uuid, $3, $4, $5, $6, $7, e.id, $9
+		FROM environments e
+		WHERE e.customer_id = $2::uuid AND e.name = $8
 		RETURNING created_at::text
-	`, id, tenantIDFromCtx(r.Context()), req.Name, keyHash, keyPrefix, scopes, req.RateLimitRPM).Scan(&createdAt)
+	`, id, tenantIDFromCtx(r.Context()), req.Name, keyHash, keyPrefix, scopes, req.RateLimitRPM,
+		req.Environment, req.AllowEnvironmentOverride).Scan(&createdAt)
 	if err != nil {
 		slog.Error("create api key failed", "error", err)
 		http.Error(w, `{"error":"failed to create api key"}`, http.StatusInternalServerError)
@@ -153,14 +168,16 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
-		"id":             id.String(),
-		"name":           req.Name,
-		"key":            plainKey,
-		"key_prefix":     keyPrefix,
-		"scopes":         scopes,
-		"rate_limit_rpm": req.RateLimitRPM,
-		"is_active":      true,
-		"created_at":     createdAt,
+		"id":                         id.String(),
+		"name":                       req.Name,
+		"key":                        plainKey,
+		"key_prefix":                 keyPrefix,
+		"scopes":                     scopes,
+		"rate_limit_rpm":             req.RateLimitRPM,
+		"environment":                req.Environment,
+		"allow_environment_override": req.AllowEnvironmentOverride,
+		"is_active":                  true,
+		"created_at":                 createdAt,
 	})
 }
 
@@ -173,10 +190,12 @@ func (h *APIKeyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name         *string  `json:"name"`
-		RateLimitRPM *int     `json:"rate_limit_rpm"`
-		Scopes       []string `json:"scopes"`
-		ProxyID      *string  `json:"proxy_id"`
+		Name                     *string  `json:"name"`
+		RateLimitRPM             *int     `json:"rate_limit_rpm"`
+		Scopes                   []string `json:"scopes"`
+		ProxyID                  *string  `json:"proxy_id"`
+		Environment              *string  `json:"environment"`
+		AllowEnvironmentOverride *bool    `json:"allow_environment_override"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -200,17 +219,25 @@ func (h *APIKeyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		name = *req.Name
 	}
 
-	_, err = h.db.Exec(r.Context(), `
+	command, err := h.db.Exec(r.Context(), `
 		UPDATE gateway_api_keys
 		SET scopes = $1,
 		    name = COALESCE(NULLIF($2, ''), name),
-		    rate_limit_rpm = COALESCE($3, rate_limit_rpm)
-		WHERE id = $4 AND customer_id = $5::uuid
-	`, scopes, name, req.RateLimitRPM, id, tenantIDFromCtx(r.Context()))
+		    rate_limit_rpm = COALESCE($3, rate_limit_rpm),
+		    environment_id = CASE WHEN $4::text IS NULL THEN environment_id ELSE (
+		      SELECT id FROM environments WHERE customer_id = $7::uuid AND name = $4
+		    ) END,
+		    allow_environment_override = COALESCE($5, allow_environment_override)
+		WHERE id = $6 AND customer_id = $7::uuid
+	`, scopes, name, req.RateLimitRPM, req.Environment, req.AllowEnvironmentOverride, id, tenantIDFromCtx(r.Context()))
 
 	if err != nil {
 		slog.Error("update api key failed", "error", err)
 		http.Error(w, `{"error":"failed to update api key"}`, http.StatusInternalServerError)
+		return
+	}
+	if command.RowsAffected() == 0 {
+		http.Error(w, `{"error":"api key or environment not found"}`, http.StatusNotFound)
 		return
 	}
 

@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, CircleDollarSign, Clock, Users as UsersIcon } from "lucide-react";
+import { AlertTriangle, Clock, Search, Users as UsersIcon } from "lucide-react";
 
 import { api } from "@/api/client";
 import type { UserAnalytics } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -22,9 +23,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { EmptyState, PageHeader } from "@/components/card";
+import { EmptyState } from "@/components/card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
-import { KpiCard } from "@/components/observe/kpi-card";
 import { formatCost, formatDuration, formatNumber } from "@/lib/utils";
 
 type OrderBy = "cost" | "requests" | "threats" | "latency";
@@ -32,6 +33,7 @@ type OrderBy = "cost" | "requests" | "threats" | "latency";
 export function UsersPage() {
   const navigate = useNavigate();
   const [orderBy, setOrderBy] = useState<OrderBy>("cost");
+  const [search, setSearch] = useState("");
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users", orderBy],
@@ -39,45 +41,37 @@ export function UsersPage() {
   });
 
   const kpis = useMemo(() => computeKpis(users), [users]);
+  const visibleUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return users;
+    return users.filter((user) => user.end_user_id.toLowerCase().includes(query));
+  }, [search, users]);
 
   return (
     <>
-      <PageHeader
-        title="Users"
-        description="Every end-user behind X-End-User-Id — cost, latency, threats, usage."
+      <AdminPageHeader
+        eyebrow="Identity telemetry"
+        title="End users"
+        description="Investigate request volume, cost, latency, and security outcomes for every identity supplied through X-End-User-Id."
+        badge={<Badge variant="outline" className="font-mono text-[10px]">{formatNumber(users.length)} tracked</Badge>}
       />
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard
-          label="Users"
-          value={formatNumber(users.length)}
-          icon={<UsersIcon className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="Requests"
-          value={formatNumber(kpis.requests)}
-          sub={users.length ? `avg ${Math.round(kpis.requests / users.length)} / user` : ""}
-        />
-        <KpiCard
-          label="Cost"
-          value={formatCost(kpis.cost)}
-          icon={<CircleDollarSign className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="Threats"
-          value={formatNumber(kpis.threats)}
-          tone={kpis.threats ? "danger" : "success"}
-          icon={<AlertTriangle className="h-4 w-4" />}
-        />
-      </div>
+      <AdminSummaryStrip items={[
+        { label: "Tracked users", value: formatNumber(users.length), detail: "Distinct end-user identifiers" },
+        { label: "Requests", value: formatNumber(kpis.requests), detail: users.length ? `Average ${Math.round(kpis.requests / users.length)} per user` : "No activity" },
+        { label: "Attributed cost", value: formatCost(kpis.cost), detail: "Across tracked requests" },
+        { label: "Threat events", value: formatNumber(kpis.threats), detail: kpis.threats ? "Requires review" : "No detections", tone: kpis.threats ? "danger" : "success" },
+      ]} />
 
-      <Card className="border-border/50 mb-3 mt-4">
-        <CardContent className="flex items-center gap-2 p-3">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-            Sort by
-          </span>
+      <Card className="mb-3 border-border/60">
+        <CardContent className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search end-user id…" className="h-8 pl-8 text-xs" />
+          </div>
+          <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Sort</span>
           <Select value={orderBy} onValueChange={(v) => setOrderBy(v as OrderBy)}>
-            <SelectTrigger className="h-8 w-40 text-xs">
+            <SelectTrigger className="h-8 w-full text-xs sm:w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -99,6 +93,12 @@ export function UsersPage() {
               icon={<UsersIcon className="h-6 w-6" />}
               title="No end-users yet"
               description="Pass X-End-User-Id on gateway requests to track activity per user."
+            />
+          ) : !visibleUsers.length ? (
+            <EmptyState
+              icon={<Search className="h-6 w-6" />}
+              title="No matching end users"
+              description="Try a shorter identifier or clear the search field."
             />
           ) : (
             <Table>
@@ -125,7 +125,7 @@ export function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((u: UserAnalytics) => (
+                {visibleUsers.map((u: UserAnalytics) => (
                   <TableRow
                     key={u.end_user_id}
                     className="cursor-pointer border-border/30 hover:bg-muted/30"

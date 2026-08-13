@@ -1,0 +1,141 @@
+---
+title: Agent action guardrails
+description: Inspect tool-call arguments immediately before autonomous agents perform high-impact side effects.
+---
+
+Prompt safety and action authorization are separate controls. A clean prompt does not make every later shell command, SQL query, filesystem path, or API call safe.
+
+<ApiEndpoint method="POST" path="/v1/guardrails/agent-action">
+  Evaluates a proposed tool call for dangerous commands, sensitive paths, path traversal, and database injection patterns.
+</ApiEndpoint>
+
+## Inspect immediately before execution
+
+```bash
+curl --request POST "$BASTIO_API_URL/v1/guardrails/agent-action" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "tool_name": "execute_shell_command",
+    "arguments": {
+      "command": "rm -rf /var/db/users"
+    },
+    "agent_role": "support-automation",
+    "context": "Requested while handling ticket 4821"
+  }'
+```
+
+Blocked actions return HTTP `403` **with a structured decision body**:
+
+```json
+{
+  "allowed": false,
+  "action": "block",
+  "risk_score": 0.95,
+  "reasons": [
+    "Dangerous system command execution detected in tool arguments"
+  ],
+  "sanitized_arguments": {
+    "command": "rm -rf /var/db/users"
+  }
+}
+```
+
+Do not discard the body just because the status is non-2xx. It is the evidence your application needs for audit, operator review, and safe user feedback.
+
+## Request fields
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `tool_name` | string | yes | Stable name of the proposed tool or function |
+| `arguments` | object | yes | Complete structured arguments exactly as they would be executed |
+| `agent_role` | string | no | Agent, workflow, or role identifier for context |
+| `context` | string | no | Short operational context; do not place secrets here |
+
+Use precise tool names such as `execute_sql_query`, `write_file`, or `run_shell_command`. Some checks use the tool category to interpret otherwise ambiguous arguments.
+
+## Enforcement code
+
+```ts
+type AgentDecision = {
+  allowed: boolean;
+  action: "allow" | "block" | "flag";
+  risk_score: number;
+  reasons?: string[];
+  sanitized_arguments?: Record<string, unknown>;
+};
+
+async function authorizeToolCall(
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<AgentDecision> {
+  const response = await fetch(
+    `${process.env.BASTIO_API_URL}/v1/guardrails/agent-action`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        tool_name: toolName,
+        arguments: args,
+        agent_role: "support-automation",
+      }),
+    },
+  );
+
+  const decision = (await response.json()) as AgentDecision;
+
+  if (response.status === 403 || !decision.allowed) {
+    await recordBlockedAction({ toolName, decision });
+    throw new Error("Agent action blocked by policy");
+  }
+
+  if (!response.ok) {
+    // Choose fail-closed for high-impact tools.
+    throw new Error(`Guardrail unavailable: ${response.status}`);
+  }
+
+  return decision;
+}
+
+const decision = await authorizeToolCall(tool.name, tool.arguments);
+return executeTool(tool.name, decision.sanitized_arguments ?? tool.arguments);
+```
+
+## Decision semantics
+
+<ResponseCode code="200" tone="success">
+  The inspection completed and the action is allowed or flagged. Still inspect `allowed` and `action`.
+</ResponseCode>
+
+<ResponseCode code="403" tone="danger">
+  The action is blocked. Parse and retain the structured decision body; do not execute the tool.
+</ResponseCode>
+
+<ResponseCode code="400" tone="danger">
+  Invalid JSON or a missing `tool_name`.
+</ResponseCode>
+
+Authentication and rate limits for the self-hosted direct API are provided by your ingress. See [authentication and environments](/docs/developer-apis/authentication).
+
+## Design for real agents
+
+- Inspect the final resolved arguments, not the agent's earlier natural-language plan.
+- Run authorization after argument interpolation and before the side effect.
+- Re-authorize retries, changed arguments, and follow-up actions.
+- Keep a human approval layer for irreversible or high-value operations.
+- Use OS, database, and cloud permissions as the final enforcement boundary.
+- Record blocked decisions without logging raw secrets from tool arguments.
+
+## Failure policy
+
+Choose failure behavior per tool class:
+
+| Tool class | Recommended outage behavior |
+|---|---|
+| Read-only public lookup | Consider fail-open with strong monitoring |
+| Internal read with sensitive data | Fail closed or require human approval |
+| File write, shell, database mutation | Fail closed |
+| Payment, account, permission change | Fail closed and require step-up approval |
+
+Bastio is one layer in a defense-in-depth design. It does not replace sandboxing, least-privilege credentials, transaction limits, or human approval.

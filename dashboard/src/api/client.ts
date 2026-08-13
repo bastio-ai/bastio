@@ -37,6 +37,9 @@ export type CreateProviderKeyRequest = components["schemas"]["CreateProviderKeyR
 export type AppConfig = components["schemas"]["AppConfig"];
 export type UpdateSecurityProfileRequest = components["schemas"]["UpdateSecurityProfileRequest"];
 
+export type Environment = components["schemas"]["Environment"];
+export type CreateEnvironmentRequest = components["schemas"]["CreateEnvironmentRequest"];
+
 // Governance — Bastio Governance browser extension API
 export type GovernanceSeverity = components["schemas"]["GovernanceSeverity"];
 export type GovernanceAction = components["schemas"]["GovernanceAction"];
@@ -56,6 +59,11 @@ export type GovernanceRegexPack = components["schemas"]["GovernanceRegexPack"];
 
 export const api = {
   health: () => unwrap(http.GET("/health", {})),
+
+  environments: {
+    list: () => unwrap(http.GET("/v1/environments", {})),
+    create: (data: CreateEnvironmentRequest) => unwrap(http.POST("/v1/environments", { body: data })),
+  },
 
   config: () => unwrap(http.GET("/v1/config", {})),
 
@@ -173,6 +181,7 @@ export const api = {
       action_taken?: string;
       end_user_id?: string;
       ip_address?: string;
+      environment?: string;
       from?: string;
       to?: string;
       search?: string;
@@ -189,7 +198,7 @@ export const api = {
   },
 
   analytics: {
-    overview: (params?: { from?: string; to?: string }) =>
+    overview: (params?: { from?: string; to?: string; environment?: string }) =>
       unwrap(
         http.GET("/v1/analytics/overview", {
           params: { query: params ?? {} },
@@ -238,7 +247,7 @@ export const api = {
     list: () => unwrap(http.GET("/v1/api-keys", {})),
     create: (data: CreateAPIKeyRequest & { scopes?: string[]; proxy_id?: string }) =>
       unwrap(http.POST("/v1/api-keys", { body: data })),
-    update: (id: string, data: { name?: string; rate_limit_rpm?: number; scopes?: string[]; proxy_id?: string }) =>
+    update: (id: string, data: { name?: string; rate_limit_rpm?: number; scopes?: string[]; proxy_id?: string; environment?: string; allow_environment_override?: boolean }) =>
       unwrap(http.PUT("/v1/api-keys/{id}" as any, { params: { path: { id } }, body: data })),
     revoke: (id: string) =>
       unwrap(http.DELETE("/v1/api-keys/{id}", { params: { path: { id } } })),

@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SkeletonRows } from "@/components/skeleton";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 
 type Tab = "versions" | "audit" | "shadow-events";
 
@@ -123,31 +124,12 @@ export function OverlayDetailPage() {
         <span className="font-mono">{overlay.name}</span>
       </div>
 
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-xl font-semibold font-mono">{overlay.name}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {overlay.description || "—"}
-          </p>
-          <div className="flex items-center gap-2 mt-2 text-[11px] text-muted-foreground">
-            {activeVersion ? (
-              <>
-                <Badge variant="default" className="text-[10px] px-1.5 py-0">
-                  active v{activeVersion.version}
-                </Badge>
-                <span>
-                  by {activeVersion.created_by || "—"} ·{" "}
-                  {activeVersion.commit_message || "no message"}
-                </span>
-              </>
-            ) : (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                no active version
-              </Badge>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-2">
+      <AdminPageHeader
+        eyebrow="Custom policy"
+        title={<span className="font-mono">{overlay.name}</span>}
+        description={overlay.description || "No policy description has been provided."}
+        badge={activeVersion ? <Badge variant="default" className="px-1.5 py-0 text-[10px]">active v{activeVersion.version}</Badge> : <Badge variant="outline" className="px-1.5 py-0 text-[10px]">no active version</Badge>}
+        actions={<>
           <Button
             size="sm"
             variant="outline"
@@ -187,8 +169,15 @@ export function OverlayDetailPage() {
           >
             <Plus className="h-3 w-3" /> New version
           </Button>
-        </div>
-      </div>
+        </>}
+      />
+
+      <AdminSummaryStrip items={[
+        { label: "Versions", value: versionsQuery.data?.length ?? 0, detail: "Immutable history" },
+        { label: "Active version", value: activeVersion ? `v${activeVersion.version}` : "None", detail: activeVersion?.commit_message || "Core profile only", tone: activeVersion ? "success" : "warning" },
+        { label: "Draft versions", value: (versionsQuery.data ?? []).filter((version) => version.state === "draft").length, detail: "Not applied to traffic" },
+        { label: "Security warnings", value: activeWarnings.length, detail: activeWarnings.length ? "Active version loosens defaults" : "No weakened defaults", tone: activeWarnings.length ? "danger" : "success" },
+      ]} />
 
       {activeWarnings.length > 0 ? (
         <WarningBanner warnings={activeWarnings} />
@@ -800,4 +789,3 @@ function AuditTable({ id }: { id: string }) {
     </Card>
   );
 }
-

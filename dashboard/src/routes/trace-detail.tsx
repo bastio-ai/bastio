@@ -1,7 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, Copy, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Ban,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileJson,
+  Plus,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldPlus,
+} from "lucide-react";
 
 import { api } from "@/api/client";
 import type {
@@ -12,7 +29,7 @@ import type {
   TraceScore,
 } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,16 +39,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { KpiCard } from "@/components/observe/kpi-card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { ResizablePanels } from "@/components/observe/resizable-panels";
 import { SpanDetailTabs } from "@/components/observe/span-detail-tabs";
 import { SpanTree } from "@/components/observe/span-tree";
 import { useTracesExtension } from "@/components/traces-extension";
-import { formatCost, formatDuration } from "@/lib/utils";
+import { cn, formatCost, formatDuration, weightedThreatScore } from "@/lib/utils";
 
 export function TraceDetailPage() {
   const { id } = useParams({ from: "/traces/$id" });
   const ext = useTracesExtension();
+  const [reviewFindingsRequest, setReviewFindingsRequest] = useState(0);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["trace", id],
@@ -83,12 +101,34 @@ export function TraceDetailPage() {
   const spans = (data!.spans ?? []) as Observation[];
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col space-y-4">
+    <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-3">
       <TraceHeader trace={trace} threatCount={threats.length} />
-      <KpiStrip trace={trace} threatCount={threats.length} />
-      <div className="flex-1 min-h-0 overflow-hidden rounded border border-border/50">
-        <TraceSplit trace={trace} spans={spans} threats={threats} traceId={id} />
+      <TraceOutcomeBanner
+        trace={trace}
+        threats={threats}
+        onReviewFindings={() => setReviewFindingsRequest((request) => request + 1)}
+      />
+      <KpiStrip trace={trace} threats={threats} />
+      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/70 bg-card">
+        <TraceSplit
+          trace={trace}
+          spans={spans}
+          threats={threats}
+          traceId={id}
+          reviewFindingsRequest={reviewFindingsRequest}
+        />
       </div>
+      {reviewFindingsRequest ? (
+        <div
+          key={reviewFindingsRequest}
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-[11px] font-medium text-popover-foreground shadow-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
+        >
+          <CheckCircle2 className="size-3.5 text-success" />
+          Showing the first of {threats.length} findings
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -101,12 +141,12 @@ function TraceHeader({
   threatCount: number;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex flex-wrap items-center gap-3">
-        <BackLink session={trace.session_id} />
-        <span className="text-sm font-semibold">
-          {trace.trace_name || trace.path || trace.method}
-        </span>
+    <AdminPageHeader
+      eyebrow="Trace investigation"
+      title={trace.trace_name || trace.path || trace.method}
+      description={trace.started_at ? `Started ${new Date(trace.started_at).toLocaleString()} · ${trace.provider ?? "unknown provider"} · ${trace.model ?? "unknown model"}` : undefined}
+      badge={
+        <div className="flex flex-wrap items-center gap-2">
         <Badge
           variant={
             trace.status === "ok"
@@ -121,7 +161,7 @@ function TraceHeader({
         </Badge>
         {threatCount > 0 ? (
           <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-            {threatCount} detector{threatCount === 1 ? "" : "s"}
+            {threatCount} finding{threatCount === 1 ? "" : "s"}
           </Badge>
         ) : null}
         {trace.environment ? (
@@ -145,8 +185,11 @@ function TraceHeader({
               </Badge>
             ))
           : null}
-      </div>
-      <div className="flex items-center gap-2">
+        </div>
+      }
+      actions={
+        <div className="flex items-center gap-2">
+          <BackLink session={trace.session_id} />
         <span className="font-mono text-[11px] text-muted-foreground">{trace.id}</span>
         <Button
           variant="ghost"
@@ -157,8 +200,10 @@ function TraceHeader({
         >
           <Copy className="h-3 w-3" />
         </Button>
-      </div>
-    </div>
+        </div>
+      }
+      className="mb-0"
+    />
   );
 }
 
@@ -186,52 +231,161 @@ function BackLink({ session }: { session?: string }) {
 
 function KpiStrip({
   trace,
-  threatCount,
+  threats,
 }: {
   trace: NonNullable<TraceDetail["trace"]>;
-  threatCount: number;
+  threats: import("@/api/client").TraceThreatDetection[];
 }) {
   const tokens = (trace.input_tokens ?? 0) + (trace.output_tokens ?? 0);
+  const outcome = getTraceOutcome(trace, threats);
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      <KpiCard label="Duration" value={formatDuration(trace.duration_ms ?? 0)} />
-      <KpiCard
-        label="Tokens"
-        value={tokens.toLocaleString()}
-        sub={`${trace.input_tokens ?? 0} → ${trace.output_tokens ?? 0}`}
-      />
-      <KpiCard label="Cost" value={formatCost(trace.cost_cents ?? 0)} />
-      <KpiCard
-        label="Security"
-        value={
-          threatCount > 0
-            ? `${threatCount} hit${threatCount > 1 ? "s" : ""}`
-            : trace.status === "blocked" || trace.threat_detected
-            ? "Blocked"
-            : "Clean"
-        }
-        tone={
-          threatCount > 0 || trace.status === "blocked" || trace.threat_detected
-            ? "danger"
-            : "success"
-        }
-        sub={trace.security_action ?? "pass"}
-      />
-      <KpiCard
-        label="Provider"
-        value={trace.provider ?? "—"}
-        sub={trace.model ?? ""}
-      />
-      <KpiCard
-        label="End user"
-        value={trace.end_user_id || "—"}
-        sub={
-          trace.started_at
-            ? new Date(trace.started_at).toLocaleString()
-            : ""
-        }
-      />
-    </div>
+    <AdminSummaryStrip items={[
+      { label: "Duration", value: formatDuration(trace.duration_ms ?? 0), detail: "End-to-end latency" },
+      { label: "Tokens", value: tokens.toLocaleString(), detail: `${trace.input_tokens ?? 0} in · ${trace.output_tokens ?? 0} out` },
+      { label: "Cost", value: formatCost(trace.cost_cents ?? 0), detail: trace.provider ?? "Unknown provider" },
+      {
+        label: "Gateway outcome",
+        value: outcome.shortLabel,
+        detail: trace.http_status ? `HTTP ${trace.http_status} · ${trace.security_action || "pass"}` : trace.security_action || "pass",
+        tone: outcome.tone === "danger" ? "danger" : outcome.tone === "warning" ? "warning" : "success",
+      },
+    ]} />
+  );
+}
+
+type OutcomeTone = "success" | "warning" | "danger";
+
+function getTraceOutcome(
+  trace: NonNullable<TraceDetail["trace"]>,
+  threats: import("@/api/client").TraceThreatDetection[],
+) {
+  const blockedFindings = threats.filter((threat) => threat.action_taken === "block").length;
+  const categories = [...new Set(threats.map((threat) => threat.threat_type).filter(Boolean))];
+
+  if (trace.status === "blocked" || trace.http_status === 403) {
+    return {
+      label: "Request blocked",
+      shortLabel: "Blocked",
+      description: `${threats.length || 1} security finding${threats.length === 1 ? "" : "s"} prevented this request before the provider completed it.`,
+      detail: categories.length ? categories.join(" · ") : "Security policy enforced",
+      tone: "danger" as OutcomeTone,
+      icon: Ban,
+    };
+  }
+
+  if (trace.status !== "ok") {
+    return {
+      label: "Request failed",
+      shortLabel: "Failed",
+      description: trace.error_message || "The gateway did not complete this request successfully.",
+      detail: trace.http_status ? `HTTP ${trace.http_status}` : trace.status,
+      tone: "danger" as OutcomeTone,
+      icon: AlertTriangle,
+    };
+  }
+
+  if (threats.length) {
+    const mismatch = blockedFindings > 0
+      ? `${blockedFindings} finding${blockedFindings === 1 ? "" : "s"} requested a block, but the gateway outcome remained successful.`
+      : "The request completed while the security event was recorded for review.";
+    return {
+      label: "Allowed with security findings",
+      shortLabel: "Allowed · review",
+      description: `${threats.length} ${categories.join(" / ") || "security"} finding${threats.length === 1 ? " was" : "s were"} recorded. ${mismatch}`,
+      detail: trace.security_action ? `Effective strategy: ${trace.security_action}` : "Review detector strategy",
+      tone: "warning" as OutcomeTone,
+      icon: ShieldAlert,
+    };
+  }
+
+  return {
+    label: "Request allowed",
+    shortLabel: "Allowed",
+    description: "The gateway completed the request and no security detectors fired.",
+    detail: "Security checks passed",
+    tone: "success" as OutcomeTone,
+    icon: CheckCircle2,
+  };
+}
+
+function TraceOutcomeBanner({
+  trace,
+  threats,
+  onReviewFindings,
+}: {
+  trace: NonNullable<TraceDetail["trace"]>;
+  threats: import("@/api/client").TraceThreatDetection[];
+  onReviewFindings: () => void;
+}) {
+  const outcome = getTraceOutcome(trace, threats);
+  const Icon = outcome.icon;
+  const [reviewFeedback, setReviewFeedback] = useState(0);
+
+  useEffect(() => {
+    if (!reviewFeedback) return;
+    const timeout = window.setTimeout(() => setReviewFeedback(0), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [reviewFeedback]);
+
+  const reviewFindings = () => {
+    setReviewFeedback((feedback) => feedback + 1);
+    onReviewFindings();
+  };
+
+  return (
+    <section
+      aria-labelledby="trace-outcome-title"
+      className={cn(
+        "flex flex-wrap items-center gap-3 rounded-lg border px-3.5 py-3",
+        outcome.tone === "danger" && "border-danger/25 bg-danger-bg/60",
+        outcome.tone === "warning" && "border-warn-border bg-warn-bg/50",
+        outcome.tone === "success" && "border-success-border bg-success-bg/60",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-8 flex-shrink-0 items-center justify-center rounded-md border bg-background/70",
+          outcome.tone === "danger" && "border-danger/25 text-danger",
+          outcome.tone === "warning" && "border-warn-border text-warn",
+          outcome.tone === "success" && "border-success-border text-success",
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-[18rem] flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="trace-outcome-title" className="text-[12px] font-semibold tracking-tight">
+            {outcome.label}
+          </h2>
+          <Badge variant="outline" className="h-5 px-1.5 font-mono text-[9px]">
+            {outcome.detail}
+          </Badge>
+        </div>
+        <p className="mt-1 max-w-4xl text-[10px] leading-4 text-muted-foreground">
+          {outcome.description}
+        </p>
+      </div>
+      {threats.length ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 text-[10px]"
+          onClick={reviewFindings}
+        >
+          {reviewFeedback ? (
+            <>
+              <Check className="size-3" /> Findings in view
+            </>
+          ) : (
+            <>
+              Review {threats.length} finding{threats.length === 1 ? "" : "s"}
+              <ArrowRight className="size-3" />
+            </>
+          )}
+        </Button>
+      ) : null}
+    </section>
   );
 }
 
@@ -240,11 +394,13 @@ function TraceSplit({
   spans,
   threats,
   traceId,
+  reviewFindingsRequest,
 }: {
   trace: NonNullable<TraceDetail["trace"]>;
   spans: Observation[];
   threats: import("@/api/client").TraceThreatDetection[];
   traceId: string;
+  reviewFindingsRequest: number;
 }) {
   const syntheticRoot = useMemo<Observation>(
     () => ({
@@ -277,47 +433,295 @@ function TraceSplit({
   }, [spans, syntheticRoot, traceId]);
 
   const [selectedId, setSelectedId] = useState<string>(traceId);
-  const [tab, setTab] = useState<string>("input");
+  const [tab, setTab] = useState<string>(threats.length ? "security" : "input");
+  const [tabWasChosen, setTabWasChosen] = useState(false);
+  const [selectedThreatId, setSelectedThreatId] = useState<string | null>(threats[0]?.id ?? null);
+  const firstThreatId = threats[0]?.id;
   const selected = allSpans.find((s) => s.id === selectedId) ?? syntheticRoot;
+  const selectedThreat = threats.find((threat) => threat.id === selectedThreatId) ?? threats[0] ?? null;
 
   useEffect(() => {
     // Reset selection when navigating between traces.
     setSelectedId(traceId);
+    setTabWasChosen(false);
   }, [traceId]);
+
+  useEffect(() => {
+    if (!threats.length) {
+      setSelectedThreatId(null);
+      return;
+    }
+    setSelectedThreatId((current) =>
+      current && threats.some((threat) => threat.id === current) ? current : threats[0]!.id,
+    );
+    if (!tabWasChosen) setTab("security");
+  }, [tabWasChosen, threats]);
+
+  useEffect(() => {
+    if (!reviewFindingsRequest || !firstThreatId) return;
+
+    setSelectedId(traceId);
+    setSelectedThreatId(firstThreatId);
+    setTab("security");
+    setTabWasChosen(true);
+
+    window.history.replaceState(window.history.state, "", "#trace-security");
+    window.requestAnimationFrame(() => {
+      const findings = document.getElementById("trace-security-findings");
+      findings?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      findings?.focus({ preventScroll: true });
+    });
+  }, [firstThreatId, reviewFindingsRequest, traceId]);
+
+  const selectThreat = (threat: import("@/api/client").TraceThreatDetection) => {
+    setSelectedThreatId(threat.id);
+    setTab("security");
+    setTabWasChosen(true);
+  };
 
   return (
     <ResizablePanels
-      storageKey="trace-detail-split"
-      defaultLeftPct={42}
+      defaultLeftPct={24}
+      minLeftPx={250}
+      minRightPx={680}
       left={
-        <div className="h-full overflow-auto">
-          <div className="border-b border-border/40 bg-muted/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-            Spans ({allSpans.length})
+        <div className="flex h-full min-h-0 flex-col bg-surface-1/35">
+          <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2.5">
+            <div>
+              <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Spans
+              </h2>
+              <p className="mt-0.5 text-[9px] text-muted-foreground/70">
+                {allSpans.length} recorded · {formatDuration(trace.duration_ms ?? 0)} total
+              </p>
+            </div>
+            <Badge variant="outline" className="h-5 px-1.5 font-mono text-[9px]">
+              {allSpans.length}
+            </Badge>
           </div>
-          <SpanTree
-            spans={allSpans}
-            traceStartMs={traceStartMs}
-            traceDurationMs={trace.duration_ms ?? 1}
-            selectedSpanId={selectedId}
-            onSelect={(s) => setSelectedId(s.id)}
-            threats={threats}
-          />
-          <div className="border-t border-border/40 px-3 py-3">
-            <ScoresPanel traceId={traceId} />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <SpanTree
+              spans={allSpans}
+              traceStartMs={traceStartMs}
+              traceDurationMs={trace.duration_ms ?? 1}
+              selectedSpanId={selectedId}
+              onSelect={(span) => setSelectedId(span.id)}
+              threats={threats}
+            />
+          </div>
+          <div className="flex-shrink-0 border-t border-border-subtle">
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-[10px] text-muted-foreground hover:bg-surface-2 hover:text-foreground">
+                <span className="flex items-center gap-2">
+                  <Check className="size-3.5" /> Evaluation scores
+                </span>
+                <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="max-h-[21rem] overflow-auto border-t border-border-subtle bg-background p-3">
+                <ScoresPanel traceId={traceId} />
+              </div>
+            </details>
           </div>
         </div>
       }
       right={
-        <div className="h-full min-h-0">
-          <SpanDetailTabs
-            span={selected}
+        <div className="flex h-full min-h-0 min-w-0">
+          <main className="min-w-0 flex-1">
+            <SpanDetailTabs
+              span={selected}
+              threats={threats}
+              activeTab={tab}
+              onTabChange={(nextTab) => {
+                setTab(nextTab);
+                setTabWasChosen(true);
+              }}
+              selectedThreatId={selectedThreatId}
+              onThreatSelect={selectThreat}
+              securityReviewSignal={reviewFindingsRequest}
+            />
+          </main>
+          <TraceSecurityInspector
+            trace={trace}
             threats={threats}
-            activeTab={tab}
-            onTabChange={setTab}
+            selectedThreat={selectedThreat}
+            onSelectThreat={selectThreat}
           />
         </div>
       }
     />
+  );
+}
+
+function TraceSecurityInspector({
+  trace,
+  threats,
+  selectedThreat,
+  onSelectThreat,
+}: {
+  trace: NonNullable<TraceDetail["trace"]>;
+  threats: import("@/api/client").TraceThreatDetection[];
+  selectedThreat: import("@/api/client").TraceThreatDetection | null;
+  onSelectThreat: (threat: import("@/api/client").TraceThreatDetection) => void;
+}) {
+  const selectedIndex = selectedThreat ? threats.findIndex((threat) => threat.id === selectedThreat.id) : -1;
+  const weighted = selectedThreat
+    ? weightedThreatScore(selectedThreat.score ?? 0, selectedThreat.confidence ?? 0, selectedThreat.weighted_score)
+    : 0;
+
+  const moveSelection = (offset: number) => {
+    if (!threats.length) return;
+    const nextIndex = Math.min(threats.length - 1, Math.max(0, selectedIndex + offset));
+    const next = threats[nextIndex];
+    if (next) onSelectThreat(next);
+  };
+
+  return (
+    <aside
+      id="trace-security"
+      aria-label="Trace investigation details"
+      className="hidden h-full w-[316px] flex-shrink-0 flex-col border-l border-border-subtle bg-background 2xl:flex"
+    >
+      <div className="flex items-start gap-2 border-b border-border-subtle px-3 py-3">
+        <span className={cn("mt-1 flex size-6 items-center justify-center rounded-md border", selectedThreat ? "border-danger/20 bg-danger-bg text-danger" : "border-success-border bg-success-bg text-success")}>
+          {selectedThreat ? <ShieldAlert className="size-3.5" /> : <ShieldCheck className="size-3.5" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[11px] font-semibold tracking-tight">
+            {selectedThreat ? selectedThreat.threat_type : "No security findings"}
+          </h2>
+          <p className="mt-0.5 truncate text-[9px] text-muted-foreground">
+            {selectedThreat ? `Detected by ${selectedThreat.detector_name}` : "This trace passed all configured checks"}
+          </p>
+        </div>
+        {selectedThreat ? (
+          <div className="flex items-center gap-0.5">
+            <Button variant="ghost" size="icon-xs" aria-label="Previous finding" disabled={selectedIndex <= 0} onClick={() => moveSelection(-1)}>
+              <ChevronLeft className="size-3.5" />
+            </Button>
+            <span className="min-w-8 text-center font-mono text-[9px] text-muted-foreground">
+              {selectedIndex + 1}/{threats.length}
+            </span>
+            <Button variant="ghost" size="icon-xs" aria-label="Next finding" disabled={selectedIndex >= threats.length - 1} onClick={() => moveSelection(1)}>
+              <ChevronRight className="size-3.5" />
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        {selectedThreat ? (
+          <>
+            <InvestigationCard title="Decision">
+              <InvestigationRow label="Action">
+                <Badge variant={selectedThreat.action_taken === "block" ? "destructive" : "warning"} className="h-4 px-1.5 text-[8px]">
+                  {selectedThreat.action_taken || "record"}
+                </Badge>
+              </InvestigationRow>
+              <InvestigationRow label="Weighted score" mono>{(weighted * 100).toFixed(0)}%</InvestigationRow>
+              <InvestigationRow label="Severity" mono>{selectedThreat.severity}</InvestigationRow>
+              <InvestigationRow label="Confidence" mono>{((selectedThreat.confidence ?? 0) * 100).toFixed(0)}%</InvestigationRow>
+            </InvestigationCard>
+
+            <InvestigationCard title="Matched evidence">
+              <CopyValue value={selectedThreat.matched_pattern || "No pattern recorded"} />
+              {selectedThreat.matched_content ? (
+                <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border-subtle bg-background p-2 font-mono text-[9px] leading-4 text-foreground/85">
+                  {selectedThreat.matched_content}
+                </pre>
+              ) : null}
+            </InvestigationCard>
+
+            <InvestigationCard title="Finding context">
+              <InvestigationRow label="Detector" mono>{selectedThreat.detector_name}</InvestigationRow>
+              <InvestigationRow label="Subtype" mono>{selectedThreat.threat_subtype || "—"}</InvestigationRow>
+              <InvestigationRow label="Source" mono>{selectedThreat.source || "—"}</InvestigationRow>
+              <InvestigationRow label="End user" mono>{selectedThreat.end_user_id || trace.end_user_id || "—"}</InvestigationRow>
+              <InvestigationRow label="IP address" mono>{selectedThreat.ip_address || "—"}</InvestigationRow>
+            </InvestigationCard>
+          </>
+        ) : null}
+
+        <InvestigationCard title="Trace context">
+          <InvestigationRow label="Environment" mono>{trace.environment || "—"}</InvestigationRow>
+          <InvestigationRow label="Release" mono>{trace.release || "—"}</InvestigationRow>
+          <InvestigationRow label="Session" mono>{trace.session_id || "—"}</InvestigationRow>
+          <InvestigationRow label="End user" mono>{trace.end_user_id || "—"}</InvestigationRow>
+          <InvestigationRow label="Route" mono>{trace.path || trace.method}</InvestigationRow>
+          <InvestigationRow label="Provider" mono>{trace.provider} · {trace.model}</InvestigationRow>
+          <CopyValue value={trace.id} label="Trace ID" />
+        </InvestigationCard>
+      </div>
+
+      {selectedThreat ? (
+        <div className="space-y-2 border-t border-border-subtle p-3">
+          <Link
+            to="/threats/$id"
+            params={{ id: selectedThreat.id }}
+            className={buttonVariants({ variant: "outline", size: "sm" }) + " w-full justify-between text-[10px]"}
+          >
+            <span className="flex items-center gap-1.5"><FileJson className="size-3" /> Open full threat</span>
+            <ExternalLink className="size-3" />
+          </Link>
+          <Link
+            to="/overlays/new"
+            search={{ from_threat: selectedThreat.id, template: undefined }}
+            className={buttonVariants({ size: "sm" }) + " w-full text-[10px]"}
+          >
+            <ShieldPlus className="size-3.5" /> Create policy from finding
+          </Link>
+          <Link
+            to="/security-settings"
+            className={buttonVariants({ variant: "outline", size: "sm" }) + " w-full text-[10px]"}
+          >
+            Review detector strategy
+          </Link>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function InvestigationCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-md border border-border-subtle bg-surface-1 p-3">
+      <h3 className="mb-2 text-[9px] font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+      <div className="space-y-1.5">{children}</div>
+    </section>
+  );
+}
+
+function InvestigationRow({ label, children, mono = false }: { label: string; children: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 text-[9px] leading-4">
+      <span className="w-[76px] flex-shrink-0 text-muted-foreground">{label}</span>
+      <span className={cn("min-w-0 flex-1 break-words text-right text-foreground/90", mono && "font-mono tabular-nums")}>{children}</span>
+    </div>
+  );
+}
+
+function CopyValue({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-2">
+      {label ? <span className="w-[76px] flex-shrink-0 text-[9px] text-muted-foreground">{label}</span> : null}
+      <code className="min-w-0 flex-1 truncate text-[9px] text-foreground/90">{value}</code>
+      <button
+        type="button"
+        className="flex size-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+        aria-label={`Copy ${label || "matched value"}`}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(value);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1200);
+          } catch {
+            setCopied(false);
+          }
+        }}
+      >
+        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </button>
+    </div>
   );
 }
 
@@ -334,7 +738,7 @@ function ExtensionDefaultDetail({ trace }: { trace: Trace }) {
   return (
     <div className="space-y-4">
       <TraceHeader trace={t} threatCount={0} />
-      <KpiStrip trace={t} threatCount={0} />
+      <KpiStrip trace={t} threats={[]} />
       <Card className="border-border/50">
         <CardContent className="py-6 text-sm text-muted-foreground">
           This event came from an integration that doesn’t expose span-level detail.
@@ -440,6 +844,7 @@ function AddScoreForm({
   const [numeric, setNumeric] = useState("");
   const [str, setStr] = useState("");
   const [evaluator, setEvaluator] = useState("human");
+  const formId = useId();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -467,7 +872,9 @@ function AddScoreForm({
     <form onSubmit={submit} className="p-2.5 rounded-lg border border-border/40 bg-muted/10 space-y-2.5">
       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Add New Score</p>
       <div className="grid grid-cols-2 gap-2">
+        <label htmlFor={`${formId}-name`} className="sr-only">Score name</label>
         <Input
+          id={`${formId}-name`}
           placeholder="Score Name (e.g. correctness)"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -475,7 +882,7 @@ function AddScoreForm({
           required
         />
         <Select value={valueType} onValueChange={(v) => setValueType(v as typeof valueType)}>
-          <SelectTrigger className="h-7 text-xs">
+          <SelectTrigger className="h-7 text-xs" aria-label="Score value type">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -488,25 +895,35 @@ function AddScoreForm({
 
       <div className="grid grid-cols-2 gap-2">
         {valueType === "numeric" ? (
-          <Input
-            type="number"
-            step="0.01"
-            placeholder="Score Value (e.g. 0.95)"
-            value={numeric}
-            onChange={(e) => setNumeric(e.target.value)}
-            className="h-7 text-xs"
-            required
-          />
+          <>
+            <label htmlFor={`${formId}-numeric`} className="sr-only">Numeric score value</label>
+            <Input
+              id={`${formId}-numeric`}
+              type="number"
+              step="0.01"
+              placeholder="Score Value (e.g. 0.95)"
+              value={numeric}
+              onChange={(e) => setNumeric(e.target.value)}
+              className="h-7 text-xs"
+              required
+            />
+          </>
         ) : (
-          <Input
-            placeholder={valueType === "boolean" ? "true / false" : "Value (e.g. pass)"}
-            value={str}
-            onChange={(e) => setStr(e.target.value)}
-            className="h-7 text-xs"
-            required
-          />
+          <>
+            <label htmlFor={`${formId}-categorical`} className="sr-only">Score value</label>
+            <Input
+              id={`${formId}-categorical`}
+              placeholder={valueType === "boolean" ? "true / false" : "Value (e.g. pass)"}
+              value={str}
+              onChange={(e) => setStr(e.target.value)}
+              className="h-7 text-xs"
+              required
+            />
+          </>
         )}
+        <label htmlFor={`${formId}-evaluator`} className="sr-only">Evaluator</label>
         <Input
+          id={`${formId}-evaluator`}
           placeholder="Evaluator (e.g. human, gpt-4o)"
           value={evaluator}
           onChange={(e) => setEvaluator(e.target.value)}

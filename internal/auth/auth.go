@@ -18,18 +18,21 @@ import (
 
 // APIKeyInfo contains the resolved identity for an authenticated request.
 type APIKeyInfo struct {
-	ID           uuid.UUID  `json:"id"`
-	CustomerID   uuid.UUID  `json:"customer_id"`
-	Name         string     `json:"name"`
-	KeyPrefix    string     `json:"key_prefix"`
-	Scopes       []string   `json:"scopes"`
-	RateLimitRPM *int       `json:"rate_limit_rpm"`
-	ExpiresAt    *time.Time `json:"expires_at"`
+	ID                       uuid.UUID  `json:"id"`
+	CustomerID               uuid.UUID  `json:"customer_id"`
+	Name                     string     `json:"name"`
+	KeyPrefix                string     `json:"key_prefix"`
+	Scopes                   []string   `json:"scopes"`
+	RateLimitRPM             *int       `json:"rate_limit_rpm"`
+	Environment              string     `json:"environment"`
+	AllowEnvironmentOverride bool       `json:"allow_environment_override"`
+	ExpiresAt                *time.Time `json:"expires_at"`
 }
 
 type contextKey string
 
 const apiKeyContextKey contextKey = "api_key_info"
+const effectiveEnvironmentContextKey contextKey = "effective_environment"
 
 // FromContext retrieves APIKeyInfo from the request context.
 func FromContext(ctx context.Context) (*APIKeyInfo, bool) {
@@ -41,6 +44,50 @@ func FromContext(ctx context.Context) (*APIKeyInfo, bool) {
 // up a context without running the full authentication middleware.
 func WithInfo(ctx context.Context, info *APIKeyInfo) context.Context {
 	return context.WithValue(ctx, apiKeyContextKey, info)
+}
+
+// EnvironmentFromRequest resolves the deployment boundary for an authenticated
+// request. Credentials are authoritative by default. A shared-ingress key may
+// opt into X-Bastio-Environment, but only for a registered environment owned by
+// the same customer.
+func EnvironmentFromRequest(ctx context.Context, db *pgxpool.Pool, info *APIKeyInfo, requested string) (string, error) {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if requested == "" || requested == info.Environment {
+		return info.Environment, nil
+	}
+	if !info.AllowEnvironmentOverride {
+		return "", fmt.Errorf("environment override is not allowed for this API key")
+	}
+	var exists bool
+	err := db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM environments WHERE customer_id = $1 AND name = $2
+		)
+	`, info.CustomerID, requested).Scan(&exists)
+	if err != nil {
+		return "", fmt.Errorf("validate environment override: %w", err)
+	}
+	if !exists {
+		return "", fmt.Errorf("environment %q is not registered in this workspace", requested)
+	}
+	return requested, nil
+}
+
+// WithEnvironment attaches the already-validated effective environment.
+func WithEnvironment(ctx context.Context, environment string) context.Context {
+	return context.WithValue(ctx, effectiveEnvironmentContextKey, environment)
+}
+
+// Environment returns the validated environment, falling back to the key's
+// assignment for tests and internal callers that don't run gateway middleware.
+func Environment(ctx context.Context, info *APIKeyInfo) string {
+	if environment, ok := ctx.Value(effectiveEnvironmentContextKey).(string); ok && environment != "" {
+		return environment
+	}
+	if info != nil {
+		return info.Environment
+	}
+	return ""
 }
 
 // Service handles API key authentication.
@@ -69,8 +116,19 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 			http.Error(w, `{"error":"invalid api key"}`, http.StatusUnauthorized)
 			return
 		}
+		environment, err := EnvironmentFromRequest(r.Context(), s.db, info, r.Header.Get("X-Bastio-Environment"))
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprintf(w, `{"error":{"type":"invalid_environment","message":%q}}`, err.Error())
+			return
+		}
+		// Downstream handlers and recorders consume the canonical value from
+		// the header today. Overwrite any client value only after validation.
+		r.Header.Set("X-Bastio-Environment", environment)
 
 		ctx := context.WithValue(r.Context(), apiKeyContextKey, info)
+		ctx = WithEnvironment(ctx, environment)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -96,14 +154,17 @@ func (s *Service) Authenticate(ctx context.Context, apiKey string) (*APIKeyInfo,
 
 	// Tier 2: database lookup
 	row := s.db.QueryRow(ctx, `
-		SELECT id, customer_id, name, key_prefix, scopes, rate_limit_rpm, expires_at
-		FROM gateway_api_keys
-		WHERE key_hash = $1 AND is_active = true
+		SELECT k.id, k.customer_id, k.name, k.key_prefix, k.scopes, k.rate_limit_rpm,
+		       COALESCE(e.name, ''), k.allow_environment_override, k.expires_at
+		FROM gateway_api_keys k
+		LEFT JOIN environments e ON e.id = k.environment_id
+		WHERE k.key_hash = $1 AND k.is_active = true
 	`, keyHash)
 
 	if err := row.Scan(
 		&info.ID, &info.CustomerID, &info.Name, &info.KeyPrefix,
-		&info.Scopes, &info.RateLimitRPM, &info.ExpiresAt,
+		&info.Scopes, &info.RateLimitRPM, &info.Environment,
+		&info.AllowEnvironmentOverride, &info.ExpiresAt,
 	); err != nil {
 		return nil, fmt.Errorf("api key not found")
 	}

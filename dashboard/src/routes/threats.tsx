@@ -2,24 +2,34 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Columns3,
+  Download,
   Layers,
-  ShieldBan,
-  ShieldCheck,
-  ShieldX,
-  Users,
+  Pause,
+  Play,
+  Save,
+  Search,
+  ShieldAlert,
 } from "lucide-react";
 
-import { api } from "@/api/client";
-import type { ThreatEvent } from "@/api/client";
+import { api, type ThreatEvent } from "@/api/client";
+import { EmptyState } from "@/components/card";
+import { useDashboardControls } from "@/components/dashboard-controls-context";
+import { ThreatDetailSheet } from "@/components/observe/threat-detail-sheet";
+import { ThreatInspector } from "@/components/observe/threat-inspector";
+import {
+  type ThreatFilters,
+} from "@/components/observe/threat-filter-bar";
+import { SkeletonRows } from "@/components/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -28,20 +38,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { EmptyState, PageHeader } from "@/components/card";
-import { SkeletonRows } from "@/components/skeleton";
-import { KpiCard } from "@/components/observe/kpi-card";
-import { LiveToggle } from "@/components/observe/live-toggle";
-import {
-  ThreatFilterBar,
-  type ThreatFilters,
-} from "@/components/observe/threat-filter-bar";
-import { ThreatDetailSheet } from "@/components/observe/threat-detail-sheet";
 import { downloadCSV } from "@/lib/csv";
-import { formatNumber, weightedThreatScore } from "@/lib/utils";
+import { cn, formatNumber, weightedThreatScore } from "@/lib/utils";
 
-// Sort columns exposed to the backend. Keep in sync with
-// threatSortColumns in internal/observability/handler.go.
 type SortColumn = "detected_at" | "severity" | "score" | "confidence";
 type SortOrder = "asc" | "desc";
 
@@ -62,26 +61,15 @@ export type ThreatsSearch = {
   group?: boolean;
 };
 
-const SORT_COLUMNS: readonly SortColumn[] = [
-  "detected_at",
-  "severity",
-  "score",
-  "confidence",
-];
+const SORT_COLUMNS: readonly SortColumn[] = ["detected_at", "severity", "score", "confidence"];
+const PAGE_SIZE = 50;
 
-export function validateThreatsSearch(
-  raw: Record<string, unknown>,
-): ThreatsSearch {
-  const str = (k: keyof ThreatsSearch) =>
-    typeof raw[k] === "string" && raw[k] ? (raw[k] as string) : undefined;
+export function validateThreatsSearch(raw: Record<string, unknown>): ThreatsSearch {
+  const str = (key: keyof ThreatsSearch) =>
+    typeof raw[key] === "string" && raw[key] ? (raw[key] as string) : undefined;
   const page = Number(raw.page);
-  const sort = SORT_COLUMNS.includes(raw.sort as SortColumn)
-    ? (raw.sort as SortColumn)
-    : undefined;
-  const order =
-    raw.order === "asc" || raw.order === "desc"
-      ? (raw.order as SortOrder)
-      : undefined;
+  const sort = SORT_COLUMNS.includes(raw.sort as SortColumn) ? (raw.sort as SortColumn) : undefined;
+  const order = raw.order === "asc" || raw.order === "desc" ? (raw.order as SortOrder) : undefined;
   return {
     severity: str("severity"),
     threat_type: str("threat_type"),
@@ -100,87 +88,27 @@ export function validateThreatsSearch(
   };
 }
 
-const PAGE_SIZE = 50;
-
 export function ThreatsPage() {
   const navigate = useNavigate();
+  const controls = useDashboardControls();
   const search = useSearch({ from: "/threats" }) as ThreatsSearch;
+  const [filters, setFilters] = useState<ThreatFilters>(() => searchToFilters(search));
+  const [selectedThreat, setSelectedThreat] = useState<ThreatEvent | null>(null);
+  const [inspectorDismissed, setInspectorDismissed] = useState(false);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [showType, setShowType] = useState(false);
+  const [showIp, setShowIp] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const isWide = useWideViewport();
+  const wasWideRef = useRef(isWide);
 
-  // Local filter state, hydrated from URL on mount + whenever the URL
-  // changes (e.g. back button). We keep a local copy so typing into text
-  // inputs doesn't push to history on every keystroke.
-  const [filters, setFilters] = useState<ThreatFilters>(() =>
-    searchToFilters(search),
-  );
-  useEffect(() => {
-    setFilters(searchToFilters(search));
-  }, [search]);
+  useEffect(() => setFilters(searchToFilters(search)), [search]);
 
-  const sort: SortColumn = search.sort ?? "detected_at";
-  const order: SortOrder = search.order ?? "desc";
+  const sort = search.sort ?? "detected_at";
+  const order = search.order ?? "desc";
   const page = search.page ?? 1;
   const groupMode = search.group ?? false;
-  const [live, setLive] = useState(false);
-  const [openThreat, setOpenThreat] = useState<ThreatEvent | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-
-  // "/" focuses the search input, unless the user is already in a text
-  // field (otherwise typing "/" anywhere breaks normal input).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "/") return;
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
-      e.preventDefault();
-      searchInputRef.current?.focus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Commit a filter change to the URL: resets to page 1 whenever filters
-  // change (a stale page number with new filters is almost always wrong).
-  const commitFilters = (next: ThreatFilters) => {
-    setFilters(next);
-    navigate({
-      to: "/threats",
-      search: {
-        ...filtersToSearch(next),
-        sort: search.sort,
-        order: search.order,
-        group: search.group,
-      },
-      replace: false,
-    });
-  };
-
-  const setSort = (column: SortColumn) => {
-    const nextOrder: SortOrder =
-      sort === column && order === "desc" ? "asc" : "desc";
-    navigate({
-      to: "/threats",
-      search: { ...search, sort: column, order: nextOrder, page: undefined },
-    });
-  };
-
-  const setPage = (next: number) => {
-    navigate({
-      to: "/threats",
-      search: { ...search, page: next === 1 ? undefined : next },
-    });
-  };
-
-  const setGroupMode = (next: boolean) => {
-    navigate({
-      to: "/threats",
-      search: { ...search, group: next ? true : undefined, page: undefined },
-    });
-  };
-
-  const applyQuickFilter = (patch: Partial<ThreatsSearch>) => {
-    navigate({ to: "/threats", search: { ...search, ...patch, page: undefined } });
-  };
 
   const queryParams = useMemo(
     () => ({
@@ -194,587 +122,388 @@ export function ThreatsPage() {
       end_user_id: filters.endUser || undefined,
       ip_address: filters.ipAddress || undefined,
       search: filters.search || undefined,
-      from: filters.from ? new Date(filters.from).toISOString() : undefined,
-      to: filters.to ? new Date(filters.to).toISOString() : undefined,
+      from: filters.from ? new Date(filters.from).toISOString() : controls.timeWindow.from,
+      to: filters.to ? new Date(filters.to).toISOString() : controls.timeWindow.to,
+      environment: controls.environment || undefined,
       sort,
       order,
     }),
-    [filters, sort, order, page],
+    [controls.environment, controls.timeWindow, filters, order, page, sort],
   );
 
   const { data: threats, isLoading } = useQuery({
-    queryKey: ["threats", queryParams, live],
+    queryKey: ["threats", queryParams, controls.live],
     queryFn: () => api.threats.list(queryParams),
-    refetchInterval: live ? 3000 : false,
-    placeholderData: (prev) => prev,
+    refetchInterval: controls.live ? 10_000 : false,
+    placeholderData: (previous) => previous,
   });
 
   const rows = useMemo(() => threats ?? [], [threats]);
   const kpis = useMemo(() => computeKpis(rows), [rows]);
-  const detectors = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.detector_name))).sort(),
-    [rows],
-  );
-  const grouped = useMemo(() => (groupMode ? groupRows(rows) : null), [
-    rows,
-    groupMode,
-  ]);
-  const hasActiveFilters =
-    Object.values(filters).some(Boolean) || Boolean(search.search);
+  const grouped = useMemo(() => (groupMode ? groupRows(rows) : null), [groupMode, rows]);
+  const hasActiveFilters = Object.values(filters).some(Boolean);
+
+  useEffect(() => {
+    if (isWide && !selectedThreat && !inspectorDismissed && rows.length) setSelectedThreat(rows[0]!);
+  }, [inspectorDismissed, isWide, rows, selectedThreat]);
+
+  useEffect(() => {
+    if (wasWideRef.current && !isWide) {
+      setSelectedThreat(null);
+      setInspectorDismissed(true);
+    } else if (!wasWideRef.current && isWide) {
+      setInspectorDismissed(false);
+    }
+    wasWideRef.current = isWide;
+  }, [isWide]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "/") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const commitFilters = (next: ThreatFilters) => {
+    setFilters(next);
+    navigate({
+      to: "/threats",
+      search: {
+        ...filtersToSearch(next),
+        sort: search.sort,
+        order: search.order,
+        group: search.group,
+      },
+    });
+  };
+
+  const setSort = (column: SortColumn) => {
+    const nextOrder: SortOrder = sort === column && order === "desc" ? "asc" : "desc";
+    navigate({ to: "/threats", search: { ...search, sort: column, order: nextOrder, page: undefined } });
+  };
+
+  const setPage = (next: number) =>
+    navigate({ to: "/threats", search: { ...search, page: next === 1 ? undefined : next } });
+
+  const selectThreat = (threat: ThreatEvent) => {
+    setInspectorDismissed(false);
+    setSelectedThreat(threat);
+  };
 
   return (
-    <>
-      <PageHeader
-        title="Threats"
-        description="Security threat events detected by the gateway"
-        action={
-          <div className="flex items-center gap-2">
-            <LiveToggle live={live} onToggle={() => setLive((v) => !v)} />
-            <Button
-              variant={groupMode ? "secondary" : "outline"}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setGroupMode(!groupMode)}
-              title="Collapse identical (detector, pattern, severity) into one row"
-            >
-              <Layers className="h-3 w-3" /> {groupMode ? "Grouped" : "Group"}
-            </Button>
+    <div className="flex h-full min-h-0 bg-background">
+      <section className="flex min-w-0 flex-1 flex-col">
+        <SummaryStrip kpis={kpis} />
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-background px-3 py-2">
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/threats", search: { ...search, group: groupMode ? undefined : true, page: undefined } })}
+            className={cn("flex h-8 items-center gap-2 rounded-md border border-border-subtle px-2.5 text-[11px] text-muted-foreground hover:bg-surface-2 hover:text-foreground", groupMode && "bg-surface-2 text-foreground")}
+          >
+            <Layers className="h-3.5 w-3.5" /> Group by
+            <span className={cn("relative h-4 w-7 rounded-full border border-border-default transition-colors", groupMode ? "bg-foreground" : "bg-surface-2")}>
+              <span className={cn("absolute top-0.5 h-2.5 w-2.5 rounded-full transition-all", groupMode ? "left-3.5 bg-background" : "left-0.5 bg-muted-foreground")} />
+            </span>
+          </button>
+
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              value={filters.search}
+              onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+              onBlur={() => commitFilters(filters)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") commitFilters(filters);
+              }}
+              placeholder="Search threats…"
+              className="pl-8 text-xs"
+            />
           </div>
-        }
-      />
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <KpiCard
-          label="Threats"
-          value={formatNumber(kpis.total)}
-          sub="In current window"
-          icon={<AlertTriangle className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="Critical + High"
-          value={formatNumber(kpis.critHigh)}
-          sub={`${kpis.total ? Math.round((kpis.critHigh / kpis.total) * 100) : 0}% of threats`}
-          tone={kpis.critHigh ? "danger" : "success"}
-          icon={<ShieldX className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="Blocked"
-          value={formatNumber(kpis.blocked)}
-          sub={`${kpis.total ? Math.round((kpis.blocked / kpis.total) * 100) : 0}% prevented`}
-          tone={kpis.blocked ? "success" : undefined}
-          icon={<ShieldBan className="h-4 w-4" />}
-        />
-        <KpiCard
-          label="Users affected"
-          value={formatNumber(kpis.uniqueUsers)}
-          sub="Distinct end_user_id"
-          icon={<Users className="h-4 w-4" />}
-        />
-      </div>
+          <div className="relative">
+            <Button variant="outline" size="sm" className="h-8 text-[11px]" onClick={() => setColumnsOpen((value) => !value)}>
+              <Columns3 className="h-3.5 w-3.5" /> Columns <ChevronDownSmall />
+            </Button>
+            {columnsOpen ? (
+              <div className="absolute right-0 top-9 z-30 w-44 rounded-md border border-border-default bg-popover p-1.5 shadow-xl">
+                <ColumnToggle label="Threat type" checked={showType} onChange={setShowType} />
+                <ColumnToggle label="IP address" checked={showIp} onChange={setShowIp} />
+              </div>
+            ) : null}
+          </div>
 
-      <QuickFilterChips
-        onLastHour={() =>
-          applyQuickFilter({
-            from: toLocalInput(new Date(Date.now() - 3600_000)),
-            to: undefined,
-          })
-        }
-        onCriticalHigh={() => applyQuickFilter({ severity: "critical,high" })}
-        onBlocked={() => applyQuickFilter({ action_taken: "block" })}
-      />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-[11px]"
+            onClick={() => {
+              try {
+                localStorage.setItem("bastio-threat-view", JSON.stringify(search));
+                setSaved(true);
+                window.setTimeout(() => setSaved(false), 1500);
+              } catch {
+                setSaved(false);
+              }
+            }}
+          >
+            {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />} {saved ? "Saved" : "Save view"}
+          </Button>
+          <Button variant="outline" size="icon-sm" title="Export CSV" onClick={() => downloadCSV(`bastio-threats-${new Date().toISOString().slice(0, 10)}.csv`, rows as unknown as Record<string, unknown>[])}>
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 text-[11px]" onClick={() => controls.setLive(!controls.live)}>
+            {controls.live ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />} {controls.live ? "Pause" : "Live"}
+          </Button>
+        </div>
 
-      <ThreatFilterBar
-        value={filters}
-        onChange={commitFilters}
-        detectors={detectors}
-        searchInputRef={searchInputRef}
-        onCSV={() =>
-          downloadCSV(
-            `bastio-threats-${new Date().toISOString().slice(0, 10)}.csv`,
-            rows as unknown as Record<string, unknown>[],
-          )
-        }
-      />
-
-      <Card className="border-border/50 overflow-hidden">
-        <CardContent className="p-0">
+        <div className="min-h-0 flex-1 overflow-auto">
           {isLoading && !rows.length ? (
-            <SkeletonRows count={8} />
+            <SkeletonRows count={12} />
           ) : !rows.length ? (
             <ThreatsEmptyState hasActiveFilters={hasActiveFilters} />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent border-border/50">
+            <Table className="min-w-[860px] text-[11px]">
+              <TableHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur">
+                <TableRow className="border-border-subtle hover:bg-transparent">
+                  <TableHead className="h-9 w-9 px-3"><input type="checkbox" aria-label="Select all threats" className="h-3.5 w-3.5 rounded border-border-default bg-transparent" /></TableHead>
                   {groupMode ? (
                     <>
-                      <Th>Severity</Th>
-                      <Th>Type</Th>
-                      <Th>Subtype</Th>
-                      <Th>Detector</Th>
-                      <Th>Pattern</Th>
-                      <Th className="text-right">Count</Th>
-                      <Th>Latest</Th>
+                      <Th>Severity</Th><Th>Type</Th><Th>Subtype</Th><Th>Detector</Th><Th>Pattern</Th><Th className="text-right">Count</Th><Th>Latest</Th>
                     </>
                   ) : (
                     <>
-                      <SortableTh
-                        label="Time"
-                        column="detected_at"
-                        currentSort={sort}
-                        currentOrder={order}
-                        onSort={setSort}
-                        className="w-[10rem]"
-                      />
-                      <SortableTh
-                        label="Severity"
-                        column="severity"
-                        currentSort={sort}
-                        currentOrder={order}
-                        onSort={setSort}
-                        className="w-[6rem]"
-                      />
-                      <Th>Type</Th>
-                      <Th>Subtype</Th>
-                      <Th>Detector</Th>
-                      <Th>Pattern</Th>
-                      <SortableTh
-                        label="Confidence"
-                        column="confidence"
-                        currentSort={sort}
-                        currentOrder={order}
-                        onSort={setSort}
-                        className="text-right w-[6rem]"
-                      />
-                      <SortableTh
-                        label="Score (weighted)"
-                        column="score"
-                        currentSort={sort}
-                        currentOrder={order}
-                        onSort={setSort}
-                        className="text-right w-[8rem]"
-                      />
-                      <Th className="w-[5rem]">Action</Th>
-                      <Th>User</Th>
-                      <Th>IP</Th>
+                      <SortableTh label="Time" column="detected_at" currentSort={sort} currentOrder={order} onSort={setSort} />
+                      <SortableTh label="Severity" column="severity" currentSort={sort} currentOrder={order} onSort={setSort} />
+                      {showType ? <Th>Type</Th> : null}
+                      <Th>Subtype</Th><Th>Detector</Th><Th>Pattern</Th>
+                      <SortableTh label="Score (wtd)" column="score" currentSort={sort} currentOrder={order} onSort={setSort} className="text-right" />
+                      <Th>Action</Th>{showIp ? <Th>IP address</Th> : null}
                     </>
                   )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {groupMode && grouped
-                  ? grouped.map((g) => (
-                      <TableRow
-                        key={g.key}
-                        className="cursor-pointer border-border/30 hover:bg-muted/30"
-                        onClick={() => setOpenThreat(g.latest)}
-                      >
-                        <TableCell>
-                          <SeverityBadge severity={g.severity} />
-                        </TableCell>
-                        <TableCell className="text-xs text-foreground/90">
-                          {g.threatType}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground">
-                          {g.latest.threat_subtype || "—"}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {g.detectorName}
-                        </TableCell>
-                        <TableCell className="truncate font-mono text-[11px] text-muted-foreground max-w-[22rem]">
-                          {g.matchedPattern}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-xs">
-                          {g.count}
-                        </TableCell>
-                        <TableCell
-                          className="font-mono tabular-nums text-xs text-muted-foreground"
-                          title={new Date(g.latestAt).toLocaleString()}
-                        >
-                          {relativeTime(g.latestAt)}
-                        </TableCell>
+                  ? grouped.map((group) => (
+                      <TableRow key={group.key} onClick={() => selectThreat(group.latest)} className={cn("cursor-pointer border-border-subtle hover:bg-surface-2/70", selectedThreat?.id === group.latest.id && "bg-surface-2")}>
+                        <TableCell className="px-3"><input type="checkbox" aria-label={`Select ${group.threatType}`} onClick={(event) => event.stopPropagation()} className="h-3.5 w-3.5" /></TableCell>
+                        <TableCell><SeverityBadge severity={group.severity} /></TableCell>
+                        <Cell>{group.threatType}</Cell><MonoCell>{group.latest.threat_subtype || "—"}</MonoCell><MonoCell>{group.detectorName}</MonoCell><MonoCell className="max-w-[230px] truncate">{group.matchedPattern}</MonoCell><MonoCell className="text-right">{group.count}</MonoCell><MonoCell>{relativeTime(group.latestAt)}</MonoCell>
                       </TableRow>
                     ))
-                  : rows.map((t) => (
+                  : rows.map((threat) => (
                       <TableRow
-                        key={t.id}
-                        className="cursor-pointer border-border/30 hover:bg-muted/30"
-                        onClick={() => setOpenThreat(t)}
+                        key={threat.id}
+                        onClick={() => selectThreat(threat)}
+                        className={cn(
+                          "cursor-pointer border-border-subtle hover:bg-surface-2/70",
+                          selectedThreat?.id === threat.id && "bg-surface-2",
+                          threat.severity === "critical" ? "border-l-2 border-l-danger" : threat.severity === "high" ? "border-l-2 border-l-warn" : "border-l-2 border-l-transparent",
+                        )}
                       >
-                        <TableCell
-                          className="font-mono tabular-nums text-xs text-muted-foreground"
-                          title={new Date(t.detected_at).toLocaleString()}
-                        >
-                          {relativeTime(t.detected_at)}
-                        </TableCell>
-                        <TableCell>
-                          <SeverityBadge severity={t.severity} />
-                        </TableCell>
-                        <TableCell className="text-xs text-foreground/90">
-                          {t.threat_type}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground">
-                          {t.threat_subtype || "—"}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {t.detector_name}
-                        </TableCell>
-                        <TableCell className="truncate font-mono text-[11px] text-muted-foreground max-w-[18rem]">
-                          {t.matched_pattern}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-xs text-muted-foreground">
-                          {(t.confidence * 100).toFixed(0)}%
-                        </TableCell>
-                        <TableCell
-                          className="text-right font-mono tabular-nums text-xs text-foreground/90"
-                          title={`${t.score.toFixed(2)} × ${t.confidence.toFixed(2)} — what the threshold compares against`}
-                        >
-                          {(
-                            weightedThreatScore(
-                              t.score,
-                              t.confidence,
-                              t.weighted_score,
-                            ) * 100
-                          ).toFixed(0)}
-                          %
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              t.action_taken === "block"
-                                ? "destructive"
-                                : "outline"
-                            }
-                            className="text-[10px] px-1.5 py-0"
-                          >
-                            {t.action_taken}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="truncate text-xs text-muted-foreground max-w-[10rem]">
-                          {(t as ThreatEvent & { end_user_id?: string })
-                            .end_user_id || "—"}
-                        </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground">
-                          {(t as ThreatEvent & { ip_address?: string })
-                            .ip_address || "—"}
-                        </TableCell>
+                        <TableCell className="px-3"><input type="checkbox" aria-label={`Select ${threat.threat_type}`} onClick={(event) => event.stopPropagation()} className="h-3.5 w-3.5" /></TableCell>
+                        <MonoCell title={new Date(threat.detected_at).toLocaleString()}>{formatTimestamp(threat.detected_at)}</MonoCell>
+                        <TableCell><SeverityBadge severity={threat.severity} /></TableCell>
+                        {showType ? <Cell>{threat.threat_type}</Cell> : null}
+                        <Cell className="max-w-[150px] truncate">{threat.threat_subtype || "—"}</Cell>
+                        <MonoCell className="max-w-[150px] truncate">{threat.detector_name}</MonoCell>
+                        <MonoCell className="max-w-[180px] truncate">{threat.matched_pattern}</MonoCell>
+                        <MonoCell className="text-right text-foreground">{(weightedThreatScore(threat.score, threat.confidence, threat.weighted_score) * 100).toFixed(0)}%</MonoCell>
+                        <TableCell><Badge variant={threat.action_taken === "block" ? "destructive" : "outline"} className="px-1.5 py-0 text-[9px]">{threat.action_taken}</Badge></TableCell>
+                        {showIp ? <MonoCell>{(threat as ThreatEvent & { ip_address?: string }).ip_address || "—"}</MonoCell> : null}
                       </TableRow>
                     ))}
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {rows.length > 0 ? (
-        <Pagination
-          page={page}
-          pageSize={PAGE_SIZE}
-          returned={rows.length}
-          onPage={setPage}
+        {rows.length ? <Pagination page={page} returned={rows.length} onPage={setPage} /> : null}
+      </section>
+
+      {selectedThreat ? (
+        <ThreatInspector
+          threat={selectedThreat}
+          onClose={() => {
+            setInspectorDismissed(true);
+            setSelectedThreat(null);
+          }}
         />
       ) : null}
 
       <ThreatDetailSheet
-        threat={openThreat}
-        open={openThreat !== null}
-        onOpenChange={(o) => {
-          if (!o) setOpenThreat(null);
+        threat={selectedThreat}
+        open={!isWide && selectedThreat !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInspectorDismissed(true);
+            setSelectedThreat(null);
+          }
         }}
       />
-    </>
-  );
-}
-
-function QuickFilterChips({
-  onLastHour,
-  onCriticalHigh,
-  onBlocked,
-}: {
-  onLastHour: () => void;
-  onCriticalHigh: () => void;
-  onBlocked: () => void;
-}) {
-  return (
-    <div className="mt-4 flex flex-wrap items-center gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-        Quick filters
-      </span>
-      <Chip onClick={onLastHour}>Last hour</Chip>
-      <Chip onClick={onCriticalHigh}>
-        <ShieldX className="h-3 w-3" /> Critical + High
-      </Chip>
-      <Chip onClick={onBlocked}>
-        <ShieldCheck className="h-3 w-3" /> Blocked only
-      </Chip>
     </div>
   );
 }
 
-function Chip({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
+function SummaryStrip({ kpis }: { kpis: Kpis }) {
+  const items = [
+    { value: kpis.total, label: "threats", sub: "In current window" },
+    { value: kpis.critHigh, label: "critical / high", sub: `${kpis.total ? Math.round((kpis.critHigh / kpis.total) * 100) : 0}% of threats` },
+    { value: kpis.blocked, label: "blocked", sub: `${kpis.total ? Math.round((kpis.blocked / kpis.total) * 100) : 0}% prevented` },
+    { value: kpis.uniqueUsers, label: "users affected", sub: "Distinct end_user_id" },
+  ];
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/30 px-2.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-    >
-      {children}
-    </button>
+    <div className="grid flex-shrink-0 grid-cols-2 border-b border-border-subtle bg-surface-1/50 md:grid-cols-4">
+      {items.map((item, index) => (
+        <div key={item.label} className={cn("px-4 py-3", index > 0 && "border-l border-border-subtle")}>
+          <div className="text-[13px] font-semibold tabular-nums"><span className="font-mono">{formatNumber(item.value)}</span> <span className="text-[11px] font-medium text-foreground/85">{item.label}</span></div>
+          <div className="mt-0.5 text-[9px] text-muted-foreground">{item.sub}</div>
+        </div>
+      ))}
+    </div>
   );
 }
 
-function Th({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <TableHead
-      className={`h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 ${className ?? ""}`}
-    >
-      {children}
-    </TableHead>
-  );
+function ColumnToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return <button type="button" onClick={() => onChange(!checked)} className="flex h-8 w-full items-center gap-2 rounded px-2 text-[11px] hover:bg-surface-2"><span className={cn("flex h-3.5 w-3.5 items-center justify-center rounded border border-border-default", checked && "bg-foreground text-background")}>{checked ? <Check className="h-2.5 w-2.5" /> : null}</span>{label}</button>;
 }
 
-function SortableTh({
-  label,
-  column,
-  currentSort,
-  currentOrder,
-  onSort,
-  className,
-}: {
-  label: string;
-  column: SortColumn;
-  currentSort: SortColumn;
-  currentOrder: SortOrder;
-  onSort: (c: SortColumn) => void;
-  className?: string;
-}) {
+function ChevronDownSmall() { return <span className="text-[9px] text-muted-foreground">⌄</span>; }
+
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <TableHead className={cn("h-9 px-2 text-[9px] font-medium uppercase tracking-wider text-muted-foreground", className)}>{children}</TableHead>;
+}
+
+function SortableTh({ label, column, currentSort, currentOrder, onSort, className }: { label: string; column: SortColumn; currentSort: SortColumn; currentOrder: SortOrder; onSort: (column: SortColumn) => void; className?: string }) {
   const active = currentSort === column;
   const Icon = !active ? ArrowUpDown : currentOrder === "asc" ? ArrowUp : ArrowDown;
-  return (
-    <TableHead
-      className={`h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 ${className ?? ""}`}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(column)}
-        className={`inline-flex items-center gap-1 ${
-          active ? "text-foreground" : ""
-        } hover:text-foreground`}
-      >
-        {label} <Icon className="h-3 w-3" />
-      </button>
-    </TableHead>
-  );
+  return <TableHead className={cn("h-9 px-2 text-[9px] font-medium uppercase tracking-wider text-muted-foreground", className)}><button type="button" onClick={() => onSort(column)} className={cn("inline-flex items-center gap-1 hover:text-foreground", active && "text-foreground")}>{label}<Icon className="h-2.5 w-2.5" /></button></TableHead>;
+}
+
+function Cell({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <TableCell className={cn("h-9 px-2 py-1.5 text-[10px] text-foreground/85", className)}>{children}</TableCell>;
+}
+
+function MonoCell({ children, className, title }: { children: React.ReactNode; className?: string; title?: string }) {
+  return <TableCell title={title} className={cn("h-9 px-2 py-1.5 font-mono text-[10px] tabular-nums text-muted-foreground", className)}>{children}</TableCell>;
 }
 
 function SeverityBadge({ severity }: { severity: string }) {
-  const variant =
-    severity === "critical"
-      ? "destructive"
-      : severity === "high"
-        ? "warning"
-        : "secondary";
-  return (
-    <Badge
-      variant={variant}
-      className="text-[10px] px-1.5 py-0 min-w-[52px] justify-center"
-    >
-      {severity}
-    </Badge>
-  );
+  return <Badge variant={severity === "critical" ? "destructive" : severity === "high" ? "warning" : "secondary"} className="min-w-[48px] px-1.5 py-0 text-[9px]">{severity}</Badge>;
 }
 
-function Pagination({
-  page,
-  pageSize,
-  returned,
-  onPage,
-}: {
-  page: number;
-  pageSize: number;
-  returned: number;
-  onPage: (p: number) => void;
-}) {
-  const start = (page - 1) * pageSize + 1;
+function Pagination({ page, returned, onPage }: { page: number; returned: number; onPage: (page: number) => void }) {
+  const start = (page - 1) * PAGE_SIZE + 1;
   const end = start + returned - 1;
-  const canNext = returned === pageSize;
   return (
-    <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-      <span>
-        Showing <span className="tabular-nums text-foreground/80">{start}</span>–
-        <span className="tabular-nums text-foreground/80">{end}</span>
-      </span>
-      <div className="flex items-center gap-1.5">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={page <= 1}
-          onClick={() => onPage(page - 1)}
-        >
-          <ChevronLeft className="h-3 w-3" /> Prev
-        </Button>
-        <span className="tabular-nums">Page {page}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={!canNext}
-          onClick={() => onPage(page + 1)}
-        >
-          Next <ChevronRight className="h-3 w-3" />
-        </Button>
+    <div className="flex h-11 flex-shrink-0 items-center justify-between border-t border-border-subtle px-3 text-[10px] text-muted-foreground">
+      <span><span className="font-mono text-foreground/85">{start}–{end}</span> results</span>
+      <div className="flex items-center gap-1">
+        <span className="mr-2">Rows per page <span className="font-mono text-foreground">{PAGE_SIZE}</span></span>
+        <Button variant="ghost" size="icon-xs" disabled={page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft className="h-3 w-3" /></Button>
+        <span className="flex h-7 min-w-7 items-center justify-center rounded border border-border-default bg-surface-1 font-mono text-foreground">{page}</span>
+        <Button variant="ghost" size="icon-xs" disabled={returned < PAGE_SIZE} onClick={() => onPage(page + 1)}><ChevronRight className="h-3 w-3" /></Button>
       </div>
     </div>
   );
 }
 
-function ThreatsEmptyState({
-  hasActiveFilters,
-}: {
-  hasActiveFilters: boolean;
-}) {
-  if (hasActiveFilters) {
-    return (
-      <EmptyState
-        icon={<AlertTriangle className="h-6 w-6" />}
-        title="No threats match these filters"
-        description="Try loosening or clearing the filters."
-      />
-    );
-  }
-  return (
-    <EmptyState
-      icon={<ShieldCheck className="h-6 w-6" />}
-      title="No threats detected"
-      description="When the security engine detects threats in gateway traffic, they'll appear here."
-    />
-  );
+function ThreatsEmptyState({ hasActiveFilters }: { hasActiveFilters: boolean }) {
+  return <EmptyState icon={<ShieldAlert className="h-6 w-6" />} title={hasActiveFilters ? "No threats match these filters" : "No threats detected"} description={hasActiveFilters ? "Try loosening or resetting the filters." : "Threat events detected by the gateway will appear here."} />;
 }
 
-// --- helpers -------------------------------------------------------------
+function useWideViewport() {
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1280px)");
+    const update = () => setWide(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return wide;
+}
 
-function searchToFilters(s: ThreatsSearch): ThreatFilters {
+function searchToFilters(search: ThreatsSearch): ThreatFilters {
   return {
-    severity: s.severity ?? "",
-    threatType: s.threat_type ?? "",
-    threatSubtype: s.threat_subtype ?? "",
-    detectorName: s.detector_name ?? "",
-    actionTaken: s.action_taken ?? "",
-    endUser: s.end_user_id ?? "",
-    ipAddress: s.ip_address ?? "",
-    search: s.search ?? "",
-    from: s.from ?? "",
-    to: s.to ?? "",
+    severity: search.severity ?? "",
+    threatType: search.threat_type ?? "",
+    threatSubtype: search.threat_subtype ?? "",
+    detectorName: search.detector_name ?? "",
+    actionTaken: search.action_taken ?? "",
+    endUser: search.end_user_id ?? "",
+    ipAddress: search.ip_address ?? "",
+    search: search.search ?? "",
+    from: search.from ?? "",
+    to: search.to ?? "",
   };
 }
 
-function filtersToSearch(f: ThreatFilters): Partial<ThreatsSearch> {
-  const undef = (v: string) => (v === "" ? undefined : v);
+function filtersToSearch(filters: ThreatFilters): Partial<ThreatsSearch> {
+  const optional = (value: string) => value || undefined;
   return {
-    severity: undef(f.severity),
-    threat_type: undef(f.threatType),
-    threat_subtype: undef(f.threatSubtype),
-    detector_name: undef(f.detectorName),
-    action_taken: undef(f.actionTaken),
-    end_user_id: undef(f.endUser),
-    ip_address: undef(f.ipAddress),
-    search: undef(f.search),
-    from: undef(f.from),
-    to: undef(f.to),
+    severity: optional(filters.severity),
+    threat_type: optional(filters.threatType),
+    threat_subtype: optional(filters.threatSubtype),
+    detector_name: optional(filters.detectorName),
+    action_taken: optional(filters.actionTaken),
+    end_user_id: optional(filters.endUser),
+    ip_address: optional(filters.ipAddress),
+    search: optional(filters.search),
+    from: optional(filters.from),
+    to: optional(filters.to),
     page: undefined,
   };
 }
 
-type Kpis = {
-  total: number;
-  critHigh: number;
-  blocked: number;
-  uniqueUsers: number;
-};
+type Kpis = { total: number; critHigh: number; blocked: number; uniqueUsers: number };
 
 function computeKpis(rows: ThreatEvent[]): Kpis {
+  const users = new Set<string>();
   let critHigh = 0;
   let blocked = 0;
-  const users = new Set<string>();
-  for (const r of rows) {
-    if (r.severity === "critical" || r.severity === "high") critHigh += 1;
-    if (r.action_taken === "block") blocked += 1;
-    const uid = (r as ThreatEvent & { end_user_id?: string }).end_user_id;
-    if (uid) users.add(uid);
+  for (const row of rows) {
+    if (row.severity === "critical" || row.severity === "high") critHigh += 1;
+    if (row.action_taken === "block") blocked += 1;
+    const user = (row as ThreatEvent & { end_user_id?: string }).end_user_id;
+    if (user) users.add(user);
   }
-  return {
-    total: rows.length,
-    critHigh,
-    blocked,
-    uniqueUsers: users.size,
-  };
+  return { total: rows.length, critHigh, blocked, uniqueUsers: users.size };
 }
 
-type GroupedThreat = {
-  key: string;
-  severity: string;
-  threatType: string;
-  detectorName: string;
-  matchedPattern: string;
-  count: number;
-  latestAt: string;
-  latest: ThreatEvent;
-};
+type GroupedThreat = { key: string; severity: string; threatType: string; detectorName: string; matchedPattern: string; count: number; latestAt: string; latest: ThreatEvent };
 
 function groupRows(rows: ThreatEvent[]): GroupedThreat[] {
-  const bucket = new Map<string, GroupedThreat>();
-  for (const r of rows) {
-    const key = `${r.severity}|${r.detector_name}|${r.matched_pattern}`;
-    const existing = bucket.get(key);
-    if (!existing) {
-      bucket.set(key, {
-        key,
-        severity: r.severity,
-        threatType: r.threat_type,
-        detectorName: r.detector_name,
-        matchedPattern: r.matched_pattern,
-        count: 1,
-        latestAt: r.detected_at,
-        latest: r,
-      });
-      continue;
-    }
-    existing.count += 1;
-    if (r.detected_at > existing.latestAt) {
-      existing.latestAt = r.detected_at;
-      existing.latest = r;
+  const groups = new Map<string, GroupedThreat>();
+  for (const row of rows) {
+    const key = `${row.severity}|${row.detector_name}|${row.matched_pattern}`;
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, { key, severity: row.severity, threatType: row.threat_type, detectorName: row.detector_name, matchedPattern: row.matched_pattern, count: 1, latestAt: row.detected_at, latest: row });
+    } else {
+      current.count += 1;
+      if (row.detected_at > current.latestAt) { current.latestAt = row.detected_at; current.latest = row; }
     }
   }
-  return Array.from(bucket.values()).sort((a, b) =>
-    b.latestAt.localeCompare(a.latestAt),
-  );
+  return Array.from(groups.values()).sort((a, b) => b.latestAt.localeCompare(a.latestAt));
 }
 
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return iso;
-  const diff = Date.now() - then;
-  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s ago`;
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
-  return `${Math.round(diff / 86_400_000)}d ago`;
+function relativeTime(iso: string) {
+  const difference = Date.now() - new Date(iso).getTime();
+  if (difference < 60_000) return `${Math.max(1, Math.round(difference / 1000))}s ago`;
+  if (difference < 3_600_000) return `${Math.round(difference / 60_000)}m ago`;
+  if (difference < 86_400_000) return `${Math.round(difference / 3_600_000)}h ago`;
+  return `${Math.round(difference / 86_400_000)}d ago`;
 }
 
-// datetime-local inputs expect "YYYY-MM-DDTHH:mm" in the *local* zone.
-function toLocalInput(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function formatTimestamp(iso: string) {
+  const date = new Date(iso);
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
 }

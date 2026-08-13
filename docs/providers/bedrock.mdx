@@ -4,10 +4,9 @@ description: Route Bedrock-hosted models (Claude, Llama, Mistral, Titan) through
 ---
 
 AWS Bedrock is Anthropic's Claude family plus a catalog of other
-foundation models, fronted by AWS infrastructure with IAM-based
-auth. Bastio relays every Bedrock model the same way — pick the
-model ID, point the SDK at Bastio, your IAM credentials never
-leave your environment.
+foundation models, fronted by AWS infrastructure with IAM-based auth.
+
+> The repository includes a Bedrock provider client, but the public `/v1/chat/completions` route does not currently select Bedrock model prefixes. Use the standalone [`/v1/detect`](/docs/developer-apis/detect) API before calling Bedrock directly. The gateway examples below describe the intended integration and should not be treated as generally available today.
 
 ## Prerequisites
 
@@ -33,20 +32,20 @@ credentials → Create access key) or use a programmatic role with
 
 ## Create the proxy
 
+Configure AWS credentials and region in the Bastio deployment first. The proxy request stores routing metadata and never accepts IAM secrets:
+
 ```bash
-curl -X POST http://localhost:4000/api/v1/proxies \
+curl -X POST http://localhost:4000/v1/proxies \
   -H "Content-Type: application/json" \
   -d '{
     "name": "prod-bedrock",
-    "provider": "bedrock",
-    "provider_aws_access_key_id": "AKIA...",
-    "provider_aws_secret_access_key": "...",
-    "provider_aws_region": "us-east-1"
+    "slug": "prod-bedrock",
+    "target_provider": "bedrock",
+    "target_model": "anthropic.claude-sonnet-4-5-v2:0"
   }'
 ```
 
-The response's `gateway_api_key` is what your application sends to
-Bastio. Bastio uses your AWS credentials to sign each request.
+Create the Bastio gateway key separately under **Developer API → API Keys**. Bastio uses the server-side AWS credentials to sign provider requests.
 
 ## Send a request
 
@@ -122,8 +121,7 @@ gotchas:
 | `eu-central-1` (Frankfurt) | EU data residency — partial Claude coverage, no Meta. Verify per-model in the Bedrock console. |
 | `ap-northeast-1` (Tokyo) | Japan residency, narrower model list. |
 
-The proxy's `provider_aws_region` is the SigV4 signing region —
-it must match where the model is actually deployed. A request
+The region encoded with a stored Bedrock credential (or `AWS_REGION` when using the deployment credential chain) is the SigV4 signing region. It must match where the model is actually deployed. A request
 for a us-east-1-only model signed for eu-central-1 returns
 `AccessDeniedException` from Bedrock.
 

@@ -1,26 +1,49 @@
 ---
 title: What is Bastio?
-description: Open-source AI Security Gateway, Standalone Guardrail APIs, and Enterprise Private AI Portal.
+description: Protect model requests, sensitive data, and autonomous agent actions with one observable AI security platform.
 ---
 
-# Bastio AI Security Platform
+Bastio is an open-source AI security platform for model gateways, custom LLM pipelines, and agentic workflows. It detects prompt injection, jailbreaks, PII, secrets, and dangerous tool arguments before they become incidents.
 
-Bastio is an open-source AI security gateway and standalone guardrail API engine. It scans prompts, RAG documents, and agent tool calls for prompt injection, jailbreaks, PII, secrets, and dangerous shell commands in **under 20ms**.
+## Choose your integration
 
-Bastio operates across two core entry points powered by the exact same Go & ClickHouse threat engine:
+<DocsGrid>
+  <DocsCard title="Protect an existing LLM client" href="/docs/gateway" icon="server">
+    Route OpenAI- or Anthropic-compatible traffic through Bastio with minimal application changes.
+  </DocsCard>
+  <DocsCard title="Build a custom security pipeline" href="/docs/developer-apis" icon="code">
+    Call detection, PII, and agent-action controls directly and own the enforcement UX.
+  </DocsCard>
+  <DocsCard title="Run locally" href="/docs/getting-started" icon="security">
+    Start the complete self-hosted stack with Docker Compose and verify your first trace.
+  </DocsCard>
+  <DocsCard title="Inspect every endpoint" href="/docs/api-reference" icon="key">
+    Use the OpenAPI contract and interactive Scalar reference on a running Bastio instance.
+  </DocsCard>
+</DocsGrid>
 
-1. **Pillar 1: Bastio AI Guardrails & Security Gateway (Developer APIs)**: Drop-in OpenAI/Anthropic SDK replacement (`base_url="https://api.bastio.com/v1"`) or direct REST APIs (`/v1/detect`, `/v1/pii/mask`, `/v1/guardrails/agent-action`).
-2. **Pillar 2: Bastio Enterprise Private AI Portal**: Managed private chat portal for employees providing multi-provider LLM access behind strict zero-data retention and automated GDPR Article 30 audit trails.
+## One engine, three control points
 
-## Major Platform Features
+| Control point | What Bastio evaluates | Typical integration |
+|---|---|---|
+| Model gateway | Prompts and model responses | Change the provider base URL |
+| Developer APIs | Messages, retrieved context, PII, and outputs | Call a focused REST API or SDK |
+| Agent actions | Final tool names and arguments | Authorize immediately before execution |
 
-- **Inline Threat Intercept (under 20ms)**: Block prompt injection, DAN jailbreaks, toxicity, and secret leaks before requests leave your network.
-- **Reversible PII & Secret Redaction**: Replace SSNs, Credit Cards, API Keys, and Emails with synthetic placeholders (`<PII_EMAIL_1>`) before hitting third-party LLMs, and restore output.
-- **Autonomous Agent Action Guardrails**: Intercept dangerous shell commands (`rm -rf`), SQL injections, and path traversals in tool-call arguments before execution.
-- **1-Click EU AI Act & ISO 42001 Compliance Auditor**: Download audit-ready evidence JSON reports summarizing controls for EU AI Act Articles 14, 15, 50 and ISO/IEC 42001:2023.
+All surfaces feed Bastio's trace and threat model so security teams can investigate the same event developers enforced in code.
 
-## Quick Links
+## Platform capabilities
 
-- [Standalone Developer APIs](/docs/developer-apis) — Integration guide for threat detection, PII tokenization, and agent action guardrails.
-- [Getting Started](/docs/getting-started) — Run Bastio locally in 5 minutes with Docker Compose or Go single binary.
-- [API Reference](/docs/api-reference) — Complete route specs for gateway proxies, standalone APIs, and admin routes.
+- **Policy-driven detection:** profile steps define detector, strategy, and threshold.
+- **Reversible PII tokenization:** replace sensitive values with stable placeholders and restore approved output.
+- **Agent action inspection:** block dangerous shell, filesystem, database, and path patterns before execution.
+- **Operational context:** traces connect latency, provider, tokens, cost, environment, and security findings.
+- **Deployment choice:** run the open-source stack yourself or use Bastio Cloud's managed gateway and enterprise controls.
+
+## Recommended reading order
+
+1. [Getting started](/docs/getting-started) — run Bastio and verify a protected request.
+2. [Architecture](/docs/architecture) — understand the request path and data stores.
+3. [Gateway](/docs/gateway) or [Developer APIs](/docs/developer-apis) — implement your control point.
+4. [Threat detection](/docs/threats) — tune profiles and actions.
+5. [Observability](/docs/observability) — operate the integration in production.

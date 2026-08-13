@@ -1,11 +1,12 @@
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import type { TraceThreatDetection } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
-import { weightedThreatScore } from "@/lib/utils";
+import { cn, weightedThreatScore } from "@/lib/utils";
 
 type Props = {
   threats: TraceThreatDetection[];
   onSelect?: (threat: TraceThreatDetection) => void;
+  selectedThreatId?: string | null;
 };
 
 const severityClass: Record<string, string> = {
@@ -18,7 +19,7 @@ const severityClass: Record<string, string> = {
 // Vertical list of per-detector threat detections, already server-sorted by
 // severity then score. Clicking a row lets the parent focus the offending
 // span (when it can be correlated by detector payload).
-export function ThreatCascade({ threats, onSelect }: Props) {
+export function ThreatCascade({ threats, onSelect, selectedThreatId }: Props) {
   if (!threats.length) {
     return (
       <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
@@ -35,7 +36,13 @@ export function ThreatCascade({ threats, onSelect }: Props) {
           key={t.id}
           type="button"
           onClick={() => onSelect?.(t)}
-          className="grid w-full grid-cols-[auto_1fr_auto] items-start gap-3 px-3 py-2 text-left hover:bg-muted/30"
+          aria-pressed={selectedThreatId === t.id}
+          className={cn(
+            "grid w-full grid-cols-[auto_1fr_auto] items-start gap-3 border-l-2 px-3 py-2.5 text-left transition-colors hover:bg-surface-2",
+            selectedThreatId === t.id
+              ? "border-l-danger bg-danger-bg/40"
+              : "border-l-transparent",
+          )}
         >
           <ShieldAlert className="mt-0.5 h-4 w-4 text-destructive" />
           <div className="min-w-0 space-y-1">

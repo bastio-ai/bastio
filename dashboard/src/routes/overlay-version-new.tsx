@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/card";
+import { AdminPageHeader, SecurityNotice } from "@/components/admin/admin-primitives";
 import {
   SnapshotEditor,
   type SnapshotEditorView,
@@ -106,14 +106,20 @@ export function OverlayVersionNewPage() {
         <span>New version</span>
       </div>
 
-      <PageHeader
+      <AdminPageHeader
+        eyebrow="Policy versioning"
         title="New draft version"
         description={
           fromThreatID
             ? "Seeded from a flagged threat. Tighten the pattern, confirm the action, save as a draft — drafts don't affect traffic until you promote them."
             : "Append a draft version to this policy. Drafts don't affect traffic — promote to shadow to observe, or activate to enforce."
         }
+        badge={<span className="rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Not enforced</span>}
       />
+
+      <SecurityNotice title="Safe rollout path" className="mb-4">
+        This version is isolated from live traffic until you deliberately promote it to shadow or active enforcement.
+      </SecurityNotice>
 
       {threat ? (
         <Card className="border-border/50 mt-4">
@@ -129,8 +135,8 @@ export function OverlayVersionNewPage() {
         </Card>
       ) : null}
 
-      <Card className="border-border/50 mt-4">
-        <CardContent className="p-3 space-y-2">
+      <Card className="mt-4 border-border/70">
+        <CardContent className="space-y-3 p-4">
           <Input
             placeholder="commit message"
             value={commit}

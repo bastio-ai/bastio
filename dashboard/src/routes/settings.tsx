@@ -21,10 +21,10 @@
 // team management; /api-keys is the right place for keys.
 
 import { useState } from "react";
-import { Check, Copy } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Link } from "@tanstack/react-router";
+import { ArrowRight, Check, Copy, KeyRound, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PageHeader, SectionHeader } from "@/components/card";
+import { AdminPageHeader, AdminPanel, SecurityNotice } from "@/components/admin/admin-primitives";
 import { useSettingsExtension } from "@/components/settings-extension";
 
 function gatewayBaseURL(): string {
@@ -56,22 +56,21 @@ response = client.chat.completions.create(
 
   return (
     <>
-      <PageHeader
-        title="Settings"
-        description="Account and integration helpers"
+      <AdminPageHeader
+        eyebrow="Workspace administration"
+        title="Settings & onboarding"
+        description="Manage workspace ownership in the sections below, then connect your first secured application through the gateway."
       />
 
       {ext.accountSections}
 
-      <SectionHeader
-        title="Quick start"
-        description="Point your OpenAI SDK at Bastio to scan and forward requests."
-      />
-
-      <Card className="border-border/50">
-        <CardContent className="p-5">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.5fr)]">
+        <AdminPanel
+          title="Connect an OpenAI-compatible client"
+          description="Every request is scanned and forwarded through the same gateway URL."
+        >
           <div className="relative">
-            <pre className="p-4 bg-muted/30 rounded-xl text-[12px] font-mono leading-relaxed overflow-x-auto text-foreground/70 border border-border/30">
+            <pre className="overflow-x-auto rounded-lg border border-border/60 bg-muted/25 p-4 font-mono text-[12px] leading-relaxed text-foreground/80">
               {codeSnippet}
             </pre>
             <Button
@@ -79,6 +78,7 @@ response = client.chat.completions.create(
               size="sm"
               className="absolute top-2.5 right-2.5 h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground"
               onClick={handleCopy}
+              aria-label="Copy quick-start code"
             >
               {copied ? (
                 <Check className="h-3.5 w-3.5" />
@@ -87,14 +87,34 @@ response = client.chat.completions.create(
               )}
             </Button>
           </div>
-          <p className="text-[12px] text-muted-foreground mt-3">
-            Generate a key under{" "}
-            <span className="font-mono">/api-keys</span>. The Anthropic
-            SDK works at <span className="font-mono">/v1/messages</span>{" "}
-            — same key, same host.
-          </p>
-        </CardContent>
-      </Card>
+          <SecurityNotice title="One host, one security policy" className="mt-3">
+            The Anthropic-compatible endpoint is available at <span className="font-mono text-foreground">/v1/messages</span>. Use the same Bastio key and gateway host.
+          </SecurityNotice>
+        </AdminPanel>
+
+        <div className="space-y-4">
+          <AdminPanel title="Before production" description="Complete the two controls that establish access and enforcement.">
+            <div className="space-y-2">
+              <Link to="/api-keys" className="group flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 transition-colors hover:bg-muted/40">
+                <KeyRound className="size-4 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-bold text-foreground">Create a scoped API key</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Prefer least-privilege access.</p>
+                </div>
+                <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </Link>
+              <Link to="/security-settings" className="group flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 transition-colors hover:bg-muted/40">
+                <ShieldCheck className="size-4 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-bold text-foreground">Review enforcement</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Confirm detectors and actions.</p>
+                </div>
+                <ArrowRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </div>
+          </AdminPanel>
+        </div>
+      </div>
     </>
   );
 }

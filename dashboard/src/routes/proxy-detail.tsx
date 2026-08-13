@@ -7,6 +7,7 @@ import type { Trace } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import {
   Table,
   TableBody,
@@ -47,32 +48,21 @@ export function ProxyDetailPage() {
   const rows = traces.data ?? [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <BackLink />
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[11px] text-muted-foreground">{p.id}</span>
-          <Badge
-            variant={p.is_active ? "success" : "secondary"}
-            className="text-[10px] px-1.5 py-0"
-          >
-            {p.is_active ? "active" : "disabled"}
-          </Badge>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <AdminPageHeader
+        eyebrow="LLM gateway"
+        title={p.name}
+        description={<span>Requests entering <span className="font-mono text-foreground">{p.listen_path}</span> are routed to {p.target_provider} with the controls configured for this gateway.</span>}
+        badge={<Badge variant={p.is_active ? "success" : "secondary"} className="px-1.5 py-0 text-[10px]">{p.is_active ? "active" : "disabled"}</Badge>}
+        actions={<BackLink />}
+      />
 
-      <Card className="border-border/50">
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
-            <Field label="Name" value={p.name} />
-            <Field label="Slug" value={p.slug} />
-            <Field label="Listen path" value={p.listen_path} />
-            <Field label="Provider" value={p.target_provider} />
-            <Field label="Model" value={p.target_model} />
-            <Field label="Created" value={new Date(p.created_at).toLocaleString()} />
-          </div>
-        </CardContent>
-      </Card>
+      <AdminSummaryStrip items={[
+        { label: "Listen path", value: p.listen_path, detail: p.slug },
+        { label: "Provider", value: p.target_provider, detail: "Upstream target" },
+        { label: "Default model", value: p.target_model || "Request supplied", detail: p.target_model ? "Gateway default" : "No forced model" },
+        { label: "Recent traces", value: rows.length, detail: `Created ${new Date(p.created_at).toLocaleDateString()}`, tone: rows.length ? "success" : "default" },
+      ]} />
 
       <Card className="border-border/50">
         <div className="border-b border-border/50 p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
@@ -165,14 +155,5 @@ function EmptyStateCard({ title, description }: { title: string; description: st
         <p className="mt-1 text-xs text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function Field({ label, value }: { label: string; value?: string }) {
-  return (
-    <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">{label}</p>
-      <p className="mt-1 font-mono text-xs">{value || "—"}</p>
-    </div>
   );
 }

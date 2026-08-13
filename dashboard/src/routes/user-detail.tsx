@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { KpiCard } from "@/components/observe/kpi-card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { formatCost, formatDuration, formatNumber } from "@/lib/utils";
 
 export function UserDetailPage() {
@@ -55,11 +55,11 @@ export function UserDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <BackLink />
-          <span className="font-mono text-sm font-semibold">{user.id}</span>
-          {user.total_threats ? (
+      <AdminPageHeader
+        eyebrow="End-user investigation"
+        title={<span className="font-mono">{user.id}</span>}
+        description={`First seen ${new Date(user.first_seen_at).toLocaleString()} · Last seen ${new Date(user.last_seen_at).toLocaleString()}`}
+        badge={user.total_threats ? (
             <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
               <AlertTriangle className="h-3 w-3" /> {user.total_threats}
             </Badge>
@@ -68,32 +68,15 @@ export function UserDetailPage() {
               clean
             </Badge>
           )}
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          first seen {new Date(user.first_seen_at).toLocaleString()} · last seen{" "}
-          {new Date(user.last_seen_at).toLocaleString()}
-        </span>
-      </div>
+        actions={<BackLink />}
+      />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-        <KpiCard label="Requests" value={formatNumber(user.total_traces)} />
-        <KpiCard label="Sessions" value={String(user.session_count ?? sessions.length)} />
-        <KpiCard
-          label="Tokens"
-          value={formatNumber(user.total_tokens ?? 0)}
-          sub={`${formatNumber(user.input_tokens ?? 0)} → ${formatNumber(user.output_tokens ?? 0)}`}
-        />
-        <KpiCard label="Cost" value={formatCost(user.total_cost_cents ?? 0)} />
-        <KpiCard
-          label="Avg latency"
-          value={formatDuration(Math.round(user.avg_duration_ms ?? 0))}
-        />
-        <KpiCard
-          label="Blocked"
-          value={String(user.total_blocked ?? 0)}
-          tone={user.total_blocked ? "danger" : "default"}
-        />
-      </div>
+      <AdminSummaryStrip items={[
+        { label: "Requests", value: formatNumber(user.total_traces), detail: `${user.session_count ?? sessions.length} sessions` },
+        { label: "Tokens", value: formatNumber(user.total_tokens ?? 0), detail: `${formatNumber(user.input_tokens ?? 0)} in · ${formatNumber(user.output_tokens ?? 0)} out` },
+        { label: "Attributed cost", value: formatCost(user.total_cost_cents ?? 0), detail: `${formatDuration(Math.round(user.avg_duration_ms ?? 0))} average latency` },
+        { label: "Blocked", value: String(user.total_blocked ?? 0), detail: `${user.total_threats ?? 0} threat events`, tone: user.total_blocked ? "danger" : "success" },
+      ]} />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList variant="line">

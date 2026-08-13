@@ -1,0 +1,147 @@
+---
+title: PII protection
+description: Tokenize, mask, and restore sensitive values before and after an LLM provider call.
+---
+
+The PII API provides a narrow, explicit data-protection workflow. Use reversible tokenization when a model needs stable references without seeing original values, or one-way masking when restoration is not required.
+
+<ApiEndpoint method="POST" path="/v1/pii/mask">
+  Detects supported PII in text and applies the selected protection mode.
+</ApiEndpoint>
+
+## Choose a mode
+
+| Mode | Reversible | Cache eligible | Use when |
+|---|---:|---:|---|
+| `tokenize` | yes | no | The model output may need approved values restored |
+| `mask` | no | yes | Last-four or lossy representation is sufficient |
+| `redact` | no | yes | Compatibility alias for one-way masking behavior |
+
+`tokenize` is the default. The returned token map contains original sensitive values and must be handled as sensitive data.
+
+## Tokenize before the model call
+
+```bash
+curl --request POST "$BASTIO_API_URL/v1/pii/mask" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "text": "The customer SSN is 123-45-6789.",
+    "mode": "tokenize"
+  }'
+```
+
+```json
+{
+  "processed_text": "The customer SSN is <PII_SSN_1>.",
+  "tokens": {
+    "<PII_SSN_1>": "123-45-6789"
+  },
+  "detected_types": []
+}
+```
+
+Pass only `processed_text` to the provider. Keep `tokens` inside your trusted application boundary.
+
+> Reversible token maps are intentionally never written to the response cache. A tokenize request returns `X-Bastio-Cache: MISS` or `BYPASS`, not `HIT`.
+
+## Restore approved output
+
+<ApiEndpoint method="POST" path="/v1/pii/unmask">
+  Replaces known placeholders in text with values from the supplied token map.
+</ApiEndpoint>
+
+```bash
+curl --request POST "$BASTIO_API_URL/v1/pii/unmask" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "text": "The record for <PII_SSN_1> was updated.",
+    "tokens": {
+      "<PII_SSN_1>": "123-45-6789"
+    }
+  }'
+```
+
+```json
+{
+  "unmasked_text": "The record for 123-45-6789 was updated."
+}
+```
+
+Only placeholders present in the supplied map are restored. Unknown placeholders pass through unchanged.
+
+## End-to-end pattern
+
+```ts
+const maskedResponse = await fetch(`${baseURL}/v1/pii/mask`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ text: userPrompt, mode: "tokenize" }),
+});
+
+if (!maskedResponse.ok) throw new Error("PII protection failed");
+
+const masked = await maskedResponse.json();
+const modelOutput = await callModel(masked.processed_text);
+
+// Apply output policy before restoring sensitive values.
+const safeToRestore = await approveModelOutput(modelOutput);
+if (!safeToRestore) return safeFallback();
+
+const restoredResponse = await fetch(`${baseURL}/v1/pii/unmask`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ text: modelOutput, tokens: masked.tokens }),
+});
+
+const { unmasked_text } = await restoredResponse.json();
+return unmasked_text;
+```
+
+## One-way masking
+
+For data that should never be reconstructed, use `mask`:
+
+```json
+{
+  "text": "The customer SSN is 123-45-6789.",
+  "mode": "mask"
+}
+```
+
+```json
+{
+  "processed_text": "The customer SSN is ***-**-6789.",
+  "detected_types": []
+}
+```
+
+One-way results may be cached. Use `bypass_cache`, `Cache-Control: no-cache`, or `X-Bastio-Bypass-Cache: true` when a fresh evaluation is required.
+
+## Security requirements
+
+<ProductionChecklist>
+
+- Treat the `tokens` object as highly sensitive; never send it to the LLM provider.
+- Keep token maps request-scoped and delete them as soon as restoration is complete.
+- Do not persist token maps in general application logs, analytics, traces, or browser storage.
+- Scan and authorize model output before restoration to reduce exfiltration risk.
+- Prefer one-way `mask` when the workflow does not require original values.
+- Enforce retention and regional processing requirements in the application that holds the token map.
+
+</ProductionChecklist>
+
+## Status codes
+
+<ResponseCode code="200" tone="success">
+  Protection or restoration completed. Inspect the returned text and tokens.
+</ResponseCode>
+
+<ResponseCode code="400" tone="danger">
+  Invalid JSON, missing `text`, or missing `tokens` for an unmask request.
+</ResponseCode>
+
+Authentication and rate limits for the self-hosted direct API are provided by your ingress. See [authentication and environments](/docs/developer-apis/authentication).

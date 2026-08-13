@@ -7,7 +7,7 @@ import { api } from "@/api/client";
 import type { Observation, Trace, TraceDetail, TraceThreatDetection } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { KpiCard } from "@/components/observe/kpi-card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { ResizablePanels } from "@/components/observe/resizable-panels";
 import { SpanDetailTabs } from "@/components/observe/span-detail-tabs";
 import { SpanTree } from "@/components/observe/span-tree";
@@ -44,12 +44,12 @@ export function SessionDetailPage() {
   const firstTrace = traces[0];
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <BackLink />
-          <span className="font-mono text-sm font-semibold">{session.id}</span>
-          {session.threat_count ? (
+    <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-3">
+      <AdminPageHeader
+        eyebrow="Session investigation"
+        title={<span className="font-mono">{session.id}</span>}
+        description={`${session.trace_count} related traces · ${session.end_user_id || "unknown end-user"}`}
+        badge={session.threat_count ? (
             <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
               <AlertTriangle className="h-3 w-3" /> {session.threat_count} threats
             </Badge>
@@ -58,26 +58,18 @@ export function SessionDetailPage() {
               clean
             </Badge>
           )}
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          {session.end_user_id || "unknown end-user"}
-        </span>
-      </div>
+        actions={<BackLink />}
+        className="mb-0"
+      />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-        <KpiCard label="Traces" value={String(session.trace_count)} />
-        <KpiCard
-          label="Tokens"
-          value={formatNumber(session.total_tokens ?? 0)}
-          sub={`${formatNumber(session.input_tokens ?? 0)} → ${formatNumber(session.output_tokens ?? 0)}`}
-        />
-        <KpiCard label="Cost" value={formatCost(session.total_cost_cents ?? 0)} />
-        <KpiCard label="Wall clock" value={formatDuration(session.wall_clock_ms ?? 0)} />
-        <KpiCard label="Errors" value={String(session.error_count ?? 0)} tone={session.error_count ? "danger" : "default"} />
-        <KpiCard label="Blocked" value={String(session.blocked_count ?? 0)} tone={session.blocked_count ? "danger" : "default"} />
-      </div>
+      <AdminSummaryStrip items={[
+        { label: "Traces", value: String(session.trace_count), detail: `${session.error_count ?? 0} errors` },
+        { label: "Tokens", value: formatNumber(session.total_tokens ?? 0), detail: `${formatNumber(session.input_tokens ?? 0)} in · ${formatNumber(session.output_tokens ?? 0)} out` },
+        { label: "Cost", value: formatCost(session.total_cost_cents ?? 0), detail: "Session total" },
+        { label: "Wall clock", value: formatDuration(session.wall_clock_ms ?? 0), detail: `${session.blocked_count ?? 0} blocked`, tone: session.blocked_count ? "danger" : "default" },
+      ]} />
 
-      <div className="flex-1 min-h-0 overflow-hidden rounded border border-border/50">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/70 bg-card">
         <SessionSplit traces={traces} initialTraceId={firstTrace?.id ?? null} />
       </div>
     </div>
