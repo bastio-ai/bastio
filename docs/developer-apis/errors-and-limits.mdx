@@ -1,0 +1,137 @@
+---
+title: Errors, limits & reliability
+description: Handle transport failures, policy decisions, rate limits, cache status, timeouts, and production retries correctly.
+---
+
+Security APIs have two kinds of negative outcomes: an API operation can fail, or the operation can succeed and return a policy decision that stops the workflow. Your integration must distinguish them.
+
+## Status code model
+
+<ResponseCode code="200" tone="success">
+  The endpoint completed. For `/v1/detect`, this may still contain `should_block: true`. For agent actions, inspect `allowed`.
+</ResponseCode>
+
+<ResponseCode code="400" tone="danger">
+  The request body or environment selection is invalid. Fix the request before retrying.
+</ResponseCode>
+
+<ResponseCode code="403" tone="warning">
+  The agent action was blocked. Agent action blocks include a structured decision body.
+</ResponseCode>
+
+<ResponseCode code="5xx" tone="danger">
+  Bastio could not complete the operation. Apply the fail-open or fail-closed policy defined for this workflow.
+</ResponseCode>
+
+## Error body compatibility
+
+Some endpoints return a compact error:
+
+```json
+{ "error": "messages is required" }
+```
+
+Environment validation uses a typed error:
+
+```json
+{
+  "error": {
+    "type": "invalid_environment",
+    "message": "environment is not registered for this workspace"
+  }
+}
+```
+
+Write clients that can safely read both forms while the API converges on one error envelope:
+
+```ts
+function errorMessage(body: unknown): string {
+  if (!body || typeof body !== "object") return "Unknown API error";
+
+  const value = (body as { error?: unknown }).error;
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "message" in value) {
+    return String((value as { message: unknown }).message);
+  }
+  return "Unknown API error";
+}
+```
+
+Do not show detector evidence or raw matched content in public error messages. Return a neutral user-facing message and keep operational details in access-controlled telemetry.
+
+## Rate limits
+
+The default self-hosted direct API does not apply Bastio's gateway key limiter. Configure request limits at your trusted ingress. Cloud gateway keys are limited in requests per minute and gateway responses may include:
+
+<HeaderContract name="X-RateLimit-Limit" values="integer">
+  Maximum requests in the current one-minute window.
+</HeaderContract>
+
+<HeaderContract name="X-RateLimit-Remaining" values="integer">
+  Requests remaining in the current window.
+</HeaderContract>
+
+<HeaderContract name="Retry-After" values="seconds">
+  Delay before retrying a rate-limited request. Currently `60` for the fixed window limiter.
+</HeaderContract>
+
+Use exponential backoff with jitter for shared infrastructure errors. For `429`, honor `Retry-After` first.
+
+## Timeouts and retries
+
+Set a client timeout that fits the protected workflow. The TypeScript core client defaults to 10 seconds; latency-sensitive request paths should usually set a lower explicit timeout and monitor it.
+
+Safe retry guidance:
+
+| Operation | Automatic retry |
+|---|---|
+| `/v1/detect` | Safe for transport failures; decisions are idempotent for the same policy |
+| `/v1/pii/mask` | Safe; retain only the successful response's token map |
+| `/v1/pii/unmask` | Safe; replacement is deterministic for the same input and map |
+| `/v1/guardrails/agent-action` | Safe to re-inspect; never retry the actual side effect automatically |
+
+Do not retry `400`, `401`, or policy-block `403` responses without changing the request, credential, or authorization state.
+
+## Cache status
+
+Eligible endpoints report evaluation cache state:
+
+| Header | Meaning |
+|---|---|
+| `X-Bastio-Cache: HIT` | Returned from the response cache |
+| `X-Bastio-Cache: MISS` | Evaluated live and eligible for caching |
+| `X-Bastio-Cache: BYPASS` | Cache deliberately skipped |
+
+Bypass a cache with:
+
+```http
+Cache-Control: no-cache
+```
+
+or:
+
+```http
+X-Bastio-Bypass-Cache: true
+```
+
+`/v1/detect` and `/v1/pii/mask` also accept `"bypass_cache": true` in the request body. Reversible PII tokenization is never cached because the response contains original sensitive values.
+
+## Choose failure behavior explicitly
+
+Fail-open and fail-closed are business decisions, not generic SDK defaults.
+
+- Fail closed for tool execution, financial operations, permission changes, and sensitive-data release.
+- Consider a restricted fail-open mode for low-risk, read-only user experiences where availability dominates.
+- If failing open, emit a security event, remove high-risk tools, and use a conservative fallback profile.
+- Never silently treat a timeout as an allow decision.
+
+<ProductionChecklist>
+
+- Test policy blocks separately from transport and authentication errors.
+- Parse structured bodies on agent-action `403` responses.
+- Configure timeouts, backoff, jitter, and a bounded retry count.
+- Record cache and rate-limit headers in restricted operational metrics.
+- Define fail-open or fail-closed behavior for every protected workflow.
+- Alert on sustained `401`, `403`, `429`, timeout, and `5xx` increases.
+
+</ProductionChecklist>

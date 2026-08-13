@@ -48,7 +48,6 @@ import (
 	"github.com/riverqueue/river/rivermigrate"
 
 	"github.com/bastio-ai/bastio/internal/auth"
-	"github.com/bastio-ai/bastio/pkg/config"
 	"github.com/bastio-ai/bastio/internal/gateway"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/prompts"
@@ -61,6 +60,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/workspace"
 	"github.com/bastio-ai/bastio/pkg/cache"
 	"github.com/bastio-ai/bastio/pkg/clickhouse"
+	"github.com/bastio-ai/bastio/pkg/config"
 	"github.com/bastio-ai/bastio/pkg/database"
 	"github.com/bastio-ai/bastio/pkg/encryption"
 	"github.com/bastio-ai/bastio/pkg/tenant"
@@ -95,22 +95,22 @@ type Server struct {
 type Option func(*options)
 
 type options struct {
-	dashboardFS         fs.FS
-	openapiSpec         []byte
-	docsFS              fs.FS
-	rootMiddleware      []func(http.Handler) http.Handler
-	dashboardMiddleware []func(http.Handler) http.Handler
-	gatewayMiddleware   []func(http.Handler) http.Handler
-	mounts              []mountPoint
-	apiExtenders         []func(r chi.Router)
+	dashboardFS           fs.FS
+	openapiSpec           []byte
+	docsFS                fs.FS
+	rootMiddleware        []func(http.Handler) http.Handler
+	dashboardMiddleware   []func(http.Handler) http.Handler
+	gatewayMiddleware     []func(http.Handler) http.Handler
+	mounts                []mountPoint
+	apiExtenders          []func(r chi.Router)
 	dashboardAPIExtenders []func(r chi.Router)
-	workspaceCustomizers []func(WorkspaceCustomizer)
-	providersDecorator  func(Provider, Client) Client
-	encryption          *encryption.Service
-	readTimeout         time.Duration
-	writeTimeout        time.Duration
-	idleTimeout         time.Duration
-	shutdownTimeout     time.Duration
+	workspaceCustomizers  []func(WorkspaceCustomizer)
+	providersDecorator    func(Provider, Client) Client
+	encryption            *encryption.Service
+	readTimeout           time.Duration
+	writeTimeout          time.Duration
+	idleTimeout           time.Duration
+	shutdownTimeout       time.Duration
 }
 
 type mountPoint struct {
@@ -832,6 +832,8 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.Get("/threats/{id}", obsHandler.GetThreat)
 			r.Get("/analytics/overview", obsHandler.AnalyticsOverview)
 			r.Get("/analytics/users", obsHandler.UserAnalytics)
+			r.Get("/environments", s.listEnvironments)
+			r.Post("/environments", s.createEnvironment)
 			r.Mount("/api-keys", apiKeyHandler.Routes())
 			r.Mount("/security", secProfileHandler.Routes())
 			r.Mount("/overlays", overlayHandler.Routes())

@@ -95,3 +95,18 @@ func TestSafePrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvironmentFallsBackToAPIKeyAssignment(t *testing.T) {
+	info := &APIKeyInfo{Environment: "production"}
+	if got := Environment(context.Background(), info); got != "production" {
+		t.Fatalf("Environment: want production got %q", got)
+	}
+}
+
+func TestEnvironmentUsesValidatedContextValue(t *testing.T) {
+	info := &APIKeyInfo{Environment: "production", AllowEnvironmentOverride: true}
+	ctx := WithEnvironment(context.Background(), "staging")
+	if got := Environment(ctx, info); got != "staging" {
+		t.Fatalf("Environment: want staging got %q", got)
+	}
+}

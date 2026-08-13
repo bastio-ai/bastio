@@ -1,0 +1,192 @@
+---
+title: Message detection
+description: Inspect prompts, RAG context, and model output with the profile-driven POST /v1/detect API.
+---
+
+<ApiEndpoint method="POST" path="/v1/detect">
+  Evaluates messages with a named security profile and returns per-step decisions and sanitized content. No upstream model is called.
+</ApiEndpoint>
+
+Use this endpoint for pre-flight prompt checks, retrieved-document inspection, custom block UX, and output scanning when your application owns the LLM call.
+
+## Request
+
+```json
+{
+  "profile": "default",
+  "direction": "input",
+  "messages": [
+    { "role": "user", "content": "Summarize this support ticket." }
+  ],
+  "bypass_cache": false
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `messages` | array | yes | One or more `{ role, content }` messages to inspect |
+| `profile` | string | no | Named security profile; defaults to `default` |
+| `direction` | `input` or `output` | no | Selects the profile's input or output pipeline; defaults to `input` |
+| `bypass_cache` | boolean | no | Forces a live evaluation when `true` |
+| `steps` | array | no | Inline step override for playground or controlled experiments |
+| `source` | string | no | `playground` persists a playground run; production SDK callers should omit it |
+| `proxy_id` | UUID | no | Associates a playground run with a proxy |
+
+For production traffic, prefer a named profile. Inline `steps` make the caller responsible for detector configuration and bypass the normal profile contract.
+
+## Response
+
+Every valid evaluation returns an aggregate decision and one result per input message.
+
+```json
+{
+  "profile": "default",
+  "direction": "input",
+  "action": "allow",
+  "should_block": false,
+  "messages": [
+    {
+      "role": "user",
+      "original": "Email jane@example.com about the renewal.",
+      "sanitized_content": "Email <PII_EMAIL_1> about the renewal.",
+      "action": "tokenize",
+      "should_block": false,
+      "steps": [
+        {
+          "detector": "pii",
+          "strategy": "tokenize",
+          "fired": true,
+          "action": "tokenize",
+          "score": 0.8,
+          "threshold": 0.5,
+          "findings": [
+            {
+              "threat_type": "pii",
+              "detector_name": "pii",
+              "severity": "medium",
+              "score": 0.8,
+              "confidence": 0.9,
+              "weighted_score": 0.72,
+              "matched_pattern": "email",
+              "action": "mask",
+              "message": "PII detected: email"
+            }
+          ],
+          "duration": 1000000
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Decision fields
+
+- `should_block` is the authoritative boolean for enforcement.
+- `action` is the strongest aggregate action across messages and steps.
+- `sanitized_content` is the content to pass downstream for `mask` or `tokenize` policies.
+- `steps` explains which detector ran, whether it fired, and how long it took.
+- `duration` is encoded from Go's duration value in nanoseconds (`1000000` = 1 ms).
+- `skipped: true` means an earlier blocking step short-circuited the remaining pipeline.
+- `findings` contains security evidence. Avoid exposing matched content to end users or broad application logs.
+
+## Enforce before the provider call
+
+```ts
+async function detect(messages: Array<{ role: string; content: string }>) {
+  const response = await fetch(`${process.env.BASTIO_API_URL}/v1/detect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      profile: "customer-support",
+      direction: "input",
+      messages,
+    }),
+    signal: AbortSignal.timeout(3_000),
+  });
+
+  if (!response.ok) throw new Error(`Bastio returned ${response.status}`);
+  return response.json();
+}
+
+const decision = await detect(messages);
+
+if (decision.should_block) {
+  throw new Error("Bastio blocked the request");
+}
+
+const safeMessages = decision.messages.map((message) => ({
+  role: message.role,
+  content: message.sanitized_content,
+}));
+
+return provider.chat({ messages: safeMessages });
+```
+
+The endpoint returns HTTP `200` for both allow and block outcomes. Transport and server failures are separate from the policy decision.
+
+## Inspect retrieved context
+
+Scan untrusted content after retrieval and before it enters the final prompt:
+
+```ts
+const contextResponse = await fetch(`${process.env.BASTIO_API_URL}/v1/detect`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    profile: "rag-ingestion",
+    direction: "input",
+    messages: retrievedDocuments.map((document) => ({
+      role: "context",
+      content: document.text,
+    })),
+  }),
+});
+
+const contextDecision = await contextResponse.json();
+
+if (contextDecision.should_block) {
+  quarantine(retrievedDocuments, contextDecision);
+  return safeFallbackAnswer();
+}
+```
+
+This is especially important for indirect prompt injection: the attacker-controlled text may come from a webpage, ticket, email, PDF, or vector database rather than the user prompt.
+
+## Scan model output
+
+Set `direction` to `output` to use the profile's output steps:
+
+```json
+{
+  "profile": "customer-support",
+  "direction": "output",
+  "messages": [
+    { "role": "assistant", "content": "The generated model response" }
+  ]
+}
+```
+
+Output scanning is a separate control. It can detect leaked PII, echoed secrets, or disallowed content, but it does not replace input scanning.
+
+## Cache behavior
+
+Eligible named-profile requests return:
+
+- `X-Bastio-Cache: HIT` for a cached decision
+- `X-Bastio-Cache: MISS` for a fresh evaluation
+- `X-Bastio-Cache: BYPASS` when bypass controls are used
+
+Force a live evaluation with `"bypass_cache": true`, `Cache-Control: no-cache`, or `X-Bastio-Bypass-Cache: true`. Playground and inline-step requests are evaluated live.
+
+## Status codes
+
+<ResponseCode code="200" tone="success">
+  Evaluation completed. Inspect `should_block`; HTTP success is not an allow decision.
+</ResponseCode>
+
+<ResponseCode code="400" tone="danger">
+  Invalid JSON, missing messages, or a direction other than `input` or `output`.
+</ResponseCode>
+
+Authentication and rate limits for the self-hosted direct API are provided by your ingress. See [authentication and environments](/docs/developer-apis/authentication).

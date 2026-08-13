@@ -10,6 +10,8 @@ goes through **deployment names** instead of model names — your
 deployment of `gpt-4o` might be called `gpt4o-prod` and that's
 what you call it.
 
+> Azure is represented in proxy metadata, but an Azure provider client is not registered by the current server. For a production integration today, call [`/v1/detect`](/docs/developer-apis/detect), enforce the decision, and then call Azure OpenAI directly. The gateway examples below are the intended future integration, not a live contract.
+
 ## Prerequisites
 
 - An Azure subscription with **Azure OpenAI Service** enabled
@@ -33,20 +35,20 @@ deployed (Azure OpenAI Studio → Deployments).
 
 ## Create the proxy
 
+Configure the Azure credential, endpoint, and API version in the dashboard or deployment environment first. The proxy request stores routing metadata:
+
 ```bash
-curl -X POST http://localhost:4000/api/v1/proxies \
+curl -X POST http://localhost:4000/v1/proxies \
   -H "Content-Type: application/json" \
   -d '{
     "name": "prod-azure-openai",
-    "provider": "azure",
-    "provider_api_key": "...",
-    "provider_endpoint": "https://acme.openai.azure.com",
-    "provider_api_version": "2024-08-01-preview"
+    "slug": "prod-azure-openai",
+    "target_provider": "azure",
+    "target_model": "gpt4o-prod"
   }'
 ```
 
-The proxy stores the endpoint + version once. Per-request you
-just pass the deployment name as the `model` field.
+Per request, pass the deployment name as the `model` field.
 
 ## Send a request
 
@@ -92,8 +94,6 @@ gateway translates so the standard `OpenAI` SDK works.
 - **Tool calling** — works on `gpt-4o` deployments and later.
 - **Multimodal** — vision works on vision-enabled deployments
   (`gpt-4o`, `gpt-4-vision`).
-- **Embeddings** — proxied without security scanning, same as
-  native OpenAI.
 
 ## Regions
 
@@ -117,10 +117,7 @@ for EU traffic, fall back to East US 2 for everything else.
   is whatever you called it in Azure OpenAI Studio. The Bastio
   proxy doesn't know — pass the deployment name, not the model
   ID.
-- **API version matters.** Newer features (structured outputs,
-  predicted outputs, audio modalities) require newer API
-  version strings. Update the proxy's `provider_api_version`
-  when you adopt them.
+- **API version matters.** Newer features require newer API-version strings. Because the public Azure gateway is not registered yet, keep this configuration in the direct Azure client.
 - **Capacity quotas.** Azure deployments have per-minute TPM
   and RPM quotas separate from OpenAI's. Hitting them returns
   `429` with an `x-ratelimit-remaining` hint — Bastio surfaces

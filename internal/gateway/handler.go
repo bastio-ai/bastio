@@ -180,7 +180,6 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
-
 	// Read request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {

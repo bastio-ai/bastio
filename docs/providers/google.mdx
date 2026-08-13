@@ -12,8 +12,9 @@ Google has two Gemini surfaces:
   auth, GCP project + region scoped, fits enterprise IAM /
   audit / data-residency requirements.
 
-Bastio supports both behind one `provider: google` proxy — pick
-the auth mode at create time.
+The current proxy schema reserves `vertex`, but the server does not register a Vertex/Gemini provider client yet.
+
+> Use [`/v1/detect`](/docs/developer-apis/detect) before calling Gemini or Vertex AI directly. The gateway examples below show the intended future shape and are not a live production contract.
 
 ## Prerequisites
 
@@ -32,14 +33,16 @@ the auth mode at create time.
 
 ### Create the proxy
 
+Store the Gemini credential in Bastio first, then create the routing proxy:
+
 ```bash
-curl -X POST http://localhost:4000/api/v1/proxies \
+curl -X POST http://localhost:4000/v1/proxies \
   -H "Content-Type: application/json" \
   -d '{
     "name": "prod-gemini",
-    "provider": "google",
-    "google_mode": "gemini",
-    "provider_api_key": "AIza..."
+    "slug": "prod-gemini",
+    "target_provider": "vertex",
+    "target_model": "gemini-2.5-pro"
   }'
 ```
 
@@ -55,22 +58,20 @@ curl -X POST http://localhost:4000/api/v1/proxies \
 
 ### Create the proxy
 
+Configure the service account, project, and region in the Bastio deployment first. The proxy request stores routing metadata:
+
 ```bash
-curl -X POST http://localhost:4000/api/v1/proxies \
+curl -X POST http://localhost:4000/v1/proxies \
   -H "Content-Type: application/json" \
   -d '{
     "name": "prod-vertex",
-    "provider": "google",
-    "google_mode": "vertex",
-    "provider_gcp_project_id": "acme-prod",
-    "provider_gcp_region": "europe-west4",
-    "provider_gcp_service_account_json": "{\"type\":\"service_account\",...}"
+    "slug": "prod-vertex",
+    "target_provider": "vertex",
+    "target_model": "gemini-2.5-pro"
   }'
 ```
 
-Bastio uses the service account to mint short-lived OAuth
-tokens for each request. The JSON key never leaves your Bastio
-instance.
+Bastio uses the server-side service account to mint short-lived OAuth tokens for each request. The JSON key is never sent in a proxy management payload.
 
 ## Send a request
 
@@ -144,10 +145,7 @@ Vertex AI model availability varies by region. Common picks:
 | `europe-west1` (Belgium) | EU residency, narrower model list. |
 | `asia-northeast1` (Tokyo) | APAC residency. |
 
-Region affects both signing and routing — it's part of the
-Vertex endpoint URL. The proxy's
-`provider_gcp_region` field must match where the model is
-actually deployed.
+Region affects both signing and routing because it is part of the Vertex endpoint URL. Keep the region in your direct Google client until the public Bastio provider integration is registered.
 
 ## Gemini API vs Vertex — when to use each
 
@@ -167,11 +165,7 @@ swap.
 
 ## Gotchas
 
-- **Service account JSON in cleartext.** Bastio stores it
-  encrypted at rest, but the field is still passed plain over
-  the proxy-create call — make sure that hop is TLS, or
-  create the proxy through the dashboard form which uploads
-  via signed URL.
+- **Service account handling.** Do not place service-account JSON in the proxy-create payload. Keep it in the application or deployment secret store while using the direct integration.
 - **`stream` chunks differ.** Gemini's native streaming sends
   chunks at content-block boundaries, not token-by-token like
   OpenAI. The user-perceived latency is the same; the chunk

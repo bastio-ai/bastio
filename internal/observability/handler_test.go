@@ -157,6 +157,21 @@ func TestBuildThreatsQuery_TimeRange(t *testing.T) {
 	}
 }
 
+func TestBuildThreatsQuery_EnvironmentRemainsTenantScoped(t *testing.T) {
+	q := url.Values{"environment": []string{"production"}}
+	sql, args := buildThreatsQuery(testTenantID, q)
+	if !strings.Contains(sql, "trace_id IN (SELECT id FROM bastio.analytics_request_logs WHERE customer_id = toUUID(?) AND environment = ?)") {
+		t.Fatalf("missing tenant-scoped environment clause: %s", sql)
+	}
+	// Outer tenant, subquery tenant, environment, limit, offset.
+	if len(args) != 5 {
+		t.Fatalf("expected 5 args, got %d: %v", len(args), args)
+	}
+	if args[1] != testTenantID || args[2] != "production" {
+		t.Fatalf("environment subquery must bind tenant before environment, got %v", args)
+	}
+}
+
 func TestBuildThreatsQuery_SearchBindsTwice(t *testing.T) {
 	q := url.Values{"search": []string{"ignore previous"}}
 	sql, args := buildThreatsQuery(testTenantID, q)

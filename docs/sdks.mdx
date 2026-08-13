@@ -1,60 +1,60 @@
 ---
-title: SDKs
-description: Python, TypeScript, and Go clients for Bastio's detect API.
+title: SDKs & framework integrations
+description: Use the supported TypeScript client, Mastra processors, and Vercel AI SDK middleware with the standalone detect API.
 ---
 
-The SDKs let you keep your existing LLM client and insert Bastio's
-security scan inline. Use these when you want finer control than
-the [gateway pattern](/docs/gateway) — for example, custom block
-UI, retry-on-mask logic, or scanning prompts you build yourself
-before they hit any model.
+The first-party TypeScript packages put `POST /v1/detect` into custom LLM pipelines without coupling your application to Bastio server internals.
 
-All SDKs hit the same endpoint: `POST /v1/detect`. They're thin
-wrappers around the HTTP API and depend on no Bastio internals.
+> The SDKs currently target a self-hosted Bastio direct API. Bastio Cloud service keys authenticate the managed LLM Gateway, not the standalone detect route. See [authentication and environments](/docs/developer-apis/authentication).
 
-## TypeScript
+<Callout type="warn" title="Preview packages">
+  The TypeScript packages currently live in the Bastio repository and are not presented as generally available npm releases. Use the REST API for stable external integrations; use the packages through the monorepo workspace when evaluating the adapters.
+</Callout>
 
-Three packages, one engine:
+## Package matrix
 
-| Package | What it does |
-|---|---|
-| `@bastio/core` | Thin HTTP client + shared types + `BastioBlockedError` |
-| `@bastio/mastra` | Input / output processors for [Mastra](https://mastra.ai) agents |
-| `@bastio/vercel-ai` | Middleware for the [Vercel AI SDK](https://sdk.vercel.ai) |
+| Package | Integration | Block behavior | Output behavior |
+|---|---|---|---|
+| `@bastio/core` | Any server-side TypeScript application | Returns `should_block`; caller decides | Caller uses `sanitized_content` |
+| `@bastio/mastra` | Mastra input/output processors | Throws `BastioBlockedError` | Rewrites text-bearing messages |
+| `@bastio/vercel-ai` | Vercel AI SDK language-model middleware | Throws `BastioBlockedError` | Scans non-streaming generated text |
+
+## Low-level TypeScript client
+
+From a Bastio source checkout, build the TypeScript workspace before importing `@bastio/core` from another workspace package:
 
 ```bash
-npm install @bastio/core
+pnpm --dir sdk/js install
+pnpm --dir sdk/js build
 ```
-
-### Direct API usage
 
 ```ts
-import { Bastio, BastioBlockedError } from "@bastio/core";
+import { BastioClient, BastioBlockedError } from "@bastio/core";
 
-const bastio = new Bastio({
-  baseURL: process.env.BASTIO_URL!,
-  apiKey: process.env.BASTIO_KEY!,
+const bastio = new BastioClient({
+  baseURL: process.env.BASTIO_API_URL!,
+  timeoutMs: 3_000,
 });
 
-try {
-  const result = await bastio.detect({
-    content: userPrompt,
-    direction: "inbound",
-  });
-  // result.action: "allow" | "mask" | "tokenize" | "block"
-  // result.sanitized: rewritten content if mask/tokenize
-  if (result.action === "allow") {
-    return await openai.chat.completions.create({ ... });
-  }
-} catch (err) {
-  if (err instanceof BastioBlockedError) {
-    // err.threats — typed list (pii_email, jailbreak, ...)
-    showBlockedNotice(err.threats);
-  }
+const result = await bastio.detect({
+  profile: "default",
+  direction: "input",
+  messages: [{ role: "user", content: userPrompt }],
+});
+
+if (result.should_block) {
+  throw new BastioBlockedError(result);
 }
+
+const safePrompt = result.messages[0]?.sanitized_content ?? userPrompt;
+return callYourModel(safePrompt);
 ```
 
-### Vercel AI SDK middleware
+The core client throws `BastioError` for timeouts, transport failures, non-success HTTP responses, or invalid JSON. It does not throw for a detection block because `/v1/detect` reports policy outcomes in a successful `200` response.
+
+## Vercel AI SDK
+
+The adapter is available as the `@bastio/vercel-ai` package inside `sdk/js`.
 
 ```ts
 import { wrapLanguageModel } from "ai";
@@ -64,102 +64,81 @@ import { bastioMiddleware } from "@bastio/vercel-ai";
 const model = wrapLanguageModel({
   model: openai("gpt-4o"),
   middleware: bastioMiddleware({
-    baseURL: process.env.BASTIO_URL!,
-    apiKey: process.env.BASTIO_KEY!,
+    baseURL: process.env.BASTIO_API_URL!,
+    profile: "default",
+    timeoutMs: 3_000,
+    onDecision(stage, result) {
+      securityMetrics.record(stage, result.action);
+    },
   }),
 });
-
-// Use `model` like any other Vercel AI SDK model.
 ```
 
-When the profile picks `block`, the wrapped model throws
-`BastioBlockedError`. When it picks `mask` / `tokenize`, the
-content is rewritten before the model sees it. `warn` and
-`log_only` pass through transparently.
+Input content is scanned before the provider call. Non-streaming generated text is scanned when `scanOutput` is enabled, which is the default.
 
-### Mastra agent processors
+### Streaming limitation
+
+The current Vercel AI SDK adapter passes `wrapStream` through without output scanning. Detectors reason over complete text and partial-token windows can create false positives. If streamed output requires enforcement, assemble and scan it in a controlled completion callback or use non-streaming generation.
+
+## Mastra
+
+The adapter is available as the `@bastio/mastra` package inside `sdk/js`.
 
 ```ts
 import { Agent } from "@mastra/core";
-import { BastioInputProcessor, BastioOutputProcessor } from "@bastio/mastra";
+import {
+  BastioInputProcessor,
+  BastioOutputProcessor,
+} from "@bastio/mastra";
 
-const agent = new Agent({
+const bastioOptions = {
+  baseURL: process.env.BASTIO_API_URL!,
+  profile: "default",
+  timeoutMs: 3_000,
+};
+
+export const supportAgent = new Agent({
   id: "support",
-  inputProcessors: [
-    new BastioInputProcessor({ baseURL, apiKey }),
-  ],
-  outputProcessors: [
-    new BastioOutputProcessor({ baseURL, apiKey }),
-  ],
+  inputProcessors: [new BastioInputProcessor(bastioOptions)],
+  outputProcessors: [new BastioOutputProcessor(bastioOptions)],
 });
 ```
 
-## Python
+The processors extract text content, preserve non-text parts, rewrite sanitized text, and throw `BastioBlockedError` when the profile chooses `block`.
 
-```bash
-pip install bastio
+## Python and Go
+
+The Python client currently supports the OpenAI-compatible gateway plus management helpers; it does not expose a typed `detect()` method. Call the [REST contract](/docs/developer-apis/detect) with your preferred HTTP client for direct detection.
+
+A first-party Go direct-detect client is not currently shipped. Go applications can use `net/http` against the same REST contract.
+
+## Client options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `baseURL` | string | required | Bastio server URL without `/v1/detect` |
+| `apiKey` | string | omitted | Optional bearer token for deployments whose ingress accepts it |
+| `timeoutMs` | number | `10000` | Per-call timeout in milliseconds |
+| `fetch` | `typeof fetch` | global fetch | Custom runtime transport or test stub |
+| `headers` | object | `{}` | Extra headers applied to every request |
+
+## Testing
+
+Inject `fetch` to test allow, block, sanitize, timeout, and malformed-response behavior without a network dependency:
+
+```ts
+const client = new BastioClient({
+  baseURL: "https://bastio.test",
+  fetch: async () =>
+    new Response(JSON.stringify(mockBlockedDecision), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+});
 ```
-
-```python
-from bastio import Bastio, BastioBlockedError
-
-bastio = Bastio(
-    base_url=os.environ["BASTIO_URL"],
-    api_key=os.environ["BASTIO_KEY"],
-)
-
-try:
-    result = bastio.detect(content=user_prompt, direction="inbound")
-    if result.action == "allow":
-        response = openai.chat.completions.create(...)
-    elif result.action == "mask":
-        # send result.sanitized to the model instead
-        response = openai.chat.completions.create(messages=[
-            {"role": "user", "content": result.sanitized},
-        ])
-except BastioBlockedError as e:
-    # e.threats — typed list
-    return blocked_response(e.threats)
-```
-
-## Go
-
-```bash
-go get github.com/bastio-ai/bastio/sdk/go
-```
-
-```go
-import bastio "github.com/bastio-ai/bastio/sdk/go"
-
-client := bastio.New(bastio.Config{
-    BaseURL: os.Getenv("BASTIO_URL"),
-    APIKey:  os.Getenv("BASTIO_KEY"),
-})
-
-result, err := client.Detect(ctx, &bastio.DetectRequest{
-    Content:   prompt,
-    Direction: bastio.DirectionInbound,
-})
-if errors.Is(err, bastio.ErrBlocked) {
-    return blockedResponse(result.Threats)
-}
-```
-
-## When to use which pattern
-
-| Scenario | Recommendation |
-|---|---|
-| OpenAI / Anthropic SDK in production, no agent framework | [Gateway](/docs/gateway) — change baseURL, done |
-| Mastra or Vercel AI SDK | TypeScript SDK middleware |
-| Direct provider call with custom retry / block UI | SDK direct usage |
-| Pre-flight scan of cached prompts before LLM call | SDK direct usage |
-| Scanning context retrieved from a vector DB before passing to LLM | SDK direct usage (the only way to scan retrieved context) |
-
-You can mix them. The gateway protects the user → model leg;
-the SDK protects internal pipelines (RAG retrieval, prompt
-caching, prompt building tools).
 
 ## Next
 
-- [Threats](/docs/threats) — the action types your SDK code will branch on.
-- [Architecture](/docs/architecture) — how `/v1/detect` fits the bigger picture.
+- Read the full [`/v1/detect` contract](/docs/developer-apis/detect).
+- Decide [failure behavior and retries](/docs/developer-apis/errors-and-limits).
+- Use [agent action guardrails](/docs/developer-apis/agent-actions) before executing side effects.

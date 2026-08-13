@@ -280,6 +280,22 @@
   50%      { box-shadow: 0 0 0 5px rgba(251, 191, 36, 0.02); }
 }
 
+/* Directional handoff between global navigation and route-specific tools. */
+@keyframes bastio-sidebar-enter-forward {
+  from { opacity: 0.35; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes bastio-sidebar-enter-back {
+  from { opacity: 0.35; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.sidebar-view-enter-forward {
+  animation: bastio-sidebar-enter-forward 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.sidebar-view-enter-back {
+  animation: bastio-sidebar-enter-back 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Honour user's motion preference */
 @media (prefers-reduced-motion: reduce) {
   *,

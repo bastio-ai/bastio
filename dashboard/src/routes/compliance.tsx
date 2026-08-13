@@ -1,10 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Lock, CheckCircle2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  Download,
+  FileCheck2,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
+
+import { AdminSummaryStrip, SecurityNotice } from "@/components/admin/admin-primitives";
+import { EmptyState, PageHeader, SectionHeader } from "@/components/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { PageHeader } from "@/components/card";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 interface ComplianceControl {
   standard: string;
@@ -30,157 +41,205 @@ interface ComplianceReport {
 
 export function CompliancePage() {
   const [downloading, setDownloading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [standard, setStandard] = useState("all");
 
-  const { data: report } = useQuery<ComplianceReport>({
+  const report = useQuery<ComplianceReport>({
     queryKey: ["compliance-report"],
     queryFn: async () => {
-      const res = await fetch("/v1/audit/export");
-      if (!res.ok) throw new Error("Failed to load compliance report");
-      return res.json();
+      const response = await fetch("/v1/audit/export");
+      if (!response.ok) throw new Error("Failed to load compliance report");
+      return response.json();
     },
   });
 
+  const controls = report.data?.compliance_controls ?? [];
+  const standards = useMemo(
+    () => Array.from(new Set(controls.map((control) => control.standard))).sort(),
+    [controls],
+  );
+  const filteredControls = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return controls.filter((control) => {
+      const matchesStandard = standard === "all" || control.standard === standard;
+      const matchesQuery =
+        normalizedQuery.length === 0 ||
+        control.control_name.toLowerCase().includes(normalizedQuery) ||
+        control.article.toLowerCase().includes(normalizedQuery) ||
+        control.evidence.toLowerCase().includes(normalizedQuery);
+      return matchesStandard && matchesQuery;
+    });
+  }, [controls, query, standard]);
+
+  const verifiedCount = controls.filter((control) => control.status.toLowerCase() === "compliant").length;
+  const summary = report.data?.summary;
+  const evidenceAvailable = Boolean(summary && controls.length > 0);
+
   const handleDownload = () => {
     setDownloading(true);
-    window.location.href = "/v1/audit/export?format=json";
-    setTimeout(() => setDownloading(false), 2000);
+    window.location.assign("/v1/audit/export?format=json");
+    window.setTimeout(() => setDownloading(false), 1500);
   };
 
-  const controls = report?.compliance_controls || [
-    {
-      standard: "EU AI Act",
-      article: "Article 14",
-      control_name: "Human Oversight & Operational Intercepts",
-      status: "COMPLIANT",
-      evidence: "Bastio real-time threat intercept engine & user action audit trail active across all gateway routes.",
-    },
-    {
-      standard: "EU AI Act",
-      article: "Article 15",
-      control_name: "Cybersecurity, Robustness & Prompt Injection Shield",
-      status: "COMPLIANT",
-      evidence: "Heuristic & neural prompt injection detectors running at <20ms latency with 1,420 attacks neutralized.",
-    },
-    {
-      standard: "EU AI Act",
-      article: "Article 50",
-      control_name: "Transparency & AI Output Identification",
-      status: "COMPLIANT",
-      evidence: "Workspace and proxy responses logged with cryptographic trace hashes and metadata labeling.",
-    },
-    {
-      standard: "ISO/IEC 42001:2023",
-      article: "Control A.6.2",
-      control_name: "AI System Impact & Risk Assessment",
-      status: "COMPLIANT",
-      evidence: "Automated risk scoring on all prompt turns and tool calls via /v1/guardrails/agent-action.",
-    },
-    {
-      standard: "ISO/IEC 42001:2023",
-      article: "Control A.7.4",
-      control_name: "Data Governance & PII Redaction",
-      status: "COMPLIANT",
-      evidence: "Reversible tokenization and masking active for SSNs, IBANs, Credit Cards, and API Keys.",
-    },
-  ];
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
-        title="Compliance & Audit Exporter"
-        description="Audit-ready compliance evidence generator for the EU AI Act, ISO/IEC 42001:2023, and SOC 2 Type II trust criteria."
+        title="Compliance & Audit"
+        description="Review control mappings and export traceable evidence from the gateway's recorded security activity."
         action={
-          <Button onClick={handleDownload} disabled={downloading} size="sm" className="gap-2">
-            <Download className="h-4 w-4" /> Download 1-Click Audit Report (JSON)
+          <Button onClick={handleDownload} disabled={downloading || report.isError || !evidenceAvailable} size="sm">
+            <Download className="size-3.5" aria-hidden />
+            {downloading ? "Preparing export…" : "Export JSON report"}
           </Button>
         }
       />
 
-      {/* Summary KPI grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-border/50">
-          <CardContent className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground uppercase font-mono">Requests Audited</p>
-            <p className="text-2xl font-bold font-mono text-foreground">
-              {report?.summary?.total_requests_scanned?.toLocaleString() || "148,520"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground uppercase font-mono">Threats Blocked</p>
-            <p className="text-2xl font-bold font-mono text-emerald-500">
-              {report?.summary?.threats_blocked?.toLocaleString() || "1,420"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground uppercase font-mono">PII Redactions</p>
-            <p className="text-2xl font-bold font-mono text-blue-500">
-              {report?.summary?.pii_redactions?.toLocaleString() || "3,890"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50">
-          <CardContent className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground uppercase font-mono">Cache Bill Savings</p>
-            <p className="text-2xl font-bold font-mono text-purple-500">
-              ${report?.summary?.cost_savings_usd?.toFixed(2) || "2,450.75"}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <AdminSummaryStrip
+        items={[
+          {
+            label: "Requests audited",
+            value: formatMetric(summary?.total_requests_scanned),
+            detail: "Included in the current report",
+          },
+          {
+            label: "Threats blocked",
+            value: formatMetric(summary?.threats_blocked),
+            detail: "Prevented before provider forwarding",
+            tone: "success",
+          },
+          {
+            label: "PII transformations",
+            value: formatMetric(summary?.pii_redactions),
+            detail: "Masked or tokenized values",
+          },
+          {
+            label: "Controls verified",
+            value: controls.length ? `${verifiedCount}/${controls.length}` : "—",
+            detail: "Backed by exported evidence",
+            tone: verifiedCount === controls.length && controls.length ? "success" : "default",
+          },
+        ]}
+      />
 
-      {/* License status card */}
-      <Card className="border-border/50 bg-muted/20">
-        <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Lock className="h-4 w-4 text-emerald-500" />
-              <span className="font-semibold text-sm">Deployment</span>
-              <Badge variant="outline" className="text-[10px] font-mono uppercase bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
-                Community OSS
-              </Badge>
+      {report.isError || (!report.isPending && !evidenceAvailable) ? (
+        <SecurityNotice title={report.isError ? "Evidence service is unavailable" : "No audit evidence has been generated"} tone="warning">
+          The page is not displaying cached or invented compliance claims. Generate auditable gateway activity and restore the export pipeline before downloading a report.
+        </SecurityNotice>
+      ) : (
+        <SecurityNotice title="Evidence reflects the active deployment" tone="info">
+          This report is generated from recorded gateway activity. A compliant mapping supports an audit; it does not by itself certify the organization or replace an independent assessment.
+        </SecurityNotice>
+      )}
+
+      <Card className="border-border/70">
+        <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
+              <ShieldCheck className="size-4" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[13px] font-medium text-foreground">Evidence provenance</h2>
+                <Badge variant="outline">{evidenceAvailable ? report.data?.platform || "Current gateway" : "Evidence pending"}</Badge>
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                {evidenceAvailable ? `Generated ${formatDateTime(report.data?.generated_at)}` : "No report metadata is available yet"}
+                {report.data?.version ? ` · gateway ${report.data.version}` : ""}
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Self-hosted Bastio open-source gateway. All evidence below is generated
-              from this deployment's own traces.
-            </p>
+          </div>
+          <div className="font-mono text-[11px] text-muted-foreground">
+            JSON · machine-readable · point-in-time
           </div>
         </CardContent>
       </Card>
 
-      {/* Compliance controls table */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm text-foreground">EU AI Act & ISO/IEC 42001 Control Mapping Matrix</h3>
-          <span className="text-xs text-muted-foreground font-mono">5 / 5 Controls Verified</span>
-        </div>
+      <section>
+        <SectionHeader
+          title="Control mapping"
+          description="Each row links a requirement to the operational evidence produced by this deployment."
+          action={<span className="font-mono text-[11px] text-muted-foreground">{filteredControls.length} shown</span>}
+        />
+        <Card className="overflow-hidden border-border/70">
+          <div className="flex flex-col gap-3 border-b border-border/60 p-3 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search controls, articles, or evidence"
+                className="h-8 pl-8 text-xs"
+              />
+            </div>
+            <label className="relative sm:w-60">
+              <span className="sr-only">Filter by standard</span>
+              <select
+                value={standard}
+                onChange={(event) => setStandard(event.target.value)}
+                className="h-8 w-full appearance-none rounded-md border border-border bg-background px-3 pr-8 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="all">All standards</option>
+                {standards.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            </label>
+          </div>
 
-        <div className="space-y-3">
-          {controls.map((ctrl, idx) => (
-            <Card key={idx} className="border-border/50">
-              <CardContent className="p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                    <span className="font-semibold text-sm text-foreground">{ctrl.control_name}</span>
-                    <Badge variant="secondary" className="text-[10px] font-mono">{ctrl.standard}</Badge>
-                    <Badge variant="outline" className="text-[10px] font-mono">{ctrl.article}</Badge>
-                  </div>
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px] font-mono">
-                    {ctrl.status}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-lg border border-border/30 font-mono">
-                  Evidence: {ctrl.evidence}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
+          {report.isPending ? (
+            <div className="space-y-0 divide-y divide-border/50">
+              {[0, 1, 2, 3].map((item) => <div key={item} className="h-24 animate-pulse bg-muted/10" />)}
+            </div>
+          ) : filteredControls.length === 0 ? (
+            <EmptyState
+              icon={<FileCheck2 className="size-5" />}
+              title={controls.length ? "No controls match this view" : "No control evidence available"}
+              description={controls.length ? "Change the search or standard filter." : "Generate gateway activity and restore the audit export service to populate this matrix."}
+            />
+          ) : (
+            <div className="divide-y divide-border/60">
+              {filteredControls.map((control) => (
+                <ControlRow key={`${control.standard}-${control.article}-${control.control_name}`} control={control} />
+              ))}
+            </div>
+          )}
+        </Card>
+      </section>
     </div>
   );
+}
+
+function ControlRow({ control }: { control: ComplianceControl }) {
+  const compliant = control.status.toLowerCase() === "compliant";
+  return (
+    <article className="grid gap-3 p-4 lg:grid-cols-[220px_minmax(0,1fr)_120px] lg:items-start">
+      <div>
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className={cn("size-3.5", compliant ? "text-success" : "text-muted-foreground")} aria-hidden />
+          <Badge variant="secondary">{control.standard}</Badge>
+        </div>
+        <p className="mt-2 font-mono text-[11px] text-muted-foreground">{control.article}</p>
+      </div>
+      <div className="min-w-0">
+        <h3 className="text-[12px] font-medium text-foreground">{control.control_name}</h3>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{control.evidence}</p>
+      </div>
+      <Badge
+        variant="outline"
+        className={cn("justify-self-start lg:justify-self-end", compliant && "border-success-border bg-success-bg text-success")}
+      >
+        {control.status}
+      </Badge>
+    </article>
+  );
+}
+
+function formatMetric(value: number | undefined): string {
+  return typeof value === "number" ? value.toLocaleString() : "—";
+}
+
+function formatDateTime(value: string | undefined): string {
+  if (!value) return "when the report is requested";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }

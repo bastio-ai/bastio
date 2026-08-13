@@ -1,0 +1,78 @@
+---
+title: Developer APIs
+description: Add prompt defense, PII protection, and agent action controls to any application without proxying the model call.
+---
+
+Bastio's Developer APIs are focused security primitives for teams that want explicit control over where scans run and how their application responds. They inspect content and proposed actions; they do **not** call an LLM provider on your behalf.
+
+## Availability
+
+| Deployment | Direct Developer APIs | Authentication |
+|---|---|---|
+| Self-hosted OSS | Available at the Bastio server base URL | Trusted management surface; the default OSS deployment has no built-in dashboard authentication |
+| Bastio Cloud | Public service-key access is not available yet | Use the managed LLM Gateway for production Cloud traffic |
+
+> Do not expose the self-hosted management surface directly to the public internet. Put it behind a VPN, tailnet, private network, or an authenticated reverse proxy. Cloud dashboard session cookies are not service credentials.
+
+<ApiBaseUrls />
+
+## Choose the control point
+
+<DocsGrid>
+  <DocsCard title="Inspect messages" href="/docs/developer-apis/detect" icon="security">
+    Run a named security profile against prompts, retrieved context, or model output with `POST /v1/detect`.
+  </DocsCard>
+  <DocsCard title="Protect PII" href="/docs/developer-apis/pii" icon="key">
+    Tokenize sensitive values before a provider call, then restore approved values in the response.
+  </DocsCard>
+  <DocsCard title="Authorize agent actions" href="/docs/developer-apis/agent-actions" icon="server">
+    Inspect tool arguments before shell, filesystem, database, or API side effects execute.
+  </DocsCard>
+  <DocsCard title="Ship your first request" href="/docs/developer-apis/quickstart" icon="code">
+    Start Bastio locally, run a real scan, and handle an enforcement decision.
+  </DocsCard>
+</DocsGrid>
+
+## How the APIs fit into an application
+
+Use the standalone APIs when your application owns the provider request and needs to branch on Bastio's result.
+
+```text
+user / retrieved context
+        │
+        ▼
+POST /v1/detect ── block ──► safe application response
+        │ allow / sanitize
+        ▼
+your LLM provider call
+        │
+        ▼
+optional output scan ──────► user
+```
+
+For agentic applications, inspect every high-impact tool call immediately before execution. Do not treat an earlier prompt scan as authorization for a later side effect.
+
+If you want an OpenAI- or Anthropic-compatible endpoint that performs the provider call and security pipeline together, use the [LLM Gateway](/docs/gateway) instead.
+
+## Core behavior
+
+- **Profile-driven:** `/v1/detect` resolves the named security profile for the active deployment context.
+- **Decision, not magic:** a successful detect request returns HTTP `200`; your code must inspect `should_block` and `action`.
+- **Fail closed where it matters:** a blocked agent action returns HTTP `403` with a structured decision body.
+- **Traceable:** security requests produce operational telemetry so teams can investigate decisions in Bastio.
+- **Cache-aware:** eligible endpoints return `X-Bastio-Cache` with `HIT`, `MISS`, or `BYPASS`.
+- **Environment-aware:** Cloud gateway keys are bound to an environment; self-hosted direct API requests use the local deployment context.
+
+<ProductionChecklist>
+
+- Keep gateway keys and reverse-proxy credentials in a secret manager and call Bastio from trusted server-side code.
+- Set explicit client timeouts and define fail-open or fail-closed behavior per workflow.
+- Preserve `trace_id` or request correlation metadata in your own logs where available.
+- Test clean, blocked, sanitized, timeout, and rate-limited paths before production.
+- Isolate production, staging, and development deployments and credentials.
+
+</ProductionChecklist>
+
+## Start here
+
+Continue with the [10-minute quickstart](/docs/developer-apis/quickstart), then read [authentication and environments](/docs/developer-apis/authentication) before deploying.

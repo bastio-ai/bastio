@@ -1,0 +1,12 @@
+{
+  "title": "Developer APIs",
+  "pages": [
+    "index",
+    "quickstart",
+    "authentication",
+    "detect",
+    "pii",
+    "agent-actions",
+    "errors-and-limits"
+  ]
+}

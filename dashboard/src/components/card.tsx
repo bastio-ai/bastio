@@ -22,16 +22,16 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("flex items-start gap-3 mb-5", className)}>
+    <header className={cn("mb-5 flex items-start gap-4 border-b border-border/60 pb-4", className)}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-text-primary leading-tight">
+          <h1 className="text-[24px] font-bold tracking-tight text-text-primary leading-tight">
             {title}
           </h1>
           {badge}
         </div>
         {description && (
-          <p className="text-[12px] text-text-muted mt-1">{description}</p>
+          <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-text-muted">{description}</p>
         )}
       </div>
       {action && <div className="flex-shrink-0">{action}</div>}
@@ -83,9 +83,9 @@ export function SectionHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center justify-between mb-3", className)}>
+    <div className={cn("mb-3 flex items-center justify-between", className)}>
       <div className="min-w-0">
-        <h2 className="text-[14px] font-semibold tracking-tight text-text-primary">{title}</h2>
+        <h2 className="text-[14px] font-bold tracking-tight text-text-primary">{title}</h2>
         {description && (
           <p className="text-[11px] text-text-muted mt-0.5">{description}</p>
         )}

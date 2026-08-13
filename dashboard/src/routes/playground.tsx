@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   Ban,
+  BookOpen,
   CheckCircle2,
   CircleDashed,
   History,
@@ -26,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader, SectionHeader } from "@/components/card";
+import { AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { cn } from "@/lib/utils";
 import { api } from "@/api/client";
 import {
@@ -437,48 +439,67 @@ export function PlaygroundPage() {
     return null;
   }, [runMutation.data, selectedRun]);
 
+  const firedSteps = activeView?.message.steps.filter((step) => step.fired && !step.skipped).length ?? 0;
+  const changed = activeView
+    ? activeView.message.sanitized_content !== activeView.message.original
+    : false;
+
   return (
-    <>
+    <div className="space-y-5">
       <PageHeader
-        title="API Sandbox & Code Generator"
-        description="Test threat inspection, preview detector verdicts, and export production code snippets in cURL, Python, and TypeScript."
+        title="Security Playground"
+        description="Exercise the active gateway profile against realistic inputs and inspect every detector decision before changing production policy."
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] gap-4 mt-4">
-        <HistoryRail
-          runs={history ?? []}
-          selectedId={selectedRun?.id ?? null}
-          onSelect={replayRun}
-          onDelete={(id) => deleteMutation.mutate(id)}
-          deletingId={deleteMutation.variables ?? null}
-        />
+      <AdminSummaryStrip
+        items={[
+          { label: "Security profile", value: profileName, detail: selectedProxy === ANY_PROXY ? "Workspace default" : "Proxy-specific policy" },
+          { label: "Test surface", value: `${direction} · ${role}`, detail: direction === "input" ? "Before provider forwarding" : "Before user delivery" },
+          { label: "Detector findings", value: activeView ? firedSteps : "—", detail: activeView ? `${activeView.message.steps.length} pipeline steps evaluated` : "Run a test to inspect findings", tone: firedSteps ? "warning" : "default" },
+          { label: "Outcome", value: activeView ? (activeView.shouldBlock ? "Blocked" : changed ? "Rewritten" : activeView.action) : "Not run", detail: activeView?.replayed ? "Replayed from history" : "Current editor result", tone: activeView?.shouldBlock ? "danger" : activeView ? "success" : "default" },
+        ]}
+      />
 
-        <InputPanel
-          content={content}
-          setContent={setContent}
-          direction={direction}
-          setDirection={changeDirection}
-          role={role}
-          setRole={setRole}
-          selectedProxy={selectedProxy}
-          setSelectedProxy={setSelectedProxy}
-          proxies={proxies ?? []}
-          resolvedProfile={resolvedProfile}
-          onRun={runDetect}
-          running={runMutation.isPending}
-          textareaRef={textareaRef}
-          onLoadSample={loadSample}
-        />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[270px_minmax(0,1fr)_400px]">
+        <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <ExamplesLibrary onLoad={loadSample} />
+          <HistoryRail
+            runs={history ?? []}
+            selectedId={selectedRun?.id ?? null}
+            onSelect={replayRun}
+            onDelete={(id) => deleteMutation.mutate(id)}
+            deletingId={deleteMutation.variables ?? null}
+          />
+        </div>
 
-        <TracePanel
-          view={activeView}
-          pending={runMutation.isPending}
-          error={runMutation.error}
-        />
+        <div className="min-w-0 space-y-4">
+          <InputPanel
+            content={content}
+            setContent={setContent}
+            direction={direction}
+            setDirection={changeDirection}
+            role={role}
+            setRole={setRole}
+            selectedProxy={selectedProxy}
+            setSelectedProxy={setSelectedProxy}
+            proxies={proxies ?? []}
+            resolvedProfile={resolvedProfile}
+            onRun={runDetect}
+            running={runMutation.isPending}
+            textareaRef={textareaRef}
+          />
+          <DiffPanel message={activeView?.message} />
+        </div>
 
-        <DiffPanel message={activeView?.message} />
+        <div className="min-w-0 xl:sticky xl:top-4 xl:self-start">
+          <TracePanel
+            view={activeView}
+            pending={runMutation.isPending}
+            error={runMutation.error}
+          />
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -550,7 +571,6 @@ interface InputPanelProps {
   onRun: () => void;
   running: boolean;
   textareaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
-  onLoadSample: (sample: PlaygroundSample) => void;
 }
 
 function InputPanel({
@@ -567,14 +587,29 @@ function InputPanel({
   onRun,
   running,
   textareaRef,
-  onLoadSample,
 }: InputPanelProps) {
   return (
-    <Card className="border-border/50">
-      <CardContent className="p-4 space-y-3">
-        <SectionHeader title="Prompt" />
+    <Card className="border-border/70">
+      <CardContent className="space-y-4 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <SectionHeader
+            title="Test content"
+            description="Paste the exact content the gateway should inspect. No provider request is made by this tool."
+            className="mb-0"
+          />
+          <Button
+            size="sm"
+            onClick={onRun}
+            disabled={running || content.trim().length === 0}
+            className="gap-1.5"
+          >
+            {running ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            Run inspection
+            <kbd className="font-mono text-[10px] opacity-60">⌘↵</kbd>
+          </Button>
+        </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-3 rounded-lg border border-border/60 bg-muted/15 p-3 sm:grid-cols-3">
           <label className="text-[11px] text-muted-foreground space-y-1">
             <span>Direction</span>
             <Select
@@ -615,15 +650,8 @@ function InputPanel({
             </Select>
           </label>
 
-          <label className="text-[11px] text-muted-foreground space-y-1 col-span-2">
-            <span>
-              Role{" "}
-              <span className="text-muted-foreground/60">
-                — pick <code className="font-mono text-[10px]">tool</code>,{" "}
-                <code className="font-mono text-[10px]">retrieval</code>, or{" "}
-                <code className="font-mono text-[10px]">memory</code> to exercise the indirect-injection detector
-              </span>
-            </span>
+          <label className="space-y-1 text-[11px] text-muted-foreground">
+            <span>Message role</span>
             <Select
               value={role}
               onValueChange={(v) => {
@@ -647,7 +675,7 @@ function InputPanel({
           </label>
         </div>
 
-        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
           <span>Profile:</span>
           <code className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-muted/50 border border-border/40">
             {resolvedProfile?.name ?? "default (fallback)"}
@@ -666,27 +694,8 @@ function InputPanel({
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="Paste a prompt to test…"
-          className="w-full min-h-[200px] rounded-md border border-border bg-background p-3 text-[13px] font-mono leading-relaxed resize-y focus:outline-none focus:ring-1 focus:ring-foreground/20"
+          className="min-h-[320px] w-full resize-y rounded-lg border border-border bg-background p-4 font-mono text-[13px] leading-relaxed outline-none focus:ring-1 focus:ring-ring"
         />
-
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            size="sm"
-            onClick={onRun}
-            disabled={running || content.trim().length === 0}
-            className="gap-1.5"
-          >
-            {running ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Play className="h-3.5 w-3.5" />
-            )}
-            Run
-            <kbd className="font-mono text-[10px] opacity-60">⌘↵</kbd>
-          </Button>
-        </div>
-
-        <ExamplesLibrary onLoad={onLoadSample} />
       </CardContent>
     </Card>
   );
@@ -697,10 +706,10 @@ const CATEGORY_STYLE: Record<string, string> = {
   Injection: "bg-destructive/10 text-destructive border-destructive/30",
   Jailbreak: "bg-amber-500/10 text-amber-500 border-amber-500/30",
   PII: "bg-warn-bg/40 text-warn border-warn/30",
-  Secrets: "bg-blue-500/10 text-blue-500 border-blue-500/30",
-  Indirect: "bg-purple-500/10 text-purple-400 border-purple-500/30",
-  Bypass: "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30",
-  Output: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+  Secrets: "bg-destructive/10 text-destructive border-destructive/30",
+  Indirect: "bg-destructive/10 text-destructive border-destructive/30",
+  Bypass: "bg-destructive/10 text-destructive border-destructive/30",
+  Output: "bg-warn-bg/40 text-warn border-warn/30",
 };
 
 function ExamplesLibrary({ onLoad }: { onLoad: (s: PlaygroundSample) => void }) {
@@ -712,19 +721,16 @@ function ExamplesLibrary({ onLoad }: { onLoad: (s: PlaygroundSample) => void }) 
   }, [activeCategory]);
 
   return (
-    <details className="group border-t border-border/50 pt-3 -mx-4 px-4 mt-1" open>
-      <summary className="flex items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground cursor-pointer list-none select-none hover:text-foreground">
-        <span className="uppercase tracking-wider">
-          Examples library
-          <span className="ml-2 normal-case tracking-normal text-muted-foreground/60">
-            {SAMPLES.length} prompts covering every detector
-          </span>
-        </span>
-        <span className="group-open:rotate-90 transition-transform text-muted-foreground/60">▸</span>
-      </summary>
-
-      <div className="mt-3 space-y-3">
-        <div className="flex flex-wrap gap-1.5">
+    <Card className="border-border/70">
+      <CardContent className="space-y-3 p-3">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+            <BookOpen className="size-3" aria-hidden />
+            Test library
+          </div>
+          <span className="font-mono text-[10px] text-muted-foreground">{SAMPLES.length}</span>
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
           {["All", ...SAMPLE_CATEGORIES].map((cat) => {
             const isActive = cat === activeCategory;
             return (
@@ -733,7 +739,7 @@ function ExamplesLibrary({ onLoad }: { onLoad: (s: PlaygroundSample) => void }) 
                 type="button"
                 onClick={() => setActiveCategory(cat)}
                 className={cn(
-                  "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border transition-colors",
+                  "shrink-0 rounded-md border px-2 py-1 text-[9px] uppercase tracking-wider transition-colors",
                   isActive
                     ? "bg-foreground text-background border-foreground"
                     : "border-border/60 text-muted-foreground hover:text-foreground hover:border-border",
@@ -745,13 +751,13 @@ function ExamplesLibrary({ onLoad }: { onLoad: (s: PlaygroundSample) => void }) 
           })}
         </div>
 
-        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[260px] overflow-y-auto pr-1">
+        <ul className="max-h-[360px] space-y-1.5 overflow-y-auto pr-1">
           {filtered.map((s) => (
             <li key={s.id}>
               <button
                 type="button"
                 onClick={() => onLoad(s)}
-                className="w-full text-left rounded-md border border-border/50 hover:border-border hover:bg-foreground/[0.02] transition-colors p-2 space-y-1"
+                className="w-full space-y-1 rounded-md border border-border/50 p-2.5 text-left transition-colors hover:border-border hover:bg-muted/20"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[12px] font-medium truncate">{s.label}</span>
@@ -776,8 +782,8 @@ function ExamplesLibrary({ onLoad }: { onLoad: (s: PlaygroundSample) => void }) 
             </li>
           ))}
         </ul>
-      </div>
-    </details>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -789,8 +795,8 @@ interface TracePanelProps {
 
 function TracePanel({ view, pending, error }: TracePanelProps) {
   return (
-    <Card className="border-border/50">
-      <CardContent className="p-4 space-y-3">
+    <Card className="max-h-[calc(100vh-8rem)] overflow-hidden border-border/70">
+      <CardContent className="space-y-3 overflow-y-auto p-4">
         <div className="flex items-center justify-between">
           <SectionHeader title="Execution trace" />
           {view ? <OutcomeBadge action={view.action} block={view.shouldBlock} /> : null}
@@ -849,7 +855,7 @@ interface HistoryRailProps {
 
 function HistoryRail({ runs, selectedId, onSelect, onDelete, deletingId }: HistoryRailProps) {
   return (
-    <Card className="border-border/50 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-4rem)]">
+    <Card className="max-h-[320px] border-border/70">
       <CardContent className="p-3 space-y-2 overflow-y-auto">
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground px-1 pt-0.5">
           <History className="h-3 w-3" /> Recent runs
@@ -1161,7 +1167,7 @@ function DiffPanel({ message }: { message: DetectMessageResult | undefined }) {
   }, [message]);
 
   return (
-    <Card className="border-border/50">
+    <Card className="border-border/70">
       <CardContent className="p-4 space-y-3">
         <SectionHeader title="Before / after" />
         {!message ? (

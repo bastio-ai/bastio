@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
@@ -12,7 +12,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { PageHeader, EmptyState } from "@/components/card";
+import { EmptyState } from "@/components/card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
 
 export function OverlayTemplatesPage() {
@@ -23,6 +24,12 @@ export function OverlayTemplatesPage() {
     queryKey: overlayKeys.templates(),
     queryFn: overlayApi.templates,
   });
+  const summary = useMemo(() => templates.reduce((acc, template) => {
+    acc.patterns += template.snapshot.additional_patterns?.length ?? 0;
+    acc.accessRules += template.snapshot.additional_access_rules?.length ?? 0;
+    acc.overrides += Object.values(template.snapshot.detector_overrides ?? {}).filter(Boolean).length;
+    return acc;
+  }, { patterns: 0, accessRules: 0, overrides: 0 }), [templates]);
 
   return (
     <>
@@ -37,12 +44,21 @@ export function OverlayTemplatesPage() {
         <span>Templates</span>
       </div>
 
-      <PageHeader
+      <AdminPageHeader
+        eyebrow="Policy library"
         title="Policy templates"
-        description="Pre-built starting points for common verticals. Preview the rules, tweak if you like, then create a policy. Templates never activate automatically — you always get a draft first."
+        description="Start from a reviewed industry baseline, inspect every included rule, and create an editable draft. Templates never activate automatically."
+        badge={<Badge variant="outline" className="font-mono text-[10px]">read-only baselines</Badge>}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+      <AdminSummaryStrip items={[
+        { label: "Templates", value: templates.length, detail: "Available baselines" },
+        { label: "Pattern rules", value: summary.patterns, detail: "Across the library" },
+        { label: "Access rules", value: summary.accessRules, detail: "Network and identity constraints" },
+        { label: "Detector overrides", value: summary.overrides, detail: "Threshold and action changes" },
+      ]} />
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {isLoading ? (
           <SkeletonRows count={4} />
         ) : !templates.length ? (
@@ -55,12 +71,12 @@ export function OverlayTemplatesPage() {
           templates.map((t) => {
             const expanded = expandedSlug === t.slug;
             return (
-              <Card key={t.id} className="border-border/50">
-                <CardContent className="p-3 space-y-2">
+              <Card key={t.id} className="border-border/60 transition-colors hover:border-border">
+                <CardContent className="space-y-3 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-mono text-sm font-semibold">{t.slug}</h3>
+                        <h3 className="font-mono text-sm font-bold tracking-tight">{t.slug}</h3>
                         {t.is_builtin ? (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                             builtin

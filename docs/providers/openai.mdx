@@ -25,20 +25,20 @@ the key itself encodes it.
 
 ## Create the proxy
 
+Store the OpenAI credential in **LLM Gateways** first, then create the routing proxy:
+
 ```bash
-curl -X POST http://localhost:4000/api/v1/proxies \
+curl -X POST http://localhost:4000/v1/proxies \
   -H "Content-Type: application/json" \
   -d '{
     "name": "prod-openai",
-    "provider": "openai",
-    "provider_api_key": "sk-..."
+    "slug": "prod-openai",
+    "target_provider": "openai",
+    "target_model": "gpt-4o"
   }'
 ```
 
-The response includes a `gateway_api_key` — copy it now, you can't
-retrieve it again. This is the key your application sends to
-Bastio. Bastio holds your OpenAI key on its side and never returns
-it.
+Create the Bastio gateway key separately under **Developer API → API Keys**. This is the key your application sends to Bastio. Bastio holds your OpenAI credential on its side and never returns it.
 
 ## Send a request
 
@@ -87,23 +87,13 @@ const resp = await client.chat.completions.create({
 
 ## Supported features
 
-- **Chat completions** — full surface: `model`, `messages`,
-  `temperature`, `top_p`, `tools`, `tool_choice`,
-  `response_format`, `seed`, `parallel_tool_calls`, etc.
+- **Chat completions** — Bastio forwards the JSON body to OpenAI's chat-completions endpoint.
 - **Streaming** — `stream: true` works without extra config.
-  Bastio scans content as chunks arrive and rewrites them
-  in-flight when the security profile chooses `mask` or
-  `tokenize`.
-- **Function / tool calling** — passes through verbatim. Tool
-  call arguments are scanned the same as message content.
-- **Multimodal** — `image_url` blocks pass through. Image bytes
-  are scanned at the URL level (against the URL allowlist), not
-  for visual content. Models that support vision (`gpt-4o`,
-  `gpt-4.1`, etc.) work normally.
-- **JSON mode** — `response_format: { type: "json_object" }` and
-  `json_schema` both work.
-- **Embeddings** — `POST /v1/embeddings` is proxied, but content
-  is not security-scanned (no user-facing risk surface).
+  Streaming secret masking applies to string deltas; other output detectors require a complete non-streaming response.
+- **Pass-through fields** — fields such as `tools`, `tool_choice`, `response_format`, and multimodal content are forwarded upstream. The current inbound detector extracts string content from user messages, so tool arguments and content-part arrays are not equivalent to scanned plain text.
+- **Image URL allowlist** — image URLs can be restricted by host. Bastio does not inspect image pixels.
+
+Embeddings, audio/transcription, and Responses API routes are not exposed by the current gateway contract.
 
 ## Models
 
@@ -133,9 +123,6 @@ Common picks:
 - **Streaming + tool calls.** Some older clients buffer full
   responses before parsing — make sure your client supports
   the streaming `tool_calls` delta format.
-- **Multipart audio uploads.** Whisper's `/v1/audio/transcriptions`
-  endpoint is supported but not security-scanned — audio
-  isn't text, our detectors don't apply.
 
 ## Where the request shows up in traces
 

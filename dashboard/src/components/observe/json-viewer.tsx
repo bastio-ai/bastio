@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, WrapText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -31,6 +31,7 @@ export function JsonViewer({ value, rawString, className, maxHeight = "70vh" }: 
   }, [value, rawString]);
 
   const [copied, setCopied] = useState(false);
+  const [wrapped, setWrapped] = useState(false);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(pretty);
@@ -49,18 +50,31 @@ export function JsonViewer({ value, rawString, className, maxHeight = "70vh" }: 
 
   return (
     <div className={cn("relative rounded border border-border/50 bg-muted/20", className)}>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={copy}
-        className="absolute right-1.5 top-1.5 h-6 w-6 text-muted-foreground hover:text-foreground"
-        aria-label="Copy"
-      >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      </Button>
+      <div className="absolute right-1.5 top-1.5 z-10 flex items-center gap-0.5 rounded-md border border-border-subtle bg-background/90 p-0.5 backdrop-blur">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setWrapped((current) => !current)}
+          className={cn("h-6 w-6 text-muted-foreground hover:text-foreground", wrapped && "bg-surface-2 text-foreground")}
+          aria-label={wrapped ? "Disable line wrapping" : "Enable line wrapping"}
+          aria-pressed={wrapped}
+        >
+          <WrapText className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={copy}
+          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+          aria-label="Copy"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        </Button>
+      </div>
       <pre
         className={cn(
-          "overflow-auto whitespace-pre p-3 font-mono text-[11px] leading-relaxed",
+          "overflow-auto p-3 pr-16 font-mono text-[11px] leading-relaxed",
+          wrapped ? "whitespace-pre-wrap break-words" : "whitespace-pre",
           isJson ? "text-foreground" : "text-foreground/80",
         )}
         style={{ maxHeight }}

@@ -38,6 +38,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/environments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List managed deployment environments */
+        get: operations["listEnvironments"];
+        put?: never;
+        /** Register a deployment environment */
+        post: operations["createEnvironment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chat/completions": {
         parameters: {
             query?: never;
@@ -1293,6 +1311,22 @@ export interface components {
             redis?: string;
             clickhouse?: string;
         };
+        Environment: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "production" | "staging" | "development" | "custom";
+            description: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreateEnvironmentRequest: {
+            name: string;
+            /** @enum {string} */
+            kind: "production" | "staging" | "development" | "custom";
+            description: string;
+        };
         Proxy: {
             /** Format: uuid */
             id: string;
@@ -1332,6 +1366,10 @@ export interface components {
             key_prefix: string;
             scopes: string[];
             rate_limit_rpm?: number | null;
+            /** @description Managed deployment environment derived from this credential. */
+            environment: string;
+            /** @description Permit X-Bastio-Environment to select another registered environment in this workspace. */
+            allow_environment_override: boolean;
             is_active: boolean;
             /** Format: date-time */
             last_used_at?: string | null;
@@ -1345,6 +1383,9 @@ export interface components {
         CreateAPIKeyRequest: {
             name: string;
             rate_limit_rpm?: number;
+            environment: string;
+            /** @default false */
+            allow_environment_override: boolean;
         };
         Trace: {
             /** Format: uuid */
@@ -2462,6 +2503,12 @@ export interface components {
             /** @enum {string} */
             billing_mode: "platform_keys" | "byo_keys";
             /**
+             * @description When true, image uploads in workspace chat are rejected.
+             *     Images are not text-extracted and therefore cannot pass
+             *     through the text security pipeline used for documents.
+             */
+            disable_image_attachments?: boolean;
+            /**
              * @description Strict whitelist of LLM provider+model pairs surfaced in
              *     the employee chat's model picker. Empty = all curated
              *     defaults available; non-empty = strict whitelist (also
@@ -2488,9 +2535,11 @@ export interface components {
             };
             seat_limit?: number;
             retention_days?: number;
-            spend_cap_cents?: number;
+            spend_cap_cents?: number | null;
             /** @enum {string} */
             billing_mode?: "platform_keys" | "byo_keys";
+            /** @description Reject image uploads in workspace chat. */
+            disable_image_attachments?: boolean;
             allowed_models?: components["schemas"]["WorkspaceAllowedModel"][] | null;
         };
         WorkspaceAssistant: {
@@ -2748,6 +2797,71 @@ export interface operations {
                         version?: string;
                     };
                 };
+            };
+        };
+    };
+    listEnvironments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tenant-scoped managed environments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Environment"][];
+                };
+            };
+        };
+    };
+    createEnvironment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEnvironmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Environment created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Environment"];
+                };
+            };
+            /** @description Invalid environment name or classification */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Duplicate environment or workspace limit reached */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3621,6 +3735,8 @@ export interface operations {
                 action_taken?: string;
                 end_user_id?: string;
                 ip_address?: string;
+                /** @description Exact-match deployment environment of the related trace. */
+                environment?: string;
                 from?: string;
                 to?: string;
                 /** @description Case-insensitive substring match across matched_pattern and matched_content. */
@@ -3680,6 +3796,8 @@ export interface operations {
             query?: {
                 from?: string;
                 to?: string;
+                /** @description Exact-match deployment environment. */
+                environment?: string;
             };
             header?: never;
             path?: never;

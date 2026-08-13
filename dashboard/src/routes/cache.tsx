@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Info, Mail, Trash2, X, Zap } from "lucide-react";
+import { Database, Mail, Trash2, X } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/card";
+import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
 
 type CacheSummary = {
@@ -106,10 +106,16 @@ export function CachePage() {
   const data = settings.data ?? localSettings;
 
   return (
-    <div className="space-y-6 p-6">
-      <PageHeader
+    <div className="space-y-4">
+      <AdminPageHeader
+        eyebrow="Performance controls"
         title="Response Cache"
-        description="Skip the upstream call when an identical prompt comes back. Accelerates latency to under 20ms and slashes LLM costs."
+        description="Serve identical requests without another provider round trip. Control eligibility, retention, and invalidation from one audited surface."
+        badge={
+          <span className={data.enabled ? "rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-[10px] font-medium text-success" : "rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"}>
+            {data.enabled ? "Enabled" : "Disabled"}
+          </span>
+        }
       />
 
       {settings.isPending ? (
@@ -149,86 +155,14 @@ function SavingsCard({ data }: { data: CacheSettings }) {
   const tokens = (summary?.tokens_in_saved ?? 0) + (summary?.tokens_out_saved ?? 0);
 
   return (
-    <Card>
-      <CardContent className="py-6">
-        <div className="mb-4 flex items-center gap-2">
-          <Zap className="h-4 w-4 text-primary" aria-hidden />
-          <h3 className="text-base font-semibold text-foreground">
-            This month
-          </h3>
-        </div>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <Stat
-            label="Hits"
-            value={hits.toLocaleString()}
-            hint={total === 0 ? "—" : `${hitRate.toFixed(1)}% hit rate`}
-            tooltip="Requests served from cache without calling the upstream LLM. Each hit avoids one full upstream API call and the cost it would have incurred."
-          />
-          <Stat
-            label="Misses"
-            value={misses.toLocaleString()}
-            hint={total === 0 ? "—" : `${missRate.toFixed(1)}% of ${total.toLocaleString()} total`}
-            tooltip="Cache lookups that didn't find a stored entry, so the request went upstream. A miss is normal on the first call for any unique prompt; subsequent identical calls hit."
-          />
-          <Stat
-            label="Tokens saved"
-            value={tokens.toLocaleString()}
-            tooltip="Input + output tokens you didn't pay upstream for, summed across this month's hits. Reflects what each cached response would have billed at full rate."
-          />
-          <Stat
-            label="USD saved"
-            value={`$${costUSD.toFixed(2)}`}
-            hint="based on published model rates"
-            tooltip="Estimated dollar savings this month: cached tokens × published per-million-token rates for each model."
-          />
-        </div>
-        {total === 0 ? (
-          <p className="mt-4 text-sm text-muted-foreground">
-            No cache activity yet. Enable below and let traffic accumulate.
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  hint,
-  tooltip,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tooltip?: string;
-}) {
-  return (
-    <div>
-      <div className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground">
-        <span>{label}</span>
-        {tooltip ? (
-          <span className="group relative inline-flex">
-            <Info
-              className="h-3 w-3 cursor-help text-muted-foreground/60 hover:text-foreground"
-              aria-label={`About ${label}`}
-            />
-            <span
-              role="tooltip"
-              className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden w-64 -translate-x-1/2 rounded border bg-popover px-3 py-2 text-xs normal-case tracking-normal text-popover-foreground shadow-md group-hover:block"
-            >
-              {tooltip}
-            </span>
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-1 font-mono text-2xl font-semibold text-foreground tabular-nums">
-        {value}
-      </div>
-      {hint ? (
-        <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>
-      ) : null}
-    </div>
+    <AdminSummaryStrip
+      items={[
+        { label: "Cache hits", value: hits.toLocaleString(), detail: total === 0 ? "No activity yet" : `${hitRate.toFixed(1)}% hit rate`, tone: hitRate >= 50 ? "success" : "default" },
+        { label: "Cache misses", value: misses.toLocaleString(), detail: total === 0 ? "No activity yet" : `${missRate.toFixed(1)}% of ${total.toLocaleString()} requests` },
+        { label: "Tokens avoided", value: tokens.toLocaleString(), detail: "Input + output tokens" },
+        { label: "Estimated savings", value: `$${costUSD.toFixed(2)}`, detail: "Published provider rates", tone: costUSD > 0 ? "success" : "default" },
+      ]}
+    />
   );
 }
 

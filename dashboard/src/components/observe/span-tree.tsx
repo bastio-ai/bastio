@@ -106,12 +106,10 @@ export function SpanTree({
       : "bg-primary/70";
 
     rows.push(
-      <button
+      <div
         key={node.id}
-        type="button"
-        onClick={() => onSelect(node)}
         className={cn(
-          "grid w-full grid-cols-[minmax(12rem,18rem)_1fr_4rem] items-center gap-3 border-l-2 px-2 py-1.5 text-left text-xs",
+          "group grid w-full grid-cols-[minmax(10rem,16rem)_1fr_3.5rem] items-center gap-2 border-l-2 px-2 py-1.5 text-left text-xs transition-colors",
           isSelected
             ? "border-foreground bg-muted/40"
             : "border-transparent hover:bg-muted/20",
@@ -120,9 +118,10 @@ export function SpanTree({
       >
         <div className="flex items-center gap-1" style={{ paddingLeft: `${depth * 12}px` }}>
           {node.children.length ? (
-            <span
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
+              aria-label={`${isExpanded ? "Collapse" : "Expand"} ${node.name || node.type}`}
+              aria-expanded={isExpanded}
               onClick={(e) => {
                 e.stopPropagation();
                 toggle(node.id);
@@ -134,28 +133,40 @@ export function SpanTree({
               ) : (
                 <ChevronRight className="h-3 w-3" />
               )}
-            </span>
+            </button>
           ) : (
             <span className="h-4 w-4" />
           )}
-          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="truncate font-mono">{node.name || node.type}</span>
-          {node.status === "error" ? (
-            <Badge variant="destructive" className="text-[9px] px-1 py-0">
-              err
-            </Badge>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => onSelect(node)}
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-current={isSelected ? "true" : undefined}
+          >
+            <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+            <span className="truncate font-mono">{node.name || node.type}</span>
+            {node.status === "error" ? (
+              <Badge variant="destructive" className="px-1 py-0 text-[9px]">
+                err
+              </Badge>
+            ) : null}
+          </button>
         </div>
-        <div className="relative h-2 rounded bg-muted/50">
+        <button
+          type="button"
+          onClick={() => onSelect(node)}
+          className="relative h-2 rounded bg-muted/50 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Select ${node.name || node.type}; duration ${formatSpanDuration(node.duration_ms ?? 0)}`}
+        >
           <div
             className={cn("absolute top-0 h-2 rounded", barTone)}
             style={{ left: `${offsetPct}%`, width: `${widthPct}%` }}
           />
-        </div>
-        <span className="text-right font-mono tabular-nums text-muted-foreground">
-          {formatDuration(node.duration_ms ?? 0)}
+        </button>
+        <span className="text-right font-mono text-[10px] tabular-nums text-muted-foreground">
+          {formatSpanDuration(node.duration_ms ?? 0)}
         </span>
-      </button>,
+      </div>,
     );
 
     if (isExpanded) {
@@ -165,6 +176,10 @@ export function SpanTree({
   for (const n of tree) walk(n, 0);
 
   return <div className="divide-y divide-border/20">{rows}</div>;
+}
+
+function formatSpanDuration(durationMs: number) {
+  return durationMs < 1 ? "<1ms" : formatDuration(durationMs);
 }
 
 function buildTree(spans: Observation[]): TreeNode[] {

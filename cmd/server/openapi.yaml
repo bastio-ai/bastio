@@ -55,6 +55,44 @@ paths:
                   version:
                     type: string
 
+  /v1/environments:
+    get:
+      operationId: listEnvironments
+      summary: List managed deployment environments
+      tags: [Observability]
+      responses:
+        "200":
+          description: Tenant-scoped managed environments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Environment"
+    post:
+      operationId: createEnvironment
+      summary: Register a deployment environment
+      tags: [Observability]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEnvironmentRequest"
+      responses:
+        "201":
+          description: Environment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+        "400":
+          description: Invalid environment name or classification
+        "403":
+          description: Admin access required
+        "409":
+          description: Duplicate environment or workspace limit reached
+
   # Gateway proxy endpoints (Phase 2)
   /v1/chat/completions:
     post:
@@ -862,6 +900,10 @@ paths:
         - name: ip_address
           in: query
           schema: { type: string }
+        - name: environment
+          in: query
+          description: Exact-match deployment environment of the related trace.
+          schema: { type: string }
         - name: from
           in: query
           schema: { type: string, format: date-time }
@@ -931,6 +973,11 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: environment
+          in: query
+          description: Exact-match deployment environment.
+          schema:
+            type: string
       responses:
         "200":
           description: Overview metrics
@@ -2030,6 +2077,38 @@ components:
         clickhouse:
           type: string
 
+    Environment:
+      type: object
+      required: [id, name, kind, description, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [production, staging, development, custom]
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateEnvironmentRequest:
+      type: object
+      required: [name, kind, description]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_-]{0,31}$"
+        kind:
+          type: string
+          enum: [production, staging, development, custom]
+        description:
+          type: string
+          maxLength: 240
+
     Proxy:
       type: object
       required:
@@ -2103,7 +2182,7 @@ components:
 
     APIKey:
       type: object
-      required: [id, name, key_prefix, scopes, is_active, created_at]
+      required: [id, name, key_prefix, scopes, environment, allow_environment_override, is_active, created_at]
       properties:
         id:
           type: string
@@ -2119,6 +2198,12 @@ components:
         rate_limit_rpm:
           type: integer
           nullable: true
+        environment:
+          type: string
+          description: Managed deployment environment derived from this credential.
+        allow_environment_override:
+          type: boolean
+          description: Permit X-Bastio-Environment to select another registered environment in this workspace.
         is_active:
           type: boolean
         last_used_at:
@@ -2141,12 +2226,17 @@ components:
 
     CreateAPIKeyRequest:
       type: object
-      required: [name]
+      required: [name, environment]
       properties:
         name:
           type: string
         rate_limit_rpm:
           type: integer
+        environment:
+          type: string
+        allow_environment_override:
+          type: boolean
+          default: false
 
     Trace:
       type: object
@@ -4402,6 +4492,12 @@ components:
         retention_days: { type: integer }
         spend_cap_cents: { type: integer, nullable: true }
         billing_mode: { type: string, enum: [platform_keys, byo_keys] }
+        disable_image_attachments:
+          type: boolean
+          description: |
+            When true, image uploads in workspace chat are rejected.
+            Images are not text-extracted and therefore cannot pass
+            through the text security pipeline used for documents.
         allowed_models:
           type: array
           items: { $ref: "#/components/schemas/WorkspaceAllowedModel" }
@@ -4428,8 +4524,11 @@ components:
         branding: { type: object, additionalProperties: true }
         seat_limit: { type: integer }
         retention_days: { type: integer }
-        spend_cap_cents: { type: integer }
+        spend_cap_cents: { type: integer, nullable: true }
         billing_mode: { type: string, enum: [platform_keys, byo_keys] }
+        disable_image_attachments:
+          type: boolean
+          description: Reject image uploads in workspace chat.
         allowed_models:
           type: array
           items: { $ref: "#/components/schemas/WorkspaceAllowedModel" }
@@ -4639,4 +4738,3 @@ components:
       properties:
         model: { type: string }
         count: { type: integer }
-

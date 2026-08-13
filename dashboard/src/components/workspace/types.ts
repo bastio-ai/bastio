@@ -198,6 +198,8 @@ export const workspaceApi = {
   },
   archiveKnowledge: (id: string) =>
     unwrap(http.DELETE("/v1/workspace/knowledge/{id}", { params: { path: { id } } })),
+  releaseKnowledge: (id: string) =>
+    unwrap(http.POST("/v1/workspace/knowledge/{id}/release", { params: { path: { id } } })),
 
   // conversations
   listConversations: (limit = 50) =>

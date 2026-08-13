@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, Check, ImageOff, LockKeyhole, Save, ShieldAlert, Sparkles } from "lucide-react";
 
+import { SectionHeader } from "@/components/card";
+import { FieldLabel, SecurityNotice } from "@/components/admin/admin-primitives";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/skeleton";
-
+import { cn } from "@/lib/utils";
 import { workspaceApi } from "./types";
 import { MODEL_CATALOG, type AllowedModelEntry } from "./model-picker";
 import { useWorkspaceExtension } from "./extension-context";
@@ -16,255 +20,280 @@ export function SettingsTab() {
     queryKey: ["workspace", "settings"],
     queryFn: workspaceApi.getSettings,
   });
-
-  // Seat limit / retention / billing mode / branding are cloud-only —
-  // they're owned by the Stripe webhook (seat_limit), the Cloud admin
-  // (retention/billing_mode), and the branded-chat feature (branding).
-  // OSS doesn't expose them in this UI; the workspace_settings columns
-  // still exist (set by migration 015) and PATCH ignores fields the
-  // form doesn't send.
   const [allowedModels, setAllowedModels] = useState<AllowedModelEntry[]>([]);
-  // AI persona — workspace-level overlay applied to every assistant's
-  // system prompt at chat time. Empty string = "leave the assistant's
-  // raw prompt alone". Three independent fields so admins can tune
-  // identity, personality, and tone separately.
   const [personaName, setPersonaName] = useState("");
   const [personaPersonality, setPersonaPersonality] = useState("");
   const [personaTone, setPersonaTone] = useState("");
+  const [disableImageAttachments, setDisableImageAttachments] = useState(false);
 
   useEffect(() => {
-    if (settings.data) {
-      setAllowedModels(settings.data.allowed_models ?? []);
-      setPersonaName(settings.data.ai_persona_name ?? "");
-      setPersonaPersonality(settings.data.ai_persona_personality ?? "");
-      setPersonaTone(settings.data.ai_persona_tone ?? "");
-    }
+    if (!settings.data) return;
+    setAllowedModels(settings.data.allowed_models ?? []);
+    setPersonaName(settings.data.ai_persona_name ?? "");
+    setPersonaPersonality(settings.data.ai_persona_personality ?? "");
+    setPersonaTone(settings.data.ai_persona_tone ?? "");
+    setDisableImageAttachments(settings.data.disable_image_attachments ?? false);
   }, [settings.data]);
+
+  const currentState = useMemo(
+    () => JSON.stringify({
+      allowedModels,
+      personaName: personaName.trim(),
+      personaPersonality: personaPersonality.trim(),
+      personaTone: personaTone.trim(),
+      disableImageAttachments,
+    }),
+    [allowedModels, disableImageAttachments, personaName, personaPersonality, personaTone],
+  );
+  const savedState = useMemo(
+    () => settings.data
+      ? JSON.stringify({
+          allowedModels: settings.data.allowed_models ?? [],
+          personaName: (settings.data.ai_persona_name ?? "").trim(),
+          personaPersonality: (settings.data.ai_persona_personality ?? "").trim(),
+          personaTone: (settings.data.ai_persona_tone ?? "").trim(),
+          disableImageAttachments: settings.data.disable_image_attachments ?? false,
+        })
+      : currentState,
+    [currentState, settings.data],
+  );
+  const dirty = currentState !== savedState;
 
   const save = useMutation({
     mutationFn: () =>
       workspaceApi.patchSettings({
         allowed_models: allowedModels,
-        // Empty string → null clears the field on the server side
-        // (server reads nullable TEXT). Non-empty → set verbatim.
         ai_persona_name: personaName.trim() || null,
         ai_persona_personality: personaPersonality.trim() || null,
         ai_persona_tone: personaTone.trim() || null,
+        disable_image_attachments: disableImageAttachments,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace", "settings"] }),
   });
 
-  if (settings.isLoading) return <SkeletonRows count={4} />;
+  if (settings.isLoading) return <SkeletonRows count={5} />;
+
+  const strictModelPolicy = allowedModels.length > 0;
+  const personaConfigured = Boolean(personaName || personaPersonality || personaTone);
 
   return (
-    <div className="space-y-6">
-      <h3 className="text-sm font-semibold">AI persona</h3>
-      <p className="text-xs text-muted-foreground -mt-4">
-        Give your workspace's AI a name and personality. Applies to every assistant — employees see
-        the same identity ("Have you asked Bob?") regardless of which assistant they pick. Leave
-        blank to use each assistant's raw system prompt.
-      </p>
-      <Card>
-        <CardContent className="space-y-3 p-4">
-          <Field label="Name">
-            <input
-              type="text"
-              value={personaName}
-              onChange={(e) => setPersonaName(e.target.value)}
-              placeholder="e.g. Bob"
-              maxLength={120}
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
-            />
-          </Field>
-          <Field label="Personality">
-            <input
-              type="text"
-              value={personaPersonality}
-              onChange={(e) => setPersonaPersonality(e.target.value)}
-              placeholder="e.g. friendly, helpful, concise"
-              maxLength={500}
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
-            />
-          </Field>
-          <Field label="Tone of voice">
-            <input
-              type="text"
-              value={personaTone}
-              onChange={(e) => setPersonaTone(e.target.value)}
-              placeholder="e.g. casual, professional, witty"
-              maxLength={200}
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
-            />
-          </Field>
-          <p className="text-xs text-muted-foreground">
-            Saved together with the other settings via the button at the bottom of this page.
-          </p>
-        </CardContent>
-      </Card>
-
-      <h3 className="text-sm font-semibold">LLM models employees can pick</h3>
-
-      <Card>
-        <CardContent className="space-y-3 p-4">
-          <ModelWhitelistEditor value={allowedModels} onChange={setAllowedModels} />
-          {save.error && (
-            <p className="text-sm text-destructive">{(save.error as Error).message}</p>
-          )}
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
-              {save.isPending ? "Saving…" : "Save settings"}
+    <div>
+      <SectionHeader
+        title="Workspace-wide AI policy"
+        description="These controls apply across assistants and the employee portal."
+        action={
+          <div className="flex items-center gap-2">
+            {!dirty && save.isSuccess ? (
+              <span className="inline-flex items-center gap-1 text-[10px] text-success"><Check className="h-3 w-3" /> Saved</span>
+            ) : null}
+            <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+              <Save data-icon="inline-start" /> {save.isPending ? "Saving…" : "Save changes"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        }
+      />
 
-      {ext.settingsExtra}
+      <div className="mb-5 grid overflow-hidden rounded-xl border border-border/70 bg-card sm:grid-cols-2 sm:divide-x sm:divide-border/60 xl:grid-cols-4">
+        <PolicyMetric label="AI identity" value={personaConfigured ? "Configured" : "Assistant defaults"} ready={personaConfigured} />
+        <PolicyMetric label="Model policy" value={strictModelPolicy ? "Strict whitelist" : "Curated catalog"} ready={strictModelPolicy} />
+        <PolicyMetric label="Models available" value={strictModelPolicy ? allowedModels.length : MODEL_CATALOG.length} ready />
+        <PolicyMetric label="Image uploads" value={disableImageAttachments ? "Blocked" : "Allowed"} ready={disableImageAttachments} />
+      </div>
+
+      <section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-card">
+        <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
+              <ImageOff className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <h2 className="text-[13px] font-semibold text-foreground">Image attachment policy</h2>
+              <p className="mt-0.5 max-w-2xl text-[10px] leading-relaxed text-muted-foreground">
+                Block images in employee chat when every attachment must pass text extraction and security inspection.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={disableImageAttachments}
+            onClick={() => setDisableImageAttachments((current) => !current)}
+            className={cn(
+              "inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
+              disableImageAttachments
+                ? "border-success-border bg-success-bg text-success"
+                : "border-border/70 bg-background text-muted-foreground hover:bg-muted/40",
+            )}
+          >
+            <span className={cn("h-2 w-2 rounded-full", disableImageAttachments ? "bg-success" : "bg-muted-foreground/50")} />
+            {disableImageAttachments ? "Images blocked" : "Images allowed"}
+          </button>
+        </div>
+        {!disableImageAttachments ? (
+          <div className="border-t border-border/60 px-4 py-3">
+            <SecurityNotice title="Images bypass text-only inspection" tone="warning">
+              Image uploads are rendered as visual context and are not text-extracted. Disable them for regulated or high-assurance workspaces.
+            </SecurityNotice>
+          </div>
+        ) : null}
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.72fr)_minmax(0,1.28fr)]">
+        <section className="rounded-xl border border-border/70 bg-card">
+          <div className="border-b border-border/60 px-4 py-3.5">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground"><Sparkles className="h-3.5 w-3.5" /></div>
+              <div>
+                <h2 className="text-[13px] font-semibold text-foreground">Shared AI identity</h2>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">A consistent persona layered onto every assistant.</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4 p-4">
+            <div>
+              <FieldLabel optional>Name</FieldLabel>
+              <Input value={personaName} onChange={(event) => setPersonaName(event.target.value)} placeholder="e.g. Bob" maxLength={120} />
+              <p className="mt-1 text-[10px] text-muted-foreground">Shown as the shared AI identity in the portal.</p>
+            </div>
+            <div>
+              <FieldLabel optional>Personality</FieldLabel>
+              <Input value={personaPersonality} onChange={(event) => setPersonaPersonality(event.target.value)} placeholder="e.g. helpful, precise, concise" maxLength={500} />
+            </div>
+            <div>
+              <FieldLabel optional>Tone of voice</FieldLabel>
+              <Input value={personaTone} onChange={(event) => setPersonaTone(event.target.value)} placeholder="e.g. professional and direct" maxLength={200} />
+            </div>
+            <SecurityNotice title="Assistant instructions still apply" tone="info">
+              Blank fields add no workspace-level persona. Each assistant’s own system prompt remains the source of its role and boundaries.
+            </SecurityNotice>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-border/70 bg-card">
+          <div className="flex items-start justify-between gap-4 border-b border-border/60 px-4 py-3.5">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground"><LockKeyhole className="h-3.5 w-3.5" /></div>
+              <div>
+                <h2 className="text-[13px] font-semibold text-foreground">Model access policy</h2>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">Control the models employees can select at chat time.</p>
+              </div>
+            </div>
+            <Badge variant={strictModelPolicy ? "success" : "warning"}>
+              {strictModelPolicy ? "Restricted" : "Catalog default"}
+            </Badge>
+          </div>
+          <div className="space-y-4 p-4">
+            {!strictModelPolicy ? (
+              <SecurityNotice title="All curated models are currently available" tone="warning">
+                An empty whitelist intentionally exposes the full curated catalog. Select approved models below to enforce a strict allowlist in both the portal UI and chat send path.
+              </SecurityNotice>
+            ) : (
+              <SecurityNotice title="Strict model whitelist enforced" tone="success">
+                Only the selected provider and model pairs are available to employees. Server-side validation provides defense in depth beyond the picker UI.
+              </SecurityNotice>
+            )}
+            <ModelWhitelistEditor value={allowedModels} onChange={setAllowedModels} />
+          </div>
+        </section>
+      </div>
+
+      {save.error ? (
+        <SecurityNotice className="mt-5" title="Settings could not be saved" tone="warning">{(save.error as Error).message}</SecurityNotice>
+      ) : null}
+      {dirty ? (
+        <div className="sticky bottom-3 z-10 mt-5 flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-popover/95 px-4 py-3 shadow-lg backdrop-blur">
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <ShieldAlert className="h-3.5 w-3.5" /> Unsaved policy changes
+          </div>
+          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+            <Save data-icon="inline-start" /> {save.isPending ? "Saving…" : "Save policy"}
+          </Button>
+        </div>
+      ) : null}
+
+      {ext.settingsExtra ? <div className="mt-5">{ext.settingsExtra}</div> : null}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function PolicyMetric({ label, value, ready }: { label: string; value: string | number; ready?: boolean }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-    </label>
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg border", ready ? "border-success-border bg-success-bg text-success" : "border-border/60 bg-muted/30 text-muted-foreground")}>
+        {ready ? <Check className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+        <p className="mt-0.5 truncate text-[12px] font-medium text-foreground">{value}</p>
+      </div>
+    </div>
   );
 }
 
-// =============================================================================
-// LLM model whitelist
-// =============================================================================
-
-// ModelWhitelistEditor lets the admin curate which (provider, model)
-// pairs employees can pick from in the workspace chat. Empty list =
-// all curated defaults available; non-empty = strict subset.
-//
-// Grouped by provider for ergonomics — admins typically think
-// "OpenAI yes, Anthropic no" first, then per-model fine-tuning.
-function ModelWhitelistEditor({
-  value,
-  onChange,
-}: {
-  value: AllowedModelEntry[];
-  onChange: (next: AllowedModelEntry[]) => void;
-}) {
-  // Index value into a Set for O(1) membership checks while rendering.
-  const allowedKey = (e: AllowedModelEntry) => `${e.provider}/${e.model}`;
+function ModelWhitelistEditor({ value, onChange }: { value: AllowedModelEntry[]; onChange: (next: AllowedModelEntry[]) => void }) {
+  const allowedKey = (entry: AllowedModelEntry) => `${entry.provider}/${entry.model}`;
   const allowSet = new Set(value.map(allowedKey));
-
-  // Group catalog by provider for stacked sections.
-  const byProvider = MODEL_CATALOG.reduce<Record<string, typeof MODEL_CATALOG>>(
-    (acc, m) => {
-      const list = acc[m.provider] ?? [];
-      list.push(m);
-      acc[m.provider] = list;
-      return acc;
-    },
-    {},
-  );
+  const byProvider = MODEL_CATALOG.reduce<Record<string, typeof MODEL_CATALOG>>((result, model) => {
+    (result[model.provider] ??= []).push(model);
+    return result;
+  }, {});
 
   const toggleModel = (provider: string, model: string) => {
     const key = `${provider}/${model}`;
-    if (allowSet.has(key)) {
-      onChange(value.filter((e) => allowedKey(e) !== key));
-    } else {
-      onChange([...value, { provider, model }]);
-    }
+    onChange(allowSet.has(key) ? value.filter((entry) => allowedKey(entry) !== key) : [...value, { provider, model }]);
   };
-
   const toggleProvider = (provider: string, models: typeof MODEL_CATALOG) => {
-    const allOn = models.every((m) => allowSet.has(`${provider}/${m.model}`));
-    if (allOn) {
-      onChange(value.filter((e) => e.provider !== provider));
-    } else {
-      const others = value.filter((e) => e.provider !== provider);
-      onChange([...others, ...models.map((m) => ({ provider, model: m.model }))]);
-    }
+    const allOn = models.every((model) => allowSet.has(`${provider}/${model.model}`));
+    const otherProviders = value.filter((entry) => entry.provider !== provider);
+    onChange(allOn ? otherProviders : [...otherProviders, ...models.map((model) => ({ provider, model: model.model }))]);
   };
-
-  const empty = value.length === 0;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs font-medium text-muted-foreground">
-          LLM models employees can pick
-        </span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {empty ? "All curated defaults available" : `${value.length} model${value.length === 1 ? "" : "s"} allowed`}
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Leave all unchecked to expose every curated default. Tick specific
-        models to enforce a strict whitelist — both in the chat picker UI
-        and as defense-in-depth on the chat send path.
-      </p>
-      <div className="space-y-3 rounded-md border border-border p-3">
-        {Object.entries(byProvider).map(([provider, models]) => {
-          const allOn = models.every((m) =>
-            allowSet.has(`${provider}/${m.model}`),
-          );
-          const someOn = models.some((m) =>
-            allowSet.has(`${provider}/${m.model}`),
-          );
-          return (
-            <div key={provider} className="space-y-1.5">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={allOn}
-                  ref={(el) => {
-                    if (el) el.indeterminate = !allOn && someOn;
-                  }}
-                  onChange={() => toggleProvider(provider, models)}
-                />
-                <span className="text-sm font-medium capitalize">{provider}</span>
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {someOn ? `${models.filter((m) => allowSet.has(`${provider}/${m.model}`)).length} / ${models.length}` : "off"}
-                </span>
-              </label>
-              <div className="ml-6 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                {models.map((m) => {
-                  const on = allowSet.has(`${provider}/${m.model}`);
-                  return (
-                    <label
-                      key={`${provider}/${m.model}`}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => toggleModel(provider, m.model)}
-                      />
-                      <span className={on ? "text-foreground" : "text-muted-foreground"}>
-                        {m.label}
-                      </span>
-                      <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                        {m.model}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+      {Object.entries(byProvider).map(([provider, models]) => {
+        const selected = models.filter((model) => allowSet.has(`${provider}/${model.model}`));
+        const allOn = selected.length === models.length;
+        const someOn = selected.length > 0;
+        return (
+          <div key={provider} className="overflow-hidden rounded-lg border border-border/70">
+            <label className="flex cursor-pointer items-center gap-3 border-b border-border/50 bg-muted/20 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={allOn}
+                ref={(element) => { if (element) element.indeterminate = !allOn && someOn; }}
+                onChange={() => toggleProvider(provider, models)}
+              />
+              <span className="text-[12px] font-medium capitalize text-foreground">{provider}</span>
+              <span className="ml-auto font-mono text-[10px] text-muted-foreground">{selected.length}/{models.length} selected</span>
+            </label>
+            <div className="grid sm:grid-cols-2">
+              {models.map((model, index) => {
+                const selectedModel = allowSet.has(`${provider}/${model.model}`);
+                return (
+                  <label
+                    key={`${provider}/${model.model}`}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-muted/30",
+                      index > 0 && "border-t border-border/40 sm:border-t-0",
+                      index % 2 === 1 && "sm:border-l sm:border-border/40",
+                      index >= 2 && "sm:border-t sm:border-border/40",
+                    )}
+                  >
+                    <input type="checkbox" checked={selectedModel} onChange={() => toggleModel(provider, model.model)} />
+                    <div className="min-w-0">
+                      <p className={cn("truncate text-[11px] font-medium", selectedModel ? "text-foreground" : "text-muted-foreground")}>{model.label}</p>
+                      <p className="truncate font-mono text-[9px] text-muted-foreground">{model.model}</p>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
-          );
-        })}
-        {!empty && (
-          <button
-            type="button"
-            onClick={() => onChange([])}
-            className="text-xs text-cyan-500 hover:underline"
-          >
-            Clear whitelist (revert to all-defaults)
-          </button>
-        )}
-      </div>
+          </div>
+        );
+      })}
+      {value.length > 0 ? (
+        <Button size="xs" variant="ghost" onClick={() => onChange([])}>Use the full curated catalog</Button>
+      ) : null}
     </div>
   );
 }
-
-// Branded chat (slug + custom domains) was moved to bastio-cloud's
-// cloud-dashboard/src/components/workspace/domains-tab.tsx — both
-// features depend on hosted infrastructure (workspace.bastio.com
-// routing + DNS verification) that doesn't exist in OSS deployments.

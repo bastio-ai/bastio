@@ -1,0 +1,130 @@
+---
+title: Authentication & environments
+description: Secure API keys, workspace boundaries, environment selection, rotation, and request headers.
+---
+
+Authentication differs between the self-hosted management API and Bastio Cloud's managed gateway. This distinction is important: a dashboard session, a gateway API key, and a reverse-proxy credential are not interchangeable.
+
+## Current support matrix
+
+| Surface | Credential | Intended caller |
+|---|---|---|
+| Self-hosted Developer APIs | No built-in credential by default | Workloads on a trusted private network |
+| Self-hosted LLM Gateway | Bastio API key | Server applications and agents |
+| Bastio Cloud LLM Gateway | Environment-scoped Bastio API key | Production server applications and agents |
+| Bastio Cloud dashboard API | Secure session cookie | Bastio's dashboard, not service integrations |
+
+Public API-key authentication for Cloud's direct `/v1/detect`, `/v1/pii/*`, and `/v1/guardrails/*` routes is not available yet. Do not copy a dashboard cookie into application code. Use the [Cloud LLM Gateway](/docs/gateway) or self-host these direct primitives.
+
+## Protect self-hosted Developer APIs
+
+The default OSS deployment is intentionally simple and single-tenant. Its dashboard management routes—including the direct Developer APIs—do not have built-in user authentication.
+
+Before deploying beyond a developer machine:
+
+- Bind Bastio to a private interface or network.
+- Restrict ingress with a VPN, tailnet, service mesh, or identity-aware reverse proxy.
+- Add TLS at the ingress boundary.
+- Prevent browsers and untrusted clients from reaching management routes.
+- Apply rate limits at the reverse proxy if the deployment is shared.
+
+If your reverse proxy injects an application credential, keep it configurable separately from Bastio gateway keys.
+
+## Authenticate gateway requests
+
+The managed LLM Gateway accepts an RFC 6750 bearer token:
+
+```http
+Authorization: Bearer sk-bastio-...
+```
+
+`X-API-Key` is also accepted for gateway clients that cannot set `Authorization`:
+
+```http
+X-API-Key: sk-bastio-...
+```
+
+<HeaderContract name="Authorization" values="Bearer <key>">
+  Recommended for SDKs, server applications, CI jobs, and standard HTTP clients.
+</HeaderContract>
+
+<HeaderContract name="X-API-Key" values="<key>">
+  Compatibility option. Send one authentication header, not both.
+</HeaderContract>
+
+## Workspace and environment boundaries
+
+A Cloud gateway key carries its workspace, scopes, rate limit, and environment. You normally select an environment by selecting the correct key—no additional request field is necessary.
+
+| Concern | Recommended model |
+|---|---|
+| Workspace | Separate organization, business unit, or customer boundary |
+| Environment | `production`, `staging`, `development`, or another deployment stage |
+| API key | One workload in one environment, with the minimum required scope |
+| Security profile | The policy applied to that workload's detect requests |
+
+Create separate keys for each environment. This prevents a staging deployment from writing production telemetry or inheriting the wrong policy by accident.
+
+### Controlled environment override
+
+Administrators can create a key with **environment override** permission. Only those keys may send:
+
+```http
+X-Bastio-Environment: staging
+```
+
+The target environment must already exist in the same workspace. Invalid or unauthorized overrides return HTTP `400` with `invalid_environment`. Do not enable override for ordinary production workloads; it is intended for trusted control planes and internal routing layers.
+
+## Store keys safely
+
+- Put keys in a secret manager or protected runtime environment variable.
+- Never prefix public frontend variables with a Bastio secret.
+- Do not include keys in URLs, query strings, screenshots, or error messages.
+- Redact `Authorization` and `X-API-Key` at log and APM ingestion boundaries.
+- Use a distinct key for every independently deployable service.
+
+## Rotate without downtime
+
+1. Create a replacement key with the same environment and required scopes.
+2. Deploy the new key to the workload.
+3. Confirm requests and traces arrive under the replacement key.
+4. Revoke the previous key.
+5. Investigate any traffic that continues to use the revoked credential.
+
+Treat a suspected leak as an incident: revoke first, then investigate. Do not wait for a scheduled rotation window.
+
+## Gateway authentication failures
+
+<ResponseCode code="401" tone="danger">
+  The key is missing, malformed, unknown, or revoked. Do not retry until credentials change.
+</ResponseCode>
+
+<ResponseCode code="403" tone="warning">
+  Authentication succeeded but the operation is not allowed—or an agent action was explicitly blocked. Parse the response body before classifying it.
+</ResponseCode>
+
+<ResponseCode code="429" tone="warning">
+  The key exceeded its configured requests-per-minute limit. Honor `Retry-After` and add jitter.
+</ResponseCode>
+
+## Base URL configuration
+
+Keep the base URL configurable so the same integration can target local, staging, and cloud deployments:
+
+```ts
+const config = {
+  baseURL: process.env.BASTIO_API_URL ?? "https://api.bastio.com",
+  apiKey: process.env.BASTIO_API_KEY,
+};
+```
+
+<ProductionChecklist>
+
+- Keep the self-hosted management surface private.
+- Use one gateway key per service and environment.
+- Grant environment override only to trusted platform infrastructure.
+- Revoke stale keys and record an owner for every active key.
+- Monitor authentication failures and rate-limit events.
+- Exercise rotation in staging before relying on the production runbook.
+
+</ProductionChecklist>

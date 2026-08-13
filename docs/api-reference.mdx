@@ -3,7 +3,7 @@ title: API reference
 description: Interactive OpenAPI 3.1 reference for every Bastio endpoint.
 ---
 
-The full Bastio API is documented as an OpenAPI 3.1 spec at
+The full self-hosted API is documented as an OpenAPI 3.1 spec at
 [`cmd/server/openapi.yaml`](https://github.com/bastio-ai/bastio/blob/main/cmd/server/openapi.yaml)
 and rendered as an interactive Scalar reference on every running
 Bastio instance.
@@ -17,40 +17,28 @@ available at:
 http://<your-bastio-host>:4000/docs
 ```
 
-The page renders `openapi.yaml` with Scalar — try requests
-directly from the browser, generate code samples, or download
-the spec for client-codegen. The OpenAPI spec is the source of
-truth: the dashboard's typed API client and the SDKs are all
-generated from it, so the routes you see here are the routes
-that exist.
+The page renders `openapi.yaml` with Scalar — try requests directly from the browser, generate code samples, or download the spec for client-codegen. The specification is the source of truth for the self-hosted HTTP contract and the dashboard's generated API types. The first-party TypeScript SDK keeps a small hand-written surface that is reviewed against the same schemas.
 
 ## On Bastio Cloud
 
-The interactive reference is at:
+A consolidated public Cloud OpenAPI reference is not available yet. The current generated contract is the self-hosted server specification. Cloud gateway requests use an environment-scoped API key; dashboard management routes use the secure dashboard session and are not intended as public service APIs.
 
-```
-https://cloud.bastio.com/docs
-```
-
-Same Scalar UI. Authenticated requests use your dashboard
-session cookie; unauthenticated browsing of the spec works for
-public reference.
+Until the Cloud contract is published, use the [Gateway guide](/docs/gateway) for the supported public integration and treat dashboard network calls as internal implementation details.
 
 ## Major route groups
 
 | Prefix | Purpose |
 |---|---|
 | `POST /v1/chat/completions` | OpenAI-compatible gateway |
-| `POST /v1/messages` | Anthropic-compatible gateway |
-| `POST /v1/detect` | Standalone detection (used by TypeScript / Python SDKs) |
+| `POST /v1/guard/{proxyId}/v1/messages` | Anthropic-compatible gateway |
+| `POST /v1/detect` | Standalone detection (used by TypeScript SDKs and self-hosted integrations) |
 | `POST /v1/pii/mask` | Standalone PII & secret tokenization and redaction |
 | `POST /v1/pii/unmask` | Reversible PII token unmasking |
 | `POST /v1/guardrails/agent-action` | Autonomous agent tool call and command inspection |
-| `GET /v1/audit/export` | 1-Click EU AI Act & ISO 42001 compliance audit export |
-| `/api/v1/proxies/*` | Proxy CRUD (gateway API keys + provider routing) |
-| `/api/v1/profiles/*` | Security profile CRUD |
-| `/api/v1/traces/*` | Read traces — request/response audit log |
-| `/api/v1/threats/*` | Read threat events |
+| `/v1/proxies/*` | Proxy CRUD and provider routing |
+| `/v1/security/profiles/*` | Security profile CRUD |
+| `/v1/traces/*` | Read traces — request/response audit log |
+| `/v1/threats/*` | Read threat events |
 | `/v1/workspace/*` | Enterprise Private AI Portal (workforce chat, knowledge base, assistants) |
 
 ## Generated clients
@@ -60,9 +48,6 @@ The OpenAPI spec drives:
 - The dashboard's typed API client (`dashboard/src/api/schema.ts`,
   generated via `openapi-typescript`).
 - The TypeScript SDK's request types (`@bastio/core`).
-- The Python SDK's typed responses (`bastio/types.py`).
-- Documentation rendering at `/docs` on every running instance.
+- Interactive reference rendering at `/docs` on a running self-hosted instance.
 
-If you spot a route in the source that's missing from the spec,
-that's a CI-caught bug — open an issue and we'll add it. The
-spec lags behind code by at most one release.
+If you spot a runtime route missing from the self-hosted specification, open an issue with the route, method, and release version so the contract can be corrected.
