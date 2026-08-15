@@ -132,7 +132,7 @@ function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: 
           <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
         </button>
         <div className="flex items-center justify-end gap-1 sm:pl-3">
-          <Button variant="ghost" size="sm" render={<Link to="/proxies/$id" params={{ id: proxy.id }} />}><ArrowUpRight /> Details</Button>
+          <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/proxies/$id" params={{ id: proxy.id }} />}><ArrowUpRight /> Details</Button>
           <Button variant="ghost" size="sm" onClick={onToggle}>{proxy.is_active ? "Disable" : "Enable"}</Button>
           <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-destructive" onClick={onDelete} aria-label={`Delete ${proxy.name}`}><Trash2 /></Button>
         </div>

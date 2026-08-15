@@ -66,7 +66,11 @@ export function WorkspacesPage() {
 
   const submitDialog = async () => {
     const nextName = name.trim();
-    if (!dialog || nextName.length < 2 || submitting) return;
+    if (!dialog || submitting) return;
+    if (nextName.length < 2) {
+      setError("Enter a workspace name with at least 2 characters.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -165,7 +169,7 @@ export function WorkspacesPage() {
                       </Button>
                     ) : null}
                     {active ? (
-                      <Button variant="outline" size="sm" render={<Link to="/api-keys" />}>
+                      <Button nativeButton={false} variant="outline" size="sm" render={<Link to="/api-keys" />}>
                         Manage API keys <ArrowRight className="size-3.5" />
                       </Button>
                     ) : (
@@ -200,7 +204,7 @@ export function WorkspacesPage() {
 
       <Dialog open={Boolean(dialog)} onOpenChange={(open) => !open && setDialog(null)}>
         <DialogContent className="sm:max-w-md">
-          <form onSubmit={(event) => { event.preventDefault(); void submitDialog(); }}>
+          <form noValidate onSubmit={(event) => { event.preventDefault(); void submitDialog(); }}>
             <DialogHeader>
               <DialogTitle>{dialog?.kind === "rename" ? "Rename workspace" : "Create workspace"}</DialogTitle>
               <DialogDescription>
@@ -212,18 +216,31 @@ export function WorkspacesPage() {
             <div className="space-y-4 py-5">
               <label className="block space-y-2 text-xs font-medium">
                 Workspace name
-                <Input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Acme Security" minLength={2} maxLength={80} required />
+                <Input
+                  autoFocus
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    if (error) setError("");
+                  }}
+                  placeholder="Acme Security"
+                  minLength={2}
+                  maxLength={80}
+                  required
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "workspace-dialog-error" : undefined}
+                />
               </label>
               <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-[11px] leading-relaxed text-muted-foreground">
                 {dialog?.kind === "rename"
                   ? "Renaming does not move or rotate API keys. It is recorded in the workspace audit log."
                   : "A new production environment and 14-day trial are provisioned automatically."}
               </div>
-              {error ? <p className="text-xs text-destructive">{error}</p> : null}
+              {error ? <p id="workspace-dialog-error" role="alert" className="text-xs text-destructive">{error}</p> : null}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
-              <Button type="submit" disabled={submitting || name.trim().length < 2}>
+              <Button type="submit" disabled={submitting}>
                 {submitting ? "Saving…" : dialog?.kind === "rename" ? "Save name" : "Create workspace"}
               </Button>
             </DialogFooter>

@@ -325,7 +325,7 @@ export const workspaceApi = {
   createInvitation: (body: {
     email: string;
     role?: "owner" | "admin" | "member" | "viewer";
-  }): Promise<Invitation> => rawJSON("/v1/workspace/invitations", { body }),
+  }): Promise<Invitation & { token: string }> => rawJSON("/v1/workspace/invitations", { body }),
   revokeInvitation: (id: string) =>
     rawJSON<void>(`/v1/workspace/invitations/${encodeURIComponent(id)}`, {
       method: "DELETE",

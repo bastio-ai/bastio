@@ -242,14 +242,14 @@ function LayoutFrame({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <header className="hidden h-14 flex-shrink-0 items-center border-b border-border-subtle bg-background md:flex">
+      <header className="hidden h-14 flex-shrink-0 items-center border-b border-border-default bg-surface-1/95 shadow-sm backdrop-blur-xl md:flex">
         <button
           type="button"
           onClick={() => setSidebarCollapsed((value) => !value)}
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
-            "flex h-full flex-shrink-0 items-center border-r border-border-subtle px-4 text-left transition-[width] duration-200 hover:bg-surface-1",
-            sidebarCollapsed ? "w-14 justify-center px-0" : "w-[220px]",
+            "flex h-full flex-shrink-0 items-center border-r border-border-default px-4 text-left transition-[width] duration-200 hover:bg-surface-2",
+            sidebarCollapsed ? "w-14 justify-center px-0" : "w-[236px]",
           )}
         >
           <BastioWordmark height={sidebarCollapsed ? 12 : 26} mark={sidebarCollapsed} />
@@ -259,11 +259,11 @@ function LayoutFrame({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={palette.toggle}
-            className="mx-auto flex h-8 min-w-[260px] max-w-[560px] flex-1 items-center gap-2 rounded-md border border-border-subtle bg-surface-1 px-3 text-[11px] text-muted-foreground transition-colors hover:border-border-default hover:text-foreground"
+            className="mx-auto flex h-9 min-w-[260px] max-w-[580px] flex-1 items-center gap-2 rounded-md border border-border-default bg-background px-3 text-[13px] text-muted-foreground shadow-sm transition-colors hover:border-border-strong hover:text-foreground"
           >
             <Search className="h-3.5 w-3.5" />
             <span>Search or run a command…</span>
-            <kbd className="ml-auto rounded border border-border-subtle bg-surface-2 px-1.5 py-0.5 font-mono text-[9px]">⌘ K</kbd>
+            <kbd className="ml-auto rounded-sm border border-border-default bg-surface-2 px-1.5 py-0.5 font-mono text-[10px]">⌘ K</kbd>
           </button>
 
           <HeaderSelect
@@ -285,7 +285,7 @@ function LayoutFrame({ children }: { children: ReactNode }) {
             onClick={() => controls.setLive(!controls.live)}
             aria-pressed={controls.live}
             className={cn(
-              "hidden h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-1 px-2.5 text-[11px] transition-colors hover:border-border-default hover:text-foreground xl:flex",
+              "hidden h-9 items-center gap-2 rounded-md border border-border-default bg-background px-3 text-xs transition-colors hover:border-border-strong hover:text-foreground xl:flex",
               !controls.live && "text-muted-foreground",
             )}
           >
@@ -296,9 +296,9 @@ function LayoutFrame({ children }: { children: ReactNode }) {
             variant="outline"
             size="sm"
             onClick={() => setConnectCliOpen(true)}
-            className="hidden sm:flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium border-border-subtle bg-surface-1 hover:border-border-default hover:bg-surface-2 transition-colors"
+            className="hidden h-9 items-center gap-1.5 border-border-default bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:border-border-strong hover:bg-surface-2 sm:flex"
           >
-            <Terminal className="size-3.5 text-accent" />
+            <Terminal className="size-3.5 text-warn" />
             <span>Connect CLI &amp; MCP</span>
           </Button>
           <ConnectionStatus
@@ -314,7 +314,7 @@ function LayoutFrame({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <header className="flex h-12 flex-shrink-0 items-center gap-3 border-b border-border-subtle px-3 md:hidden">
+      <header className="flex h-13 flex-shrink-0 items-center gap-3 border-b border-border-default bg-surface-1 px-3 shadow-sm md:hidden">
         <button type="button" onClick={() => setMobileOpen(true)} aria-label="Open navigation" className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-2">
           <Menu className="h-4 w-4" />
         </button>
@@ -333,8 +333,8 @@ function LayoutFrame({ children }: { children: ReactNode }) {
 
         <aside
           className={cn(
-            "flex flex-shrink-0 flex-col border-r border-border-subtle bg-background transition-[width,transform] duration-200",
-            sidebarCollapsed ? "w-14" : "w-[220px]",
+            "flex flex-shrink-0 flex-col border-r border-border-default bg-surface-1 transition-[width,transform] duration-200",
+            sidebarCollapsed ? "w-14" : "w-[236px]",
             "fixed inset-y-0 left-0 z-50 md:static",
             mobileOpen ? "translate-x-0 w-[260px]" : "-translate-x-full md:translate-x-0",
           )}
@@ -404,13 +404,19 @@ function LayoutFrame({ children }: { children: ReactNode }) {
       <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <form
+            noValidate
             onSubmit={async (event) => {
               event.preventDefault();
               if (!headerExtension.onCreateWorkspace || creatingWorkspace) return;
+              const nextWorkspaceName = workspaceName.trim();
+              if (nextWorkspaceName.length < 2) {
+                setWorkspaceError("Enter a workspace name with at least 2 characters.");
+                return;
+              }
               setCreatingWorkspace(true);
               setWorkspaceError("");
               try {
-                await headerExtension.onCreateWorkspace(workspaceName.trim());
+                await headerExtension.onCreateWorkspace(nextWorkspaceName);
               } catch (error) {
                 setWorkspaceError(error instanceof Error ? error.message : "Unable to create workspace");
                 setCreatingWorkspace(false);
@@ -424,16 +430,29 @@ function LayoutFrame({ children }: { children: ReactNode }) {
             <div className="space-y-4 py-5">
               <label className="block space-y-2 text-xs font-medium">
                 Workspace name
-                <Input autoFocus value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Acme Security" minLength={2} maxLength={80} required />
+                <Input
+                  autoFocus
+                  value={workspaceName}
+                  onChange={(event) => {
+                    setWorkspaceName(event.target.value);
+                    if (workspaceError) setWorkspaceError("");
+                  }}
+                  placeholder="Acme Security"
+                  minLength={2}
+                  maxLength={80}
+                  required
+                  aria-invalid={Boolean(workspaceError)}
+                  aria-describedby={workspaceError ? "workspace-create-error" : undefined}
+                />
               </label>
               <div className="rounded-lg border border-border-subtle bg-surface-1 p-3 text-[11px] leading-relaxed text-muted-foreground">
                 This workspace gets its own data boundary, members, API credentials, usage, and billing. A 14-day trial starts when it is created.
               </div>
-              {workspaceError ? <p className="text-xs text-danger">{workspaceError}</p> : null}
+              {workspaceError ? <p id="workspace-create-error" role="alert" className="text-xs text-danger">{workspaceError}</p> : null}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setWorkspaceDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={creatingWorkspace || workspaceName.trim().length < 2}>{creatingWorkspace ? "Creating…" : "Create workspace"}</Button>
+              <Button type="submit" disabled={creatingWorkspace}>{creatingWorkspace ? "Creating…" : "Create workspace"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -532,7 +551,7 @@ function SidebarContextSelect({
     <div
       className={cn(
         "flex flex-shrink-0 items-center transition-[padding] duration-200",
-        placement === "top" ? "border-b border-border-subtle py-1.5" : "border-t border-border-subtle bg-surface-1/30 py-1.5",
+        placement === "top" ? "border-b border-border-default py-2" : "border-t border-border-default bg-background/45 py-2",
         collapsed ? "justify-center px-2" : "px-2",
       )}
     >
@@ -559,8 +578,8 @@ function SidebarContextSelect({
                 {status ? <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-background bg-success" /> : null}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[9px] font-medium uppercase leading-3 tracking-widest text-muted-foreground/70">{eyebrow}</span>
-                <span className="block truncate text-[11px] font-medium leading-4 text-foreground">{displayValue}</span>
+                <span className="block text-[10px] font-medium leading-3 tracking-wide text-muted-foreground">{eyebrow}</span>
+                <span className="mt-0.5 block truncate text-xs font-medium leading-4 text-foreground">{displayValue}</span>
               </span>
             </span>
           )}
@@ -572,7 +591,7 @@ function SidebarContextSelect({
                 {item.icon ?? (item.action ? <Plus className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" /> : null)}
                 <span className="min-w-0">
                   <span className="block truncate text-xs font-medium">{item.label}</span>
-                  {item.detail ? <span className="block truncate text-[10px] text-muted-foreground">{item.detail}</span> : null}
+                  {item.detail ? <span className="block truncate text-[11px] text-muted-foreground">{item.detail}</span> : null}
                 </span>
               </span>
             </SelectItem>
@@ -606,11 +625,11 @@ function HeaderSelect({
 }) {
   return (
     <Select value={value} onValueChange={(next) => next && onChange(next)} disabled={disabled}>
-      <SelectTrigger aria-label={ariaLabel} className={cn("h-9 min-w-[126px] max-w-[180px] rounded-md border-border-subtle bg-surface-1 px-2.5 py-0 text-left hover:border-border-default", className)}>
+      <SelectTrigger aria-label={ariaLabel} className={cn("h-9 min-w-[132px] max-w-[190px] rounded-md border-border-default bg-background px-2.5 py-0 text-left shadow-sm hover:border-border-strong", className)}>
         {status ? <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-success" /> : null}
         <span className="min-w-0 flex-1">
-          <span className="block text-[9px] leading-3 text-muted-foreground">{eyebrow}</span>
-          <span className="block truncate text-[11px] font-medium leading-4 text-foreground">{displayValue}</span>
+          <span className="block text-[10px] leading-3 text-muted-foreground">{eyebrow}</span>
+          <span className="block truncate text-xs font-medium leading-4 text-foreground">{displayValue}</span>
         </span>
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[220px]">
@@ -620,7 +639,7 @@ function HeaderSelect({
               {item.icon ?? (item.action ? <Plus className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" /> : null)}
               <span className="min-w-0">
               <span className="block truncate text-xs font-medium">{item.label}</span>
-              {item.detail ? <span className="block truncate text-[10px] text-muted-foreground">{item.detail}</span> : null}
+              {item.detail ? <span className="block truncate text-[11px] text-muted-foreground">{item.detail}</span> : null}
               </span>
             </span>
           </SelectItem>
@@ -667,7 +686,7 @@ function ConnectionStatus({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-1 px-2.5 text-[11px] transition-colors hover:border-border-default"
+        className="flex h-9 items-center gap-2 rounded-md border border-border-default bg-background px-3 text-xs shadow-sm transition-colors hover:border-border-strong"
       >
         <span className={cn("h-1.5 w-1.5 rounded-full", unavailable ? "bg-danger" : connected ? "bg-success" : "bg-warn")} />
         <span>{label}</span>
@@ -748,16 +767,16 @@ function GlobalNavigation({
         </div>
       ) : (
         <>
-          <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-3">
+          <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
             {navSections.map((section) => (
               <Fragment key={section.label}>
                 <div>
-                  <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">{section.label}</p>
+                  <p className="mb-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground">{section.label}</p>
                   <div className="space-y-0.5">
                     {section.items.map(({ to, label, icon: Icon }) => {
                       const active = currentPath === to;
                       return (
-                        <Link key={to} to={to as never} onClick={onNavigate} className={cn("flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[12px] transition-colors", active ? "bg-surface-2 font-medium text-foreground" : "text-muted-foreground hover:bg-surface-2/70 hover:text-foreground")}>
+                        <Link key={to} to={to as never} onClick={onNavigate} className={cn("flex min-h-9 items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition-colors", active ? "bg-surface-2 font-medium text-foreground shadow-[inset_2px_0_0_var(--warn)]" : "text-muted-foreground hover:bg-surface-2/80 hover:text-foreground")}>
                           <Icon className="h-4 w-4 flex-shrink-0" /> {label}
                         </Link>
                       );
@@ -771,7 +790,7 @@ function GlobalNavigation({
           </nav>
           <Separator className="opacity-50" />
           <div className="flex items-center justify-between px-5 py-2.5">
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
+            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
               <BookOpen className="h-3 w-3" /> Docs
               <ExternalLink className="h-2.5 w-2.5 opacity-50 transition-opacity group-hover:opacity-100" aria-hidden="true" />
               <span className="sr-only">(opens in a new tab)</span>
@@ -797,12 +816,12 @@ function guessEnvironmentKind(name: string): "production" | "staging" | "develop
 function renderExtSection(section: LayoutNavSection, currentPath: string) {
   return (
     <div key={`ext:${section.label}`}>
-      <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">{section.label}</p>
+      <p className="mb-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground">{section.label}</p>
       <div className="space-y-0.5">
         {section.items.map(({ to, label, icon: Icon }) => {
           const active = currentPath === to;
           return (
-            <Link key={to} to={to as never} className={cn("flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[12px] transition-colors", active ? "bg-surface-2 font-medium text-foreground" : "text-muted-foreground hover:bg-surface-2/70 hover:text-foreground")}>
+            <Link key={to} to={to as never} className={cn("flex min-h-9 items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition-colors", active ? "bg-surface-2 font-medium text-foreground shadow-[inset_2px_0_0_var(--warn)]" : "text-muted-foreground hover:bg-surface-2/80 hover:text-foreground")}>
               <Icon className="h-4 w-4 flex-shrink-0" /> {label}
             </Link>
           );
