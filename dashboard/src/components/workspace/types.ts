@@ -7,6 +7,7 @@
 
 import { http, unwrap } from "@/api/typed";
 import type { components } from "@/api/schema";
+import type { ModelProvider } from "./model-picker";
 
 // Base types come from the generated schema. Intersection augmentations
 // below carry fields the OpenAPI spec hasn't been updated for yet —
@@ -23,11 +24,13 @@ export type SettingsPatch = components["schemas"]["WorkspaceSettingsPatch"] & {
   ai_persona_personality?: string | null;
   ai_persona_tone?: string | null;
 };
-export type Assistant = Omit<components["schemas"]["WorkspaceAssistant"], "language"> & {
+export type Assistant = Omit<components["schemas"]["WorkspaceAssistant"], "language" | "default_provider"> & {
   language?: string | null; // null/undefined = auto-detect
+  default_provider: ModelProvider;
 };
-export type AssistantPatch = Omit<components["schemas"]["WorkspaceAssistantPatch"], "language"> & {
+export type AssistantPatch = Omit<components["schemas"]["WorkspaceAssistantPatch"], "language" | "default_provider"> & {
   language?: string | null;
+  default_provider?: ModelProvider;
 };
 export type KnowledgeSource = components["schemas"]["WorkspaceKnowledgeSource"] & {
   character_count?: number;
@@ -114,6 +117,20 @@ export type AuditEntry = {
   created_at: string;
 };
 
+function normalizeAssistant(
+  assistant: components["schemas"]["WorkspaceAssistant"],
+): Assistant {
+  return {
+    ...assistant,
+    // Older dashboard builds wrote "google" even though the backend
+    // provider is named "gemini". Normalize those existing rows when
+    // they enter the current client without changing the API contract.
+    default_provider: assistant.default_provider === "google"
+      ? "gemini"
+      : assistant.default_provider as ModelProvider,
+  };
+}
+
 export const workspaceApi = {
   status: () => unwrap(http.GET("/v1/workspace/status")),
 
@@ -124,9 +141,16 @@ export const workspaceApi = {
     unwrap(http.PATCH("/v1/workspace/settings", { body: patch as components["schemas"]["WorkspaceSettingsPatch"] })),
 
   // assistants
-  listAssistants: () => unwrap(http.GET("/v1/workspace/assistants")),
-  getAssistant: (id: string) =>
-    unwrap(http.GET("/v1/workspace/assistants/{id}", { params: { path: { id } } })),
+  listAssistants: async (): Promise<{ assistants: Assistant[] }> => {
+    const response = await unwrap(http.GET("/v1/workspace/assistants"));
+    return {
+      assistants: response.assistants.map((assistant) => normalizeAssistant(assistant)),
+    };
+  },
+  getAssistant: async (id: string): Promise<Assistant> => {
+    const response = await unwrap(http.GET("/v1/workspace/assistants/{id}", { params: { path: { id } } }));
+    return normalizeAssistant(response);
+  },
   createAssistant: (a: Partial<Assistant>) =>
     unwrap(
       http.POST("/v1/workspace/assistants", {

@@ -239,7 +239,14 @@ func EstimateCostCents(model string, inputTokens, outputTokens int) float64 {
 // Order matters — more-specific prefixes/contains must come first
 // (gpt-4o-mini before gpt-4o; o1-mini before o1).
 func pricingPer1MTokens(model string) (inputCents, outputCents float64) {
+	model = strings.ToLower(model)
 	switch {
+	case strings.Contains(model, "gpt-5.6-sol"), strings.HasSuffix(model, "gpt-5.6"):
+		return 500, 3000
+	case strings.Contains(model, "gpt-5.6-terra"):
+		return 200, 1200
+	case strings.Contains(model, "gpt-5.6-luna"):
+		return 20, 120
 	case strings.Contains(model, "gpt-4o-mini"), strings.Contains(model, "gpt-5.4-mini"):
 		return 15, 60
 	case strings.Contains(model, "gpt-4o"), strings.Contains(model, "gpt-5.4"):
@@ -254,6 +261,28 @@ func pricingPer1MTokens(model string) (inputCents, outputCents float64) {
 		return 300, 1200
 	case strings.HasPrefix(model, "o1"):
 		return 1500, 6000
+	case strings.Contains(model, "claude-fable-5"):
+		return 1000, 5000
+	case strings.Contains(model, "claude-opus-5"):
+		return 500, 2500
+	case strings.Contains(model, "claude-sonnet-5"):
+		return 200, 1000
+	case strings.Contains(model, "claude-haiku-4-5"):
+		return 100, 500
+	case strings.Contains(model, "gemini-3.7-flash"), strings.Contains(model, "gemini-3.6-flash"):
+		return 75, 375
+	case strings.Contains(model, "gemini-3.5-flash-lite"):
+		return 30, 250
+	case strings.Contains(model, "deepseek-v4-flash"):
+		return 14, 28
+	case strings.Contains(model, "deepseek-v4-pro"):
+		return 43.5, 87
+	case strings.Contains(model, "gpt-oss-120b"):
+		return 15, 60
+	case strings.Contains(model, "llama-3.3-70b-versatile"):
+		return 59, 79
+	case strings.Contains(model, "llama-3.1-8b-instant"):
+		return 5, 8
 	case strings.Contains(model, "claude-haiku"), strings.Contains(model, "claude-3-haiku"):
 		return 25, 125
 	case strings.Contains(model, "claude-sonnet"),

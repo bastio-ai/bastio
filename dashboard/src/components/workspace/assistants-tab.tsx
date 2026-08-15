@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/skeleton";
 import { workspaceApi, type Assistant, type KnowledgeSource } from "./types";
+import { DEFAULT_MODEL, DEFAULT_MODELS, providerLabel, type ModelProvider } from "./model-picker";
 
 export function AssistantsTab() {
   const qc = useQueryClient();
@@ -176,8 +177,8 @@ function AssistantEditor({
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [systemPrompt, setSystemPrompt] = useState(initial?.system_prompt ?? "");
-  const [provider, setProvider] = useState<Assistant["default_provider"]>(initial?.default_provider ?? "openai");
-  const [model, setModel] = useState(initial?.default_model ?? "gpt-4o-mini");
+  const [provider, setProvider] = useState<ModelProvider>(initial?.default_provider ?? DEFAULT_MODEL.provider);
+  const [model, setModel] = useState(initial?.default_model ?? DEFAULT_MODEL.model);
   const [isDefault, setIsDefault] = useState(initial?.is_default ?? false);
   const [language, setLanguage] = useState(initial?.language ?? "");
   const [suggestedPrompts, setSuggestedPrompts] = useState((initial?.suggested_prompts ?? []).join("\n"));
@@ -188,6 +189,8 @@ function AssistantEditor({
     staleTime: 60_000,
   });
   const availableKB: KnowledgeSource[] = knowledge.data?.sources ?? [];
+  const providerModels = DEFAULT_MODELS.filter((item) => item.provider === provider);
+  const currentModelKnown = providerModels.some((item) => item.model === model);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -245,19 +248,35 @@ function AssistantEditor({
             <FieldLabel>Provider</FieldLabel>
             <select
               value={provider}
-              onChange={(event) => setProvider(event.target.value as Assistant["default_provider"])}
+              onChange={(event) => {
+                const next = event.target.value as ModelProvider;
+                setProvider(next);
+                const suggested = DEFAULT_MODELS.find((item) => item.provider === next);
+                if (suggested) setModel(suggested.model);
+              }}
               className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-[12px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="bedrock">Amazon Bedrock</option>
-              <option value="ollama">Ollama</option>
-              <option value="google">Google</option>
+              {(["openai", "anthropic", "gemini", "deepseek", "groq", "bedrock", "ollama"] as ModelProvider[]).map((item) => (
+                <option key={item} value={item}>{providerLabel(item)}</option>
+              ))}
             </select>
           </div>
           <div>
             <FieldLabel>Default model</FieldLabel>
-            <Input value={model} onChange={(event) => setModel(event.target.value)} className="font-mono" />
+            {providerModels.length > 0 ? (
+              <select
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                className="h-8 w-full rounded-lg border border-input bg-background px-2.5 font-mono text-[12px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {!currentModelKnown ? <option value={model}>{model}</option> : null}
+                {providerModels.map((item) => (
+                  <option key={item.model} value={item.model}>{item.label}</option>
+                ))}
+              </select>
+            ) : (
+              <Input value={model} onChange={(event) => setModel(event.target.value)} className="font-mono" />
+            )}
           </div>
           <div className="sm:col-span-2">
             <FieldLabel>Response language</FieldLabel>

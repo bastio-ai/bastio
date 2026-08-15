@@ -1,7 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMutation } from "@tanstack/react-query";
-import { Plus, Trash2, Pin, PinOff, Bot, Paperclip, X, ArrowUp, MoreHorizontal, Pencil, PanelLeft, PanelLeftClose, Search } from "lucide-react";
+import {
+  ArrowUp,
+  Bot,
+  FileText,
+  LockKeyhole,
+  MoreHorizontal,
+  PanelLeft,
+  PanelLeftClose,
+  Paperclip,
+  PenLine,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  Scale,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -477,7 +497,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
             // the row past the parent's height and pushes the composer
             // off-screen. minmax(0,1fr) forces the row to fit the
             // grid's own height, letting `min-h-0` on children shrink.
-            "flex h-full min-h-0 lg:grid lg:grid-cols-[280px_1fr] lg:grid-rows-[minmax(0,1fr)] lg:gap-4"
+            "flex h-full min-h-0 lg:grid lg:grid-cols-[296px_1fr] lg:grid-rows-[minmax(0,1fr)] lg:gap-2.5"
           : "flex h-full min-h-0"
       }
     >
@@ -494,7 +514,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
               the chat; grid column on desktop. max-w-[85vw] keeps a
               sliver of chat visible behind on phones — the user can
               tap there to dismiss too. */}
-          <div className="fixed inset-y-0 left-0 z-50 w-[300px] max-w-[85vw] lg:relative lg:inset-auto lg:z-auto lg:w-auto lg:max-w-none">
+          <div className="fixed inset-y-0 left-0 z-50 w-[304px] max-w-[88vw] lg:relative lg:inset-auto lg:z-auto lg:w-auto lg:max-w-none">
             <ConversationList
               items={conversations.data?.conversations ?? []}
               loading={conversations.isLoading}
@@ -523,7 +543,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
       )}
 
       <Card
-        className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        className="workspace-chat-panel relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         onDragOver={(e) => {
           // dataTransfer.types includes "Files" only for file drags —
           // suppresses the overlay during text-selection drags from
@@ -561,34 +581,44 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
               estate to chrome. When the sidebar is collapsed, a
               PanelLeft button appears on the left so the user can
               bring it back. */}
-          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
-            {!sidebarOpen ? (
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                aria-label="Show conversations"
-                title="Show conversations"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </button>
-            ) : (
-              // Spacer so the trust tag stays right-aligned when the
-              // sidebar is open and the toggle button is hidden.
-              <span />
-            )}
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              zero retention by default · audited
-            </span>
+          <div className="workspace-chat-toolbar flex min-h-11 items-center justify-between gap-3 border-b border-border px-3 sm:px-4">
+            <div className="flex min-w-0 items-center gap-2.5">
+              {!sidebarOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(true)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] border border-transparent text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground"
+                  aria-label="Show conversations"
+                  title="Show conversations"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </button>
+              ) : null}
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] bg-cyan-500/10 text-cyan-500">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                </span>
+                <span className="truncate text-[12px] font-medium text-foreground">Protected conversation</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="hidden items-center gap-1.5 rounded-[4px] border border-border bg-background/60 px-2 py-1 text-[9px] font-medium text-muted-foreground sm:inline-flex">
+                <LockKeyhole className="h-3 w-3 text-cyan-500" /> Zero retention
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-border bg-background/60 px-2 py-1 text-[9px] font-medium text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Policies active
+              </span>
+            </div>
           </div>
           {/* relative so the floating "jump to latest" button can
               anchor inside the scroll viewport without affecting flow. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
-          <div
-            ref={scrollContainer}
-            onScroll={onScroll}
-            className="flex-1 space-y-4 overflow-y-auto p-6"
-          >
+            <div
+              ref={scrollContainer}
+              onScroll={onScroll}
+              className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6"
+            >
+              <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4">
             {/* Show the empty-state hero + assistant picker when:
                 - no conversation is active, OR
                 - the active conversation has no messages yet
@@ -613,7 +643,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                   onSendFirstMessage={() => {
                     document
                       .querySelector<HTMLTextAreaElement>(
-                        'textarea[placeholder^="Send a message"]',
+                        'textarea[placeholder^="Ask Bastio"]',
                       )
                       ?.focus();
                   }}
@@ -622,9 +652,9 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                 <ChatEmptyState onPickSuggestion={setDraft} />
               );
             })()}
-            {activeID && messages.isLoading && <SkeletonRows count={3} />}
-            {activeID &&
-              messages.data?.messages.map((m, i, arr) => {
+                {activeID && messages.isLoading && <SkeletonRows count={3} />}
+                {activeID &&
+                  messages.data?.messages.map((m, i, arr) => {
                 // Regenerate is only meaningful on the LAST assistant
                 // message (older ones can't be replayed without
                 // throwing away later content). Edit is on every user
@@ -644,24 +674,25 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     }
                   />
                 );
-              })}
-            {pendingUserMessage !== null && (
-              <PendingBubble userText={pendingUserMessage} streamingDraft={streamingDraft} />
+                  })}
+                {pendingUserMessage !== null && (
+                  <PendingBubble userText={pendingUserMessage} streamingDraft={streamingDraft} />
+                )}
+                {error && (
+                  <p className="text-center text-xs text-destructive">{error}</p>
+                )}
+                <div ref={messagesEnd} />
+              </div>
+            </div>
+            {showJumpToLatest && (
+              <button
+                type="button"
+                onClick={jumpToLatest}
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[5px] border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-md transition hover:bg-muted hover:text-foreground"
+              >
+                Jump to latest ↓
+              </button>
             )}
-            {error && (
-              <p className="text-center text-xs text-destructive">{error}</p>
-            )}
-            <div ref={messagesEnd} />
-          </div>
-          {showJumpToLatest && (
-            <button
-              type="button"
-              onClick={jumpToLatest}
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground shadow-md transition hover:bg-muted hover:text-foreground"
-            >
-              ↓ Jump to latest
-            </button>
-          )}
           </div>
 
           {/* Compose caption removed — model + assistant are now
@@ -674,8 +705,9 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
               + (attach), model, assistant pills bottom-left, circular
               send bottom-right. Box itself shows focus state instead
               of putting a hard cyan ring on the textarea. */}
-          <form onSubmit={onSubmit} className="px-4 pb-2 pt-2">
-            <div className="rounded-xl border border-border bg-background transition-colors focus-within:border-foreground/30">
+          <form onSubmit={onSubmit} className="workspace-composer-shell border-t border-border/70 bg-background/75 px-3 pb-3 pt-3 backdrop-blur sm:px-5">
+            <div className="mx-auto w-full max-w-4xl">
+            <div className="workspace-composer rounded-[8px] border border-border bg-background transition-colors focus-within:border-foreground/35 focus-within:ring-1 focus-within:ring-foreground/10">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -706,9 +738,8 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                   }
                 }}
                 rows={1}
-                className="block w-full resize-none border-none bg-transparent px-4 pt-3 text-sm placeholder:text-muted-foreground focus:outline-none"
-                style={{ minHeight: "44px" }}
-                placeholder="Send a message…   (Cmd/Ctrl + Enter to send)"
+                className="block min-h-12 w-full resize-none border-none bg-transparent px-4 pt-3.5 text-[14px] leading-6 placeholder:text-muted-foreground focus:outline-none"
+                placeholder="Ask Bastio anything about your work…"
                 disabled={sending}
               />
 
@@ -746,7 +777,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                         title={
                           a.kind === "text"
                             ? `${a.text.length.toLocaleString()} chars extracted`
-                            : a.reason ?? "binary — content not extracted"
+                            : a.reason ?? "binary attachment; content not extracted"
                         }
                       >
                         <Paperclip className="h-3 w-3" />
@@ -768,7 +799,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
               {/* Control row inside the box. Left: + (attach) +
                   model picker pill + assistant chip. Right: circular
                   send button — primary tone when there's content. */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2.5">
                 <div className="flex flex-wrap items-center gap-1">
                   <button
                     type="button"
@@ -818,6 +849,8 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     }}
                   />
                 </div>
+                <div className="flex items-center gap-2">
+                  <span className="hidden text-[10px] text-muted-foreground/70 sm:inline">⌘↵ to send</span>
                 {sending ? (
                   // Stop button — cancels the SSE stream. The
                   // streaming bubble disappears; the user message
@@ -829,7 +862,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     onClick={cancelStream}
                     aria-label="Stop generating"
                     title="Stop generating (Esc)"
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition"
+                    className="flex h-8 w-8 items-center justify-center rounded-[5px] bg-foreground text-background transition hover:opacity-90"
                   >
                     <span className="block h-2.5 w-2.5 rounded-sm bg-background" />
                   </button>
@@ -838,20 +871,22 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     type="submit"
                     disabled={!draft.trim() && attachments.length === 0}
                     aria-label="Send"
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition disabled:bg-muted disabled:text-muted-foreground"
+                    className="flex h-8 w-8 items-center justify-center rounded-[5px] bg-foreground text-background transition hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground disabled:hover:opacity-100"
                   >
                     <ArrowUp className="h-4 w-4" />
                   </button>
                 )}
+                </div>
               </div>
             </div>
             {/* Disclaimer sits below the box, muted enough to not
                 compete with the input itself but visible on every
                 load. Static text, not dismissible — every chat
                 product we benchmarked keeps it permanently. */}
-            <p className="mt-2 text-center text-[10px] text-muted-foreground/60">
-              AI can make mistakes. Double-check important information.
+            <p className="mt-2 text-center text-[10px] text-muted-foreground/65">
+              AI can make mistakes. Your workspace policies apply to every message.
             </p>
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -909,26 +944,31 @@ function ConversationList({
   const hiddenCount = filtered.length - totalShown;
 
   return (
-    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-      <CardContent className="flex min-h-0 flex-1 flex-col p-2">
-        <div className="mb-2 flex shrink-0 items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1 justify-start"
-            onClick={onNew}
-          >
-            <Plus className="mr-2 h-4 w-4" /> New chat
-          </Button>
+    <Card className="workspace-conversation-panel flex h-full min-h-0 flex-col overflow-hidden">
+      <CardContent className="flex min-h-0 flex-1 flex-col p-2.5">
+        <div className="mb-2.5 flex shrink-0 items-center justify-between px-1 pt-0.5">
+          <div>
+            <p className="text-[13px] font-semibold tracking-tight text-foreground">Conversations</p>
+            <p className="text-[10px] text-muted-foreground">Your recent workspace activity</p>
+          </div>
           <button
             type="button"
             onClick={onCollapse}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground transition hover:bg-muted hover:text-foreground"
             aria-label="Hide conversations"
             title="Hide conversations"
           >
             <PanelLeftClose className="h-4 w-4" />
           </button>
+        </div>
+        <div className="mb-2 flex shrink-0 items-center gap-2">
+          <Button
+            size="sm"
+            className="h-9 flex-1 justify-center rounded-[5px]"
+            onClick={onNew}
+          >
+            <Plus className="mr-2 h-4 w-4" /> New chat
+          </Button>
         </div>
         {/* Sidebar search — filters the bucketed list by title.
             Hidden when there are fewer than 5 conversations to keep
@@ -941,7 +981,7 @@ function ConversationList({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search conversations…"
-              className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-foreground/20"
+              className="h-9 w-full rounded-[5px] border border-border bg-background pl-8 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-foreground/20"
             />
           </div>
         )}
@@ -955,7 +995,7 @@ function ConversationList({
           {groups.map((g) =>
             g.items.length === 0 ? null : (
               <section key={g.label} className="mb-3">
-                <p className="sticky top-0 mb-1 bg-background px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                <p className="sticky top-0 z-[1] mb-1 bg-background/95 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70 backdrop-blur">
                   {g.label}
                 </p>
                 <ul className="space-y-0.5">
@@ -984,7 +1024,7 @@ function ConversationList({
         {!loading && items.length > 0 && (
           <a
             href="/chats"
-            className="mt-2 flex shrink-0 items-center justify-between rounded-md border border-transparent px-2 py-2 text-xs text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground"
+            className="mt-2 flex shrink-0 items-center justify-between rounded-[5px] border border-transparent px-2 py-2 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-muted hover:text-foreground"
           >
             <span>View all chats</span>
             <span className="flex items-center gap-1.5">
@@ -1050,32 +1090,66 @@ function PendingBubble({
 // chatbots — same speed, your knowledge, your branding.
 function ChatEmptyState({ onPickSuggestion }: { onPickSuggestion: (text: string) => void }) {
   const suggestions = [
-    "Summarize this Q3 financial report and flag customer-list mentions.",
-    "Draft an SLA breach response email to a top-5 customer.",
-    "Compare our refund policy with the one in the policy_kb.",
+    {
+      title: "Summarize safely",
+      description: "Extract decisions and flag sensitive details",
+      prompt: "Summarize this Q3 financial report and flag customer-list mentions.",
+      icon: FileText,
+    },
+    {
+      title: "Draft with context",
+      description: "Turn internal context into clear communication",
+      prompt: "Draft an SLA breach response email to a top-5 customer.",
+      icon: PenLine,
+    },
+    {
+      title: "Compare policy",
+      description: "Ground an answer in approved knowledge",
+      prompt: "Compare our refund policy with the one in the policy knowledge base.",
+      icon: Scale,
+    },
+    {
+      title: "Explore an idea",
+      description: "Structure a secure plan before you execute",
+      prompt: "Help me turn a rough product idea into a concise implementation plan.",
+      icon: Sparkles,
+    },
   ];
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 px-6 text-center">
-      <div className="space-y-3 max-w-md">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Where AI work actually happens.
+    <div className="flex min-h-[420px] flex-1 flex-col items-center justify-center px-1 py-10 text-center sm:px-6">
+      <div className="mb-7 max-w-xl">
+        <span className="mb-4 inline-flex items-center gap-2 rounded-[4px] border border-border bg-muted/35 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+          <ShieldCheck className="h-3 w-3 text-cyan-500" /> Protected workspace
+        </span>
+        <h2 className="text-[26px] font-semibold tracking-[-0.025em] text-foreground sm:text-[30px]">
+          How can Bastio help today?
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Same speed as the public chatbots, with your knowledge inline,
-          your policies enforced, and zero retention by default.
+        <p className="mx-auto mt-3 max-w-lg text-[13px] leading-5 text-muted-foreground sm:text-sm">
+          Work with approved models and company knowledge while Bastio enforces your security policies on every request.
         </p>
       </div>
-      <div className="grid w-full max-w-md grid-cols-1 gap-2">
-        {suggestions.map((s) => (
+      <div className="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+        {suggestions.map((suggestion) => {
+          const Icon = suggestion.icon;
+          return (
           <button
-            key={s}
+            key={suggestion.title}
             type="button"
-            onClick={() => onPickSuggestion(s)}
-            className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs text-muted-foreground transition hover:border-cyan-500/40 hover:text-foreground"
+            onClick={() => onPickSuggestion(suggestion.prompt)}
+            className="group rounded-[7px] border border-border bg-background/70 p-3.5 text-left transition hover:border-foreground/20 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {s}
+            <span className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px] border border-border bg-muted/40 text-muted-foreground transition group-hover:text-cyan-500">
+                <Icon className="h-3.5 w-3.5" />
+              </span>
+              <span>
+                <span className="block text-[12px] font-medium text-foreground">{suggestion.title}</span>
+                <span className="mt-0.5 block text-[10px] leading-4 text-muted-foreground">{suggestion.description}</span>
+              </span>
+            </span>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1398,8 +1472,8 @@ function ConversationRow({
 				if (renaming) return;
 				onSelect(c.id);
 			}}
-			className={`group relative flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition ${
-				active ? "bg-muted" : "hover:bg-muted/50"
+			className={`group relative flex min-h-12 cursor-pointer items-center justify-between gap-2 rounded-[5px] border px-2.5 py-1.5 text-sm transition ${
+				active ? "border-border bg-muted text-foreground" : "border-transparent hover:border-border/60 hover:bg-muted/45"
 			}`}
 		>
 			<div className="min-w-0 flex-1">
@@ -1428,11 +1502,11 @@ function ConversationRow({
 							className="w-full min-w-0 rounded-sm border border-border bg-background px-1 text-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
 						/>
 					) : (
-						<p className="truncate">{c.title}</p>
+						<p className="truncate text-[12px] font-medium">{c.title}</p>
 					)}
 				</div>
-				<p className="text-[10px] text-muted-foreground">
-					{relativeTime(c.last_message_at)} · {c.message_count} msgs
+				<p className="mt-0.5 text-[10px] text-muted-foreground">
+					{relativeTime(c.last_message_at)} · {c.message_count} messages
 				</p>
 			</div>
 			{!renaming && (
@@ -1776,7 +1850,7 @@ function composeWithAttachments(message: string, atts: Attachment[]): string {
       parts.push(`![${a.name}](${a.dataURL})`);
     } else {
       const reason = a.reason ?? "content not extracted";
-      parts.push(`### ${a.name}\n\n_(${a.mime}, ${a.size} bytes — ${reason})_`);
+      parts.push(`### ${a.name}\n\n_(${a.mime}, ${a.size} bytes; ${reason})_`);
     }
   }
   if (message.trim()) parts.push(message);

@@ -27,7 +27,7 @@ export function OnboardingCard({
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
           Multi-model chat with your company's knowledge inline. Zero
-          retention by default. Audited and policy-enforced — same speed
+          retention by default. Audited and policy-enforced, with the same speed
           as the public chatbots, but the data stays inside your
           tenant's perimeter.
         </p>
