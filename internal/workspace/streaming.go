@@ -564,7 +564,7 @@ func (h *Handler) resolveAssistantConfig(
 		provName = "openai"
 	}
 	if model == "" {
-		model = "gpt-4o-mini"
+		model = "gpt-5.6-terra"
 	}
 
 	// Persona instruction goes first — it's the highest-level

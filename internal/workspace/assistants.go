@@ -51,7 +51,7 @@ func (h *Handler) createAssistant(w http.ResponseWriter, r *http.Request) {
 		body.DefaultProvider = "openai"
 	}
 	if body.DefaultModel == "" {
-		body.DefaultModel = "gpt-4o-mini"
+		body.DefaultModel = "gpt-5.6-terra"
 	}
 	// Security gate — the assistant's system prompt is replayed
 	// at the head of every chat with this assistant. A malicious

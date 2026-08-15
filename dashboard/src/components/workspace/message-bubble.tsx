@@ -314,7 +314,7 @@ export function AttachmentChipStrip({
             className="inline-flex items-center gap-1 rounded-md border border-border/40 bg-background/40 px-2 py-0.5 text-[11px] text-muted-foreground"
             title={
               a.kind === "binary"
-                ? "binary attachment — content not extracted"
+                ? "binary attachment; content not extracted"
                 : "text content extracted and sent to the model"
             }
           >

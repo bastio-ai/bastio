@@ -52,8 +52,8 @@ func (h *Handler) listConversations(w http.ResponseWriter, r *http.Request) {
 			h.audit(r, "conversations.scanned_all_users", AuditTarget{
 				Type: "workspace",
 			}, map[string]any{
-				"result_count":     len(rows),
-				"distinct_owners":  len(crossOwners),
+				"result_count":    len(rows),
+				"distinct_owners": len(crossOwners),
 			})
 		}
 	}
@@ -120,8 +120,8 @@ func (h *Handler) createConversation(w http.ResponseWriter, r *http.Request) {
 // Archived can flip independently of Title; the right-click menu in
 // the chat list sends just the field that changed.
 type UpdateConversationRequest struct {
-	Title    *string `json:"title,omitempty"`
-	Pinned   *bool   `json:"pinned,omitempty"`
+	Title  *string `json:"title,omitempty"`
+	Pinned *bool   `json:"pinned,omitempty"`
 	// Archived: true → set archived_at = NOW(); false → clear it
 	// (unarchive). Omitted = leave alone.
 	Archived *bool `json:"archived,omitempty"`
@@ -422,14 +422,14 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		finish := "blocked"
 		errStr := "blocked by security policy"
 		asstMsg, err := h.store.AppendMessage(r.Context(), Message{
-			ConversationID:   conversationID,
-			CustomerID:       customerID,
-			Role:             "assistant",
-			Content:          blockedMsg,
-			Provider:         strPtr(string(prov)),
-			Model:            strPtr(model),
-			FinishReason:     &finish,
-			Error:            &errStr,
+			ConversationID: conversationID,
+			CustomerID:     customerID,
+			Role:           "assistant",
+			Content:        blockedMsg,
+			Provider:       strPtr(string(prov)),
+			Model:          strPtr(model),
+			FinishReason:   &finish,
+			Error:          &errStr,
 		})
 		h.recordChatTrace(chatTraceInput{
 			customerID:     customerID,
@@ -612,17 +612,17 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 
 	finish := resp.FinishReason
 	asstMsg, err := h.store.AppendMessage(r.Context(), Message{
-		ConversationID:    conversationID,
-		CustomerID:        customerID,
-		Role:              "assistant",
-		Content:           resp.Content,
-		Provider:          strPtr(string(prov)),
-		Model:             strPtr(resp.Model),
-		PromptTokens:      resp.InputTokens,
-		CompletionTokens:  resp.OutputTokens,
-		CostCents:         estimateCostCents(string(prov), resp.Model, resp.InputTokens, resp.OutputTokens),
-		FinishReason:      &finish,
-		Metadata:          encodeCitationsMetadata(citations),
+		ConversationID:   conversationID,
+		CustomerID:       customerID,
+		Role:             "assistant",
+		Content:          resp.Content,
+		Provider:         strPtr(string(prov)),
+		Model:            strPtr(resp.Model),
+		PromptTokens:     resp.InputTokens,
+		CompletionTokens: resp.OutputTokens,
+		CostCents:        estimateCostCents(string(prov), resp.Model, resp.InputTokens, resp.OutputTokens),
+		FinishReason:     &finish,
+		Metadata:         encodeCitationsMetadata(citations),
 	})
 	if err != nil {
 		return nil, err
@@ -698,6 +698,15 @@ func (h *Handler) resolveAPIKeyCtx(ctx context.Context, customerID uuid.UUID, pr
 		return os.Getenv("OPENAI_API_KEY")
 	case providers.ProviderAnthropic:
 		return os.Getenv("ANTHROPIC_API_KEY")
+	case providers.ProviderGemini:
+		if key := os.Getenv("GEMINI_API_KEY"); key != "" {
+			return key
+		}
+		return os.Getenv("GOOGLE_API_KEY")
+	case providers.ProviderDeepSeek:
+		return os.Getenv("DEEPSEEK_API_KEY")
+	case providers.ProviderGroq:
+		return os.Getenv("GROQ_API_KEY")
 	case providers.ProviderBedrock:
 		return os.Getenv("AWS_ACCESS_KEY_ID")
 	case providers.ProviderOllama:
