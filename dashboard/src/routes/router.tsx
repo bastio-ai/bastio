@@ -30,6 +30,7 @@ import { OverlayVersionNewPage } from "./overlay-version-new";
 import { ChatsPage } from "./chats";
 import { CompliancePage } from "./compliance";
 import { WorkspacesPage } from "./workspaces";
+import { McpPage } from "./mcp";
 
 // Workspace admin console — configure assistants, knowledge, settings.
 // The chat surface is also reachable in-app at /workspace/chat for OSS
@@ -334,6 +335,12 @@ const complianceRoute = createRoute({
   component: CompliancePage,
 });
 
+const mcpRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/mcp",
+  component: McpPage,
+});
+
 const billingRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/billing",
@@ -370,6 +377,7 @@ export const ossChildRoutes = [
   profileRoute,
   complianceRoute,
   cacheRoute,
+  mcpRoute,
   settingsRoute,
   overlaysRoute,
   overlayNewRoute,

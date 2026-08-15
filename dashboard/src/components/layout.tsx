@@ -5,6 +5,7 @@ import {
   Activity,
   BarChart3,
   BookOpen,
+  Bot,
   Building2,
   ChevronRight,
   FileCheck,
@@ -27,6 +28,7 @@ import {
   ShieldAlert,
   Sparkles,
   Sun,
+  Terminal,
   Users,
   Zap,
 } from "lucide-react";
@@ -34,6 +36,7 @@ import {
 import { api } from "@/api/client";
 import { BastioWordmark } from "@/components/bastio-wordmark";
 import { CommandPalette, useCommandPalette } from "@/components/command-palette";
+import { ConnectCliDialog } from "@/components/connect-cli-dialog";
 import {
   DashboardControlsProvider,
   useDashboardControls,
@@ -91,6 +94,7 @@ const navSections = [
     label: "Security & Guardrails",
     items: [
       { to: "/threats", label: "Threats", icon: ShieldAlert },
+      { to: "/mcp", label: "Agent & Tool Firewalls", icon: Bot },
       { to: "/security-settings", label: "Security Center", icon: Shield },
       { to: "/overlays", label: "Custom Policies", icon: Layers },
       { to: "/playground", label: "Security Playground", icon: FlaskConical },
@@ -139,6 +143,7 @@ function LayoutFrame({ children }: { children: ReactNode }) {
   const [environmentDescription, setEnvironmentDescription] = useState("");
   const [environmentError, setEnvironmentError] = useState("");
   const [creatingEnvironment, setCreatingEnvironment] = useState(false);
+  const [connectCliOpen, setConnectCliOpen] = useState(false);
   const [showGlobalNavigation, setShowGlobalNavigation] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -287,6 +292,15 @@ function LayoutFrame({ children }: { children: ReactNode }) {
             {controls.live ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             <span>{controls.live ? "Live" : "Paused"}</span>
           </button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setConnectCliOpen(true)}
+            className="hidden sm:flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium border-border-subtle bg-surface-1 hover:border-border-default hover:bg-surface-2 transition-colors"
+          >
+            <Terminal className="size-3.5 text-accent" />
+            <span>Connect CLI &amp; MCP</span>
+          </Button>
           <ConnectionStatus
             health={health}
             connected={connected}
@@ -475,6 +489,8 @@ function LayoutFrame({ children }: { children: ReactNode }) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConnectCliDialog open={connectCliOpen} onOpenChange={setConnectCliOpen} />
     </div>
   );
 }

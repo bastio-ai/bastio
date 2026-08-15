@@ -48,6 +48,7 @@ import (
 	"github.com/riverqueue/river/rivermigrate"
 
 	"github.com/bastio-ai/bastio/internal/auth"
+	semcache "github.com/bastio-ai/bastio/internal/cache"
 	"github.com/bastio-ai/bastio/internal/gateway"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/prompts"
@@ -661,11 +662,17 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	providerRegistry.Register(providers.NewAnthropicClient())
 	providerRegistry.Register(providers.NewBedrockClient())
 	providerRegistry.Register(providers.NewOllamaClient())
+	providerRegistry.Register(providers.NewGeminiClient())
+	providerRegistry.Register(providers.NewDeepSeekClient())
+	providerRegistry.Register(providers.NewGroqClient())
 	if s.opts.providersDecorator != nil {
 		providerRegistry.Decorate(s.opts.providersDecorator)
 	}
 
 	gw := gateway.NewHandler(providerRegistry, proxySvc, secEngine, profileLookup, s.recorder, string(s.cfg.SecurityMode))
+	gw.SetCache(s.redis)
+	semanticCache := semcache.NewSemanticCache(5000)
+	gw.SetSemanticCache(semanticCache)
 	rateLimiter := gateway.NewRateLimiter(s.redis)
 
 	// Overlay loader is constructed below; wire it into the gateway too

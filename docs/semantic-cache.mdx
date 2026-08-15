@@ -1,0 +1,65 @@
+---
+title: Semantic Vector Caching
+description: Reduce LLM bills and latency with cosine similarity caching in Bastio Gateway.
+---
+
+While exact-match caching matches identical request strings byte-for-byte, **Semantic Vector Caching** recognizes queries that mean the same thing even when phrased differently.
+
+```
+"How do I reset my password?"  ──▶ [Cache Store] ──▶ Generated Answer (Miss)
+"What are the steps to reset password?" ──▶ Cosine Similarity: 0.97 ──▶ Cached Answer (HIT in 3ms)
+```
+
+## How It Works
+
+1. **Exact Cache First**: Bastio checks exact SHA-256 hash match in Redis (under 2ms).
+2. **Semantic Similarity Search**: If exact cache misses, Bastio searches the in-memory vector index computing cosine similarity against cached query embeddings.
+3. **Threshold Evaluation**: If similarity is at or above threshold (default: `0.95`), the cached completion is served instantly with:
+   - `X-Bastio-Cache: SEMANTIC_HIT`
+   - `X-Bastio-Cache-Similarity: 0.98`
+
+## Usage with OpenAI Client
+
+Pass prompt embeddings in the `X-Bastio-Embedding` header or request body:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4000/v1",
+    api_key=os.environ["BASTIO_API_KEY"],
+)
+
+# Request 1: Original prompt
+resp1 = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "How do I reset my account password?"}],
+    extra_headers={
+        "X-Bastio-Cache-Threshold": "0.92",
+    },
+)
+
+# Request 2: Semantically similar prompt
+resp2 = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "What is the process for password reset?"}],
+    extra_headers={
+        "X-Bastio-Cache-Threshold": "0.92",
+    },
+)
+# Returns cached response in under 5ms with X-Bastio-Cache: SEMANTIC_HIT
+```
+
+## Tuning Similarity Thresholds
+
+| Header | Default | Purpose |
+|---|:---:|---|
+| `X-Bastio-Cache-Threshold` | `0.95` | Minimum cosine similarity score (0.0 to 1.0) required to trigger a semantic cache hit. |
+| `X-Bastio-Embedding` | optional | Pass precomputed 1536/3072-dimensional vector embedding for sub-millisecond similarity lookups. |
+
+## Isolation & Security
+
+- **Strict Customer Isolation**: Vectors are indexed by `customer_id` and `model`. Cross-tenant retrieval is strictly prohibited.
+- **TTL Expiration**: Entries expire based on configured TTL (default 1 hour).
+- **In-Memory Ring Buffer**: Default capacity of 5,000 vectors with automatic LRU/FIFO eviction.

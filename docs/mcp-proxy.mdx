@@ -1,0 +1,81 @@
+---
+title: MCP Security Proxy
+description: Protect Claude Desktop, Cursor, and agentic workflows from destructive tool calls and prompt injection poisoning with bastio mcp-proxy.
+---
+
+Anthropic's **Model Context Protocol (MCP)** connects LLM clients (Claude Desktop, Cursor, Cline, Windsurf) to local and remote tool servers. However, MCP tool servers execute arbitrary SQL queries, shell commands, and file operations with the privileges of the local user.
+
+`bastio mcp-proxy` is a transparent security firewall that sits between the AI client and any MCP server over standard I/O (`stdio` JSON-RPC 2.0).
+
+```
+┌─────────────────┐        ┌──────────────────┐        ┌─────────────────┐
+│ Claude / Cursor │ ────▶  │ bastio mcp-proxy │ ────▶  │ MCP Tool Server │
+│   (AI Client)   │ ◀────  │  (Security FW)   │ ◀────  │ (Postgres/Bash) │
+└─────────────────┘        └──────────────────┘        └─────────────────┘
+                                   │
+                         • Blocks rm -rf / DROP
+                         • Masks PII in tool args
+                         • Redacts leaked secrets
+                         • Sanitizes tool poisoning
+```
+
+## Quickstart
+
+Wrap any existing MCP server command with `bastio mcp-proxy --`:
+
+```bash
+bastio mcp-proxy -- npx -y @modelcontextprotocol/server-postgres postgres://user:pass@localhost:5432/mydb
+```
+
+## Claude Desktop Configuration
+
+Add `bastio mcp-proxy` into your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "postgres-secured": {
+      "command": "bastio",
+      "args": [
+        "mcp-proxy",
+        "--profile", "strict-guard",
+        "--",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgres://user:pass@localhost:5432/production"
+      ]
+    },
+    "filesystem-secured": {
+      "command": "bastio",
+      "args": [
+        "mcp-proxy",
+        "--",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/username/Desktop"
+      ]
+    }
+  }
+}
+```
+
+## Cursor / Cline Configuration
+
+In Cursor's MCP Settings (`Settings > MCP > Add New MCP Server`):
+- **Type**: `command`
+- **Command**: `bastio mcp-proxy -- npx -y @modelcontextprotocol/server-brave-search`
+
+## Security Enforcement
+
+### 1. Inbound Tool Call Inspection (`tools/call`)
+- **Destructive Action Prevention**: Inspects SQL parameters and shell command strings. Intercepts dangerous operations like `DROP TABLE`, `rm -rf`, or permission escalation attempts, returning a clean JSON-RPC error (`-32600`) without forwarding to the tool server.
+- **PII & Credential Masking**: Automatically tokenizes or masks sensitive data in tool arguments before the tool executes.
+
+### 2. Outbound Tool Response Sanitization
+- **Secret Redaction**: Prevents database queries or log extractors from leaking API keys or credentials back to the LLM context.
+- **Indirect Injection Defense**: Scans tool execution results for hidden instructions (e.g. malicious markdown in fetched web pages).
+
+### 3. Tool Poisoning Defense (`tools/list`)
+- Inspects tool descriptions in `tools/list` responses to ensure third-party MCP servers cannot hijack system prompts.

@@ -42,7 +42,7 @@ func main() {
 	)
 	runner := evaluation.Runner{Engine: engine}
 
-	datasets, err := evaluation.LoadDatasetFS(os.DirFS("."), *path)
+	datasets, err := evaluation.LoadDatasetFS(os.DirFS(*path), ".")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "load fixtures:", err)
 		os.Exit(2)

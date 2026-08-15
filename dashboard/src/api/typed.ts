@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 import type { paths } from "./schema";
 
-const baseUrl = import.meta.env.VITE_API_URL ?? "";
+const baseUrl = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ?? "";
 
 // Typed HTTP client. Generated from ../cmd/server/openapi.yaml via
 // `npm run generate:api`. Backend changes flow into dashboard types at

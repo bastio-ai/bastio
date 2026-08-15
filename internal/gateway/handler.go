@@ -2,11 +2,14 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -16,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bastio-ai/bastio/internal/auth"
+	semcache "github.com/bastio-ai/bastio/internal/cache"
 	"github.com/bastio-ai/bastio/internal/llmpipeline"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/providers"
@@ -24,40 +28,21 @@ import (
 	"github.com/bastio-ai/bastio/internal/security/detection"
 	"github.com/bastio-ai/bastio/internal/security/iplist"
 	"github.com/bastio-ai/bastio/internal/security/overlay"
-
-	"net/url"
-	"os"
+	"github.com/bastio-ai/bastio/pkg/cache"
 )
 
 // Handler manages the gateway request pipeline.
 type Handler struct {
-	providers     *providers.Registry
-	proxies       *proxy.Service
-	security      *security.Engine
-	profiles      security.ProfileLookup
-	recorder      *observability.Recorder
-	securityMode  string // "fail-open" or "fail-closed"
-	overlayLoader *overlay.Loader
-	// streamSecrets is the inline-streaming secrets scanner. The
-	// full security engine is too heavy to call per chunk (multi-
-	// detector, profile lookup, overlay merge); this is the
-	// regex/entropy detector subset that runs on each delta as
-	// it arrives. Catches the headline streaming-output attack:
-	// model regurgitates an API key it learned during training,
-	// or echoes a secret that was injected through RAG / tool
-	// results. Mask-only — there's no way to "block" mid-stream
-	// without aborting the SSE connection, which is a worse UX
-	// than [REDACTED] in the chunk.
-	streamSecrets *detection.SecretsDetector
-	// imageURLAllowlist constrains hosts that can appear in
-	// `image_url` parts of OpenAI multimodal messages. When
-	// empty (default), every host is accepted — matches existing
-	// behaviour. When non-empty, requests whose multimodal
-	// content references a host outside the list are rejected
-	// at the gateway. This is the closed-form, no-OCR slice of
-	// multimodal protection: closes the URL-injection vector
-	// (split-content, tracking-pixel exfil, phishing host) without
-	// requiring the full pixel-content pipeline.
+	providers         *providers.Registry
+	proxies           *proxy.Service
+	security          *security.Engine
+	profiles          security.ProfileLookup
+	recorder          *observability.Recorder
+	cache             *cache.Cache
+	semanticCache     *semcache.SemanticCache
+	securityMode      string // "fail-open" or "fail-closed"
+	overlayLoader     *overlay.Loader
+	streamSecrets     *detection.SecretsDetector
 	imageURLAllowlist []string
 }
 
@@ -74,6 +59,16 @@ func NewHandler(providerRegistry *providers.Registry, proxySvc *proxy.Service, s
 		streamSecrets:     detection.NewSecretsDetector(),
 		imageURLAllowlist: parseImageURLAllowlist(os.Getenv("BASTIO_IMAGE_URL_ALLOWLIST")),
 	}
+}
+
+// SetCache wires the Redis cache into the gateway for response caching.
+func (h *Handler) SetCache(c *cache.Cache) {
+	h.cache = c
+}
+
+// SetSemanticCache wires the in-memory semantic vector cache into the gateway for semantic response caching.
+func (h *Handler) SetSemanticCache(sc *semcache.SemanticCache) {
+	h.semanticCache = sc
 }
 
 // SetOverlayLoader installs the tenant-policy-overlay loader. When set,
@@ -187,14 +182,25 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse to determine model and streaming mode
+	// Parse to determine model, fallback models, and streaming mode
 	var chatReq struct {
-		Model  string `json:"model"`
-		Stream bool   `json:"stream"`
+		Model          string   `json:"model"`
+		FallbackModels []string `json:"fallback_models"`
+		Stream         bool     `json:"stream"`
 	}
 	if err := json.Unmarshal(body, &chatReq); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 		return
+	}
+
+	if len(chatReq.FallbackModels) == 0 {
+		if headerFallbacks := r.Header.Get("X-Bastio-Fallback-Models"); headerFallbacks != "" {
+			for _, m := range strings.Split(headerFallbacks, ",") {
+				if trimmed := strings.TrimSpace(m); trimmed != "" {
+					chatReq.FallbackModels = append(chatReq.FallbackModels, trimmed)
+				}
+			}
+		}
 	}
 
 	// Extract user content for security scanning
@@ -293,38 +299,172 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve provider from model name or proxy config
-	provider, providerKey, err := h.resolveProvider(r, info, chatReq.Model, body)
-	if err != nil {
-		slog.Error("resolve provider failed", "error", err)
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadGateway)
-		return
-	}
-
-	req := &providers.ChatRequest{
-		Model:  chatReq.Model,
-		Stream: chatReq.Stream,
-		Raw:    body,
-	}
-
 	// Add timing header
 	w.Header().Set("X-Bastio-Request-Id", traceID.String())
 
+	candidateModels := append([]string{chatReq.Model}, chatReq.FallbackModels...)
 	var respBody []byte
 	var inTok, outTok int
 	var status string
+	var selectedModel = chatReq.Model
+	var selectedProvider = "openai"
+
 	if chatReq.Stream {
-		respBody, inTok, outTok, status = h.handleStream(w, r, provider, req, providerKey, start, traceID, scanResult)
+		var lastErr error
+		var handled bool
+		for i, modelName := range candidateModels {
+			provider, providerKey, err := h.resolveProvider(r, info, modelName, body)
+			if err != nil {
+				lastErr = err
+				if isRetryableError(err) && i < len(candidateModels)-1 {
+					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+					continue
+				}
+				break
+			}
+			req := &providers.ChatRequest{
+				Model:          modelName,
+				FallbackModels: chatReq.FallbackModels,
+				Stream:         true,
+				Raw:            body,
+			}
+			selectedModel = modelName
+			selectedProvider = string(provider.Name())
+			if modelName != chatReq.Model {
+				w.Header().Set("X-Bastio-Fallback-Used", modelName)
+			}
+			respBody, inTok, outTok, status, err = h.handleStreamWithRetry(w, r, provider, req, providerKey, start, traceID, scanResult)
+			if err != nil && isRetryableError(err) && i < len(candidateModels)-1 {
+				slog.Warn("stream request failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+				lastErr = err
+				continue
+			}
+			if err != nil && status == "error" && respBody == nil {
+				errBody := writeProviderError(w, selectedProvider, err)
+				respBody = []byte(errBody)
+			}
+			handled = true
+			break
+		}
+		if !handled && lastErr != nil {
+			errBody := writeProviderError(w, selectedProvider, lastErr)
+			respBody = []byte(errBody)
+			status = "error"
+		}
 	} else {
-		respBody, inTok, outTok, status = h.handleSync(w, r, provider, req, providerKey, start, traceID, scanResult)
+		var cacheKey string
+		if h.cache != nil {
+			cacheKey = fmt.Sprintf("llm_resp:%s:%x", info.CustomerID.String(), sha256.Sum256(body))
+			var cached []byte
+			if found, _ := h.cache.Get(r.Context(), cacheKey, &cached); found && len(cached) > 0 {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Bastio-Cache", "HIT")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(cached)
+				h.recordTrace(recordInput{
+					TraceID:      traceID,
+					Info:         info,
+					Model:        chatReq.Model,
+					Provider:     "cache",
+					Path:         r.URL.Path,
+					Start:        start,
+					Status:       "ok",
+					Scan:         scanResult,
+					ReqBody:      body,
+					RespBody:     cached,
+					Headers:      r.Header,
+					IPAddress:    r.RemoteAddr,
+					UserAgent:    r.UserAgent(),
+				})
+				return
+			}
+		}
+
+		// Semantic Cache lookup if exact cache missed
+		reqEmbedding := extractRequestEmbedding(body, r.Header)
+		if h.semanticCache != nil && len(reqEmbedding) > 0 {
+			threshold := extractCacheThreshold(r.Header, 0.95)
+			if entry, sim, hit := h.semanticCache.Query(r.Context(), info.CustomerID.String(), chatReq.Model, reqEmbedding, threshold); hit && entry != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Bastio-Cache", "SEMANTIC_HIT")
+				w.Header().Set("X-Bastio-Cache-Similarity", fmt.Sprintf("%.2f", sim))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(entry.Response)
+				h.recordTrace(recordInput{
+					TraceID:      traceID,
+					Info:         info,
+					Model:        chatReq.Model,
+					Provider:     "cache",
+					Path:         r.URL.Path,
+					Start:        start,
+					Status:       "ok",
+					Scan:         scanResult,
+					ReqBody:      body,
+					RespBody:     entry.Response,
+					Headers:      r.Header,
+					IPAddress:    r.RemoteAddr,
+					UserAgent:    r.UserAgent(),
+				})
+				return
+			}
+		}
+
+		var lastErr error
+		var handled bool
+		for i, modelName := range candidateModels {
+			provider, providerKey, err := h.resolveProvider(r, info, modelName, body)
+			if err != nil {
+				lastErr = err
+				if isRetryableError(err) && i < len(candidateModels)-1 {
+					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+					continue
+				}
+				break
+			}
+			req := &providers.ChatRequest{
+				Model:          modelName,
+				FallbackModels: chatReq.FallbackModels,
+				Stream:         false,
+				Raw:            body,
+			}
+			selectedModel = modelName
+			selectedProvider = string(provider.Name())
+			if modelName != chatReq.Model {
+				w.Header().Set("X-Bastio-Fallback-Used", modelName)
+			}
+			respBody, inTok, outTok, status, err = h.handleSyncWithRetry(w, r, provider, req, providerKey, start, traceID, scanResult)
+			if err != nil && isRetryableError(err) && i < len(candidateModels)-1 {
+				slog.Warn("sync request failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+				lastErr = err
+				continue
+			}
+			if err != nil && status == "error" && respBody == nil {
+				errBody := writeProviderError(w, selectedProvider, err)
+				respBody = []byte(errBody)
+			}
+			handled = true
+			break
+		}
+		if !handled && lastErr != nil {
+			errBody := writeProviderError(w, selectedProvider, lastErr)
+			respBody = []byte(errBody)
+			status = "error"
+		}
+		if h.cache != nil && status == "ok" && respBody != nil && cacheKey != "" {
+			w.Header().Set("X-Bastio-Cache", "MISS")
+			_ = h.cache.Set(r.Context(), cacheKey, respBody, 1*time.Hour)
+		}
+		if h.semanticCache != nil && status == "ok" && respBody != nil && len(reqEmbedding) > 0 {
+			h.semanticCache.Store(r.Context(), info.CustomerID.String(), selectedModel, userContent, reqEmbedding, respBody, 1*time.Hour)
+		}
 	}
 
 	// Recorder buffers this trace for batched insertion.
 	h.recordTrace(recordInput{
 		TraceID:      traceID,
 		Info:         info,
-		Model:        chatReq.Model,
-		Provider:     string(provider.Name()),
+		Model:        selectedModel,
+		Provider:     selectedProvider,
 		Path:         r.URL.Path,
 		Start:        start,
 		Status:       status,
@@ -481,6 +621,15 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 // response bytes + token usage so the caller can persist a full trace.
 // The status is "ok" on success, "error" if the provider call failed.
 func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, client providers.Client, req *providers.ChatRequest, apiKey string, start time.Time, traceID uuid.UUID, scan *security.ScanResult) ([]byte, int, int, string) {
+	respBody, inTok, outTok, status, err := h.handleSyncWithRetry(w, r, client, req, apiKey, start, traceID, scan)
+	if err != nil {
+		errBody := writeProviderError(w, string(client.Name()), err)
+		return []byte(errBody), 0, 0, "error"
+	}
+	return respBody, inTok, outTok, status
+}
+
+func (h *Handler) handleSyncWithRetry(w http.ResponseWriter, r *http.Request, client providers.Client, req *providers.ChatRequest, apiKey string, start time.Time, traceID uuid.UUID, scan *security.ScanResult) ([]byte, int, int, string, error) {
 	info, _ := auth.FromContext(r.Context())
 	env := r.Header.Get("X-Bastio-Environment")
 	genSpan := observability.NewSpan(traceID, customerIDFromInfo(info), "generation", fmt.Sprintf("%s.chat", client.Name())).
@@ -489,7 +638,6 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, client prov
 	resp, err := client.Chat(r.Context(), req, apiKey)
 	if err != nil {
 		slog.Error("provider request failed", "provider", client.Name(), "error", err)
-		errBody := writeProviderError(w, string(client.Name()), err)
 		genSpan.Finish("error", err.Error())
 		if h.recorder != nil {
 			gr := genSpan.Record()
@@ -498,7 +646,7 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, client prov
 			gr.ModelParameters = extractModelParameters(req.Raw)
 			h.recorder.RecordObservation(gr)
 		}
-		return []byte(errBody), 0, 0, "error"
+		return nil, 0, 0, "error", err
 	}
 	genSpan.Finish("ok", "")
 	if h.recorder != nil {
@@ -525,7 +673,7 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, client prov
 			errBody := fmt.Sprintf(`{"error":"response blocked by security policy","trace_id":%q,"reason":%q}`, traceID.String(), reason)
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(errBody))
-			return []byte(errBody), resp.InputTokens, resp.OutputTokens, "blocked"
+			return []byte(errBody), resp.InputTokens, resp.OutputTokens, "blocked", nil
 		} else if processed != nil {
 			resp.Raw = processed
 		}
@@ -540,10 +688,10 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, client prov
 	if resp.Raw != nil {
 		if merged, ok := appendBastioField(resp.Raw, envelope); ok {
 			_, _ = w.Write(merged)
-			return resp.Raw, resp.InputTokens, resp.OutputTokens, "ok"
+			return resp.Raw, resp.InputTokens, resp.OutputTokens, "ok", nil
 		}
 		_, _ = w.Write(resp.Raw)
-		return resp.Raw, resp.InputTokens, resp.OutputTokens, "ok"
+		return resp.Raw, resp.InputTokens, resp.OutputTokens, "ok", nil
 	}
 
 	// Synthesised response path — no upstream bytes to preserve, so marshal
@@ -555,7 +703,7 @@ func (h *Handler) handleSync(w http.ResponseWriter, r *http.Request, client prov
 		resp.InputTokens, resp.OutputTokens, envBytes,
 	))
 	_, _ = w.Write(out)
-	return out, resp.InputTokens, resp.OutputTokens, "ok"
+	return out, resp.InputTokens, resp.OutputTokens, "ok", nil
 }
 
 // appendBastioField appends `,"bastio":<envelope>` just before the last
@@ -613,6 +761,15 @@ func appendBastioField(raw []byte, envelope map[string]any) ([]byte, bool) {
 // detail view. Token usage is parsed from the OpenAI-shape final chunk
 // when present.
 func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, client providers.Client, req *providers.ChatRequest, apiKey string, start time.Time, traceID uuid.UUID, scan *security.ScanResult) ([]byte, int, int, string) {
+	respBody, inTok, outTok, status, err := h.handleStreamWithRetry(w, r, client, req, apiKey, start, traceID, scan)
+	if err != nil && status == "error" && respBody == nil {
+		errBody := writeProviderError(w, string(client.Name()), err)
+		return []byte(errBody), 0, 0, "error"
+	}
+	return respBody, inTok, outTok, status
+}
+
+func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, client providers.Client, req *providers.ChatRequest, apiKey string, start time.Time, traceID uuid.UUID, scan *security.ScanResult) ([]byte, int, int, string, error) {
 	info, _ := auth.FromContext(r.Context())
 	env := r.Header.Get("X-Bastio-Environment")
 	genSpan := observability.NewSpan(traceID, customerIDFromInfo(info), "generation", fmt.Sprintf("%s.chat.stream", client.Name())).
@@ -621,7 +778,6 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, client pr
 	stream, err := client.ChatStream(r.Context(), req, apiKey)
 	if err != nil {
 		slog.Error("provider stream failed", "provider", client.Name(), "error", err)
-		errBody := writeProviderError(w, string(client.Name()), err)
 		genSpan.Finish("error", err.Error())
 		if h.recorder != nil {
 			gr := genSpan.Record()
@@ -630,7 +786,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, client pr
 			gr.ModelParameters = extractModelParameters(req.Raw)
 			h.recorder.RecordObservation(gr)
 		}
-		return []byte(errBody), 0, 0, "error"
+		return nil, 0, 0, "error", err
 	}
 
 	// Set SSE headers
@@ -643,7 +799,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, client pr
 	if !ok {
 		errBody := `{"error":"streaming not supported"}`
 		http.Error(w, errBody, http.StatusInternalServerError)
-		return []byte(errBody), 0, 0, "error"
+		return []byte(errBody), 0, 0, "error", nil
 	}
 
 	// Build a StreamRestorer from the request-scoped TokenMap so
@@ -727,7 +883,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, client pr
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	}
-	return buf, inputTokens, outputTokens, "ok"
+	return buf, inputTokens, outputTokens, "ok", nil
 }
 
 // parseImageURLAllowlist normalizes the comma-separated env-var
@@ -1095,23 +1251,40 @@ func (h *Handler) resolveProvider(r *http.Request, info *auth.APIKeyInfo, model 
 		return nil, "", fmt.Errorf("provider %s not available", provider)
 	}
 
-	// Look up the first active proxy for this customer + provider
-	proxies, err := h.proxies.ListByCustomer(r.Context(), info.CustomerID)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to list proxies: %w", err)
-	}
-
 	var proxyID uuid.UUID
-	for _, p := range proxies {
-		if p.TargetProvider == provider && p.IsActive {
-			proxyID = p.ID
-			break
+	var providerKey string
+
+	// Look up the first active proxy for this customer + provider if proxy service is available
+	if h.proxies != nil && info != nil {
+		proxies, err := h.proxies.ListByCustomer(r.Context(), info.CustomerID)
+		if err == nil {
+			for _, p := range proxies {
+				if p.TargetProvider == provider && p.IsActive {
+					proxyID = p.ID
+					break
+				}
+			}
 		}
+		providerKey, _ = h.proxies.ResolveProviderKey(r.Context(), info.CustomerID, proxyID, provider)
 	}
 
-	providerKey, err := h.proxies.ResolveProviderKey(r.Context(), info.CustomerID, proxyID, provider)
-	if err != nil {
-		return nil, "", fmt.Errorf("no %s key configured: %w", provider, err)
+	// Fallback to environment variables if key is not stored in DB
+	if providerKey == "" {
+		switch provider {
+		case providers.ProviderOpenAI:
+			providerKey = os.Getenv("OPENAI_API_KEY")
+		case providers.ProviderAnthropic:
+			providerKey = os.Getenv("ANTHROPIC_API_KEY")
+		case providers.ProviderGemini:
+			providerKey = os.Getenv("GEMINI_API_KEY")
+			if providerKey == "" {
+				providerKey = os.Getenv("GOOGLE_API_KEY")
+			}
+		case providers.ProviderDeepSeek:
+			providerKey = os.Getenv("DEEPSEEK_API_KEY")
+		case providers.ProviderGroq:
+			providerKey = os.Getenv("GROQ_API_KEY")
+		}
 	}
 
 	return client, providerKey, nil
@@ -1119,14 +1292,48 @@ func (h *Handler) resolveProvider(r *http.Request, info *auth.APIKeyInfo, model 
 
 // inferProvider guesses the provider from a model name.
 func inferProvider(model string) providers.Provider {
+	m := strings.ToLower(strings.TrimSpace(model))
 	switch {
-	case len(model) >= 3 && (model[:3] == "gpt" || model[:2] == "o1" || model[:2] == "o3" || model[:2] == "o4"):
+	case strings.HasPrefix(m, "gpt") || strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3") || strings.HasPrefix(m, "o4") || strings.HasPrefix(m, "text-embedding") || strings.HasPrefix(m, "openai/"):
 		return providers.ProviderOpenAI
-	case len(model) >= 6 && model[:6] == "claude":
+	case strings.HasPrefix(m, "claude") || strings.HasPrefix(m, "anthropic/"):
 		return providers.ProviderAnthropic
+	case strings.HasPrefix(m, "gemini") || strings.HasPrefix(m, "google/") || strings.HasPrefix(m, "vertex/"):
+		return providers.ProviderGemini
+	case strings.HasPrefix(m, "deepseek") || strings.HasPrefix(m, "deepseek/"):
+		return providers.ProviderDeepSeek
+	case strings.HasPrefix(m, "groq/") || strings.Contains(m, "groq"):
+		return providers.ProviderGroq
+	case strings.HasPrefix(m, "ollama/") || strings.HasPrefix(m, "local/"):
+		return providers.ProviderOllama
+	case strings.HasPrefix(m, "bedrock/") || strings.HasPrefix(m, "amazon.") || strings.HasPrefix(m, "anthropic.claude"):
+		return providers.ProviderBedrock
 	default:
 		return providers.ProviderOpenAI // default
 	}
+}
+
+// isRetryableError checks whether an upstream error indicates a transient condition
+// (HTTP 429 rate limit, 500, 502, 503, 504, 529 overloaded, or network timeouts)
+// suitable for fallback retries.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	retryablePhrases := []string{
+		"status 429", "status 500", "status 502", "status 503", "status 504", "status 529",
+		"429", "500", "502", "503", "504", "529",
+		"rate limit", "rate_limit", "resource_exhausted", "overloaded", "too many requests",
+		"server error", "service unavailable", "gateway timeout", "bad gateway",
+		"connection reset", "connection refused", "timeout", "context deadline exceeded",
+	}
+	for _, phrase := range retryablePhrases {
+		if strings.Contains(msg, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // runSecurityScan runs the security engine against request content.
@@ -1620,16 +1827,35 @@ func sanitizeOutboundBody(body []byte, engine *security.Engine, action security.
 }
 
 // extractUserContent pulls the text content from chat messages for security scanning.
+// Handles both plain string content and OpenAI-style multimodal content part arrays.
 func extractUserContent(messages []json.RawMessage) string {
 	var parts []string
 	for _, raw := range messages {
 		var msg struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
 		}
-		if err := json.Unmarshal(raw, &msg); err == nil {
-			if msg.Role == "user" {
-				parts = append(parts, msg.Content)
+		if err := json.Unmarshal(raw, &msg); err != nil || msg.Role != "user" {
+			continue
+		}
+		// 1. Try plain string
+		var str string
+		if err := json.Unmarshal(msg.Content, &str); err == nil {
+			if str != "" {
+				parts = append(parts, str)
+			}
+			continue
+		}
+		// 2. Try array of content blocks [{type: "text", text: "..."}]
+		var blockParts []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(msg.Content, &blockParts); err == nil {
+			for _, b := range blockParts {
+				if b.Type == "text" && b.Text != "" {
+					parts = append(parts, b.Text)
+				}
 			}
 		}
 	}
@@ -1830,3 +2056,56 @@ func writeProviderError(w http.ResponseWriter, providerName string, err error) s
 	_, _ = w.Write(body)
 	return string(body)
 }
+
+func extractRequestEmbedding(body []byte, header http.Header) []float32 {
+	if header != nil {
+		if raw := header.Get("X-Bastio-Embedding"); raw != "" {
+			raw = strings.TrimSpace(raw)
+			if strings.HasPrefix(raw, "[") {
+				var emb []float32
+				if err := json.Unmarshal([]byte(raw), &emb); err == nil && len(emb) > 0 {
+					return emb
+				}
+			} else {
+				parts := strings.Split(raw, ",")
+				emb := make([]float32, 0, len(parts))
+				for _, p := range parts {
+					if v, err := strconv.ParseFloat(strings.TrimSpace(p), 32); err == nil {
+						emb = append(emb, float32(v))
+					}
+				}
+				if len(emb) > 0 {
+					return emb
+				}
+			}
+		}
+	}
+
+	if len(body) > 0 {
+		var req struct {
+			Embedding []float32 `json:"embedding"`
+		}
+		if err := json.Unmarshal(body, &req); err == nil && len(req.Embedding) > 0 {
+			return req.Embedding
+		}
+	}
+
+	return nil
+}
+
+func extractCacheThreshold(header http.Header, defaultThreshold float32) float32 {
+	if header != nil {
+		if raw := header.Get("X-Bastio-Cache-Threshold"); raw != "" {
+			if v, err := strconv.ParseFloat(strings.TrimSpace(raw), 32); err == nil && v > 0 {
+				return float32(v)
+			}
+		}
+	}
+	return defaultThreshold
+}
+
+func sanitizeLog(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
+}
+
+

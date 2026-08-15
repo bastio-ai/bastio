@@ -16,6 +16,9 @@ const (
 	ProviderVertex    Provider = "vertex"
 	ProviderAzure     Provider = "azure"
 	ProviderOllama    Provider = "ollama"
+	ProviderGemini    Provider = "gemini"
+	ProviderDeepSeek  Provider = "deepseek"
+	ProviderGroq      Provider = "groq"
 )
 
 // Message represents a chat message.
@@ -46,13 +49,14 @@ type Image struct {
 
 // ChatRequest is a normalized chat completion request.
 type ChatRequest struct {
-	Provider    Provider  `json:"-"`
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	MaxTokens   *int      `json:"max_tokens,omitempty"`
-	Temperature *float64  `json:"temperature,omitempty"`
-	TopP        *float64  `json:"top_p,omitempty"`
-	Stream      bool      `json:"stream"`
+	Provider       Provider  `json:"-"`
+	Model          string    `json:"model"`
+	FallbackModels []string  `json:"fallback_models,omitempty"`
+	Messages       []Message `json:"messages"`
+	MaxTokens      *int      `json:"max_tokens,omitempty"`
+	Temperature    *float64  `json:"temperature,omitempty"`
+	TopP           *float64  `json:"top_p,omitempty"`
+	Stream         bool      `json:"stream"`
 	// Raw holds the original request body for pass-through proxying.
 	Raw []byte `json:"-"`
 }
@@ -168,20 +172,27 @@ func ReadSSEStream(ctx context.Context, body io.ReadCloser, doneMarker string) <
 						}
 					}
 					if idx == -1 {
-						// Check for single newline terminated data lines
-						for i := 0; i < len(data); i++ {
-							if data[i] == '\n' {
-								line := string(data[:i])
-								data = data[i+1:]
-								if len(line) > 6 && line[:6] == "data: " {
-									payload := line[6:]
-									if payload == doneMarker {
-										ch <- StreamChunk{Done: true}
-										return
-									}
-									ch <- StreamChunk{Data: []byte(payload)}
+						// Check for single newline terminated data lines without skipping bytes
+						for {
+							nlIdx := -1
+							for i := 0; i < len(data); i++ {
+								if data[i] == '\n' {
+									nlIdx = i
+									break
 								}
-								continue
+							}
+							if nlIdx == -1 {
+								break
+							}
+							line := string(data[:nlIdx])
+							data = data[nlIdx+1:]
+							if len(line) > 6 && line[:6] == "data: " {
+								payload := line[6:]
+								if payload == doneMarker {
+									ch <- StreamChunk{Done: true}
+									return
+								}
+								ch <- StreamChunk{Data: []byte(payload)}
 							}
 						}
 						leftover = data

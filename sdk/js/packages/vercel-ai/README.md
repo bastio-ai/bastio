@@ -1,10 +1,15 @@
 # @bastio/vercel-ai
 
-[Bastio](https://bastio.ai) security middleware for the
+[Bastio](https://bastio.ai) security provider and middleware for the
 [Vercel AI SDK](https://sdk.vercel.ai). Wraps any language model —
-OpenAI, Anthropic, Gemini, Bedrock, or a custom provider — so every
+OpenAI, Anthropic, Gemini, Bedrock, Mistral, or custom providers — so every
 call is screened by Bastio's detectors before it reaches the provider
 and again before the response reaches your app.
+
+- **Prompt Injection & Jailbreak Defense**: Detects adversarial jailbreaks, system prompt extractions, and multi-turn attacks.
+- **PII & Secret Masking**: Automatically tokenizes or redacts SSNs, credit cards, emails, API keys, and JWTs in real time.
+- **Bi-directional Output Scanning**: Validates model completions before returning to users to prevent data leakage and harmful completions.
+- **Zero Configuration**: Reads `BASTIO_API_KEY` and `BASTIO_URL` from the environment automatically.
 
 ## Install
 
@@ -16,7 +21,33 @@ pnpm add @bastio/vercel-ai ai
 
 `ai` is a peer dependency (`>=4.0.0`).
 
-## Use
+## Usage
+
+### Method 1: Provider Wrapper (Recommended)
+
+Wrap any model with `createBastio` / `createBastioProvider`:
+
+```ts
+import { createBastio } from "@bastio/vercel-ai";
+import { openai } from "@ai-sdk/openai";
+import { generateText } from "ai";
+
+const bastio = createBastio({
+  apiKey: process.env.BASTIO_API_KEY,
+  profile: "production-guard",
+});
+
+const { text } = await generateText({
+  model: bastio(openai("gpt-4o")),
+  prompt: "Summarize customer feedback: Contact dsjacobsen@example.com for refunds.",
+});
+
+console.log(text);
+```
+
+### Method 2: Middleware with `wrapLanguageModel`
+
+You can also use Bastio as standard Vercel AI SDK middleware:
 
 ```ts
 import { wrapLanguageModel } from "ai";
@@ -26,44 +57,54 @@ import { bastioMiddleware } from "@bastio/vercel-ai";
 const guardedModel = wrapLanguageModel({
   model: openai("gpt-4o"),
   middleware: bastioMiddleware({
-    baseURL: process.env.BASTIO_URL!,
-    apiKey: process.env.BASTIO_KEY,
+    baseURL: process.env.BASTIO_URL,
+    apiKey: process.env.BASTIO_API_KEY,
     profile: "default",
   }),
 });
-
-// Use guardedModel with generateText, streamText, generateObject, etc.
 ```
 
-`block` in the configured profile throws `BastioBlockedError` — caught
-by your app's error handler. `mask` / `tokenize` rewrite the prompt
-before it's sent to the model, and rewrite the response before it's
-returned to the caller.
+### Handling Security Blocks
+
+When Bastio detects a threat (injection, jailbreak, or policy violation), it throws a `BastioBlockedError`:
+
+```ts
+import { generateText } from "ai";
+import { createBastio, BastioBlockedError } from "@bastio/vercel-ai";
+import { openai } from "@ai-sdk/openai";
+
+const bastio = createBastio();
+
+try {
+  const result = await generateText({
+    model: bastio(openai("gpt-4o")),
+    prompt: req.body.prompt,
+  });
+} catch (error) {
+  if (error instanceof BastioBlockedError) {
+    console.error("Blocked by Bastio:", error.message);
+    console.error("Action:", error.response.action);
+    console.error("Findings:", error.response.messages[0]?.steps);
+    // Respond with 403 Forbidden
+  }
+}
+```
 
 ## Options
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `baseURL` | `string` | — | Required. Bastio gateway URL. |
-| `apiKey` | `string` | — | Bearer token for Bastio. |
+| `baseURL` | `string` | `process.env.BASTIO_URL` \|\| `"http://localhost:4000"` | Bastio gateway URL. |
+| `apiKey` | `string` | `process.env.BASTIO_API_KEY` | Bearer token for Bastio. |
 | `profile` | `string` | `"default"` | Named Bastio security profile. |
+| `securityProfile` | `string` | — | Alias for `profile`. |
 | `steps` | `DetectStep[]` | — | Inline step list; overrides the profile. |
-| `onDecision` | `(stage, result) => void` | — | Fires for both `"input"` and `"output"` decisions. Stage tells you which. |
+| `onDecision` | `(stage, result) => void` | — | Fires for both `"input"` and `"output"` decisions. |
 | `scanOutput` | `boolean` | `true` | Set to `false` to skip response scanning. |
-| `fetch`, `timeoutMs`, `headers` | — | see core | Transport knobs. |
-
-## Streaming
-
-`wrapStream` is currently a pass-through. Bastio's detectors reason on
-complete text; scanning partial-token windows produces false positives
-on common benign phrasings. Full streaming support is on the roadmap
-for v0.2 and will use end-of-stream buffering with windowed early
-detection for the worst categories (injection, jailbreak).
-
-Meanwhile: if you need protection on streamed output, use
-`generateText` instead of `streamText` on the guarded model, or scan
-the full assembled response in a custom `onFinish` callback.
+| `timeoutMs` | `number` | `10000` | Transport timeout in milliseconds. |
+| `fetch` | `typeof fetch` | `globalThis.fetch` | Custom fetch implementation. |
+| `headers` | `Record<string, string>` | — | Custom HTTP headers. |
 
 ## License
 
-[MIT](../../LICENSE). The Bastio server is FSL-1.1-ALv2, but this client SDK is permissively licensed so any application can embed it.
+[MIT](../../LICENSE).
