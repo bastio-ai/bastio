@@ -36,10 +36,13 @@ import { cn } from "@/lib/utils";
 const providerLabels: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
+  deepseek: "DeepSeek (V3 & R1)",
+  groq: "Groq LPU (Ultra-low latency)",
+  google: "Google Gemini / Vertex",
+  ollama: "Ollama (Self-hosted / Local)",
   bedrock: "Amazon Bedrock",
   vertex: "Vertex AI",
   azure: "Azure OpenAI",
-  ollama: "Ollama",
 };
 
 function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: () => void; onToggle: () => void }) {
@@ -212,14 +215,15 @@ export function ProxiesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Proxy | null>(null);
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<"openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama">("openai");
+  const [provider, setProvider] = useState<string>("openai");
   const [model, setModel] = useState("");
+  const [fallbackChain, setFallbackChain] = useState("");
 
   const createProxy = useMutation({
     mutationFn: api.proxies.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["proxies"] });
-      setCreateOpen(false); setName(""); setModel("");
+      setCreateOpen(false); setName(""); setModel(""); setFallbackChain("");
     },
   });
   const deleteProxy = useMutation({ mutationFn: api.proxies.delete, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["proxies"] }); setDeleteTarget(null); } });
@@ -233,7 +237,7 @@ export function ProxiesPage() {
 
   return (
     <>
-      <PageHeader title="LLM Gateways" description="Secure, authenticated endpoints that route application traffic to model providers." action={<Button size="sm" onClick={() => setCreateOpen(true)}><Plus /> Create gateway</Button>} />
+      <PageHeader title="LLM Gateways" description="Secure, authenticated endpoints that route application traffic to model providers with multi-provider failover." action={<Button size="sm" onClick={() => setCreateOpen(true)}><Plus /> Create gateway</Button>} />
       <AdminSummaryStrip items={[
         { label: "Gateways", value: proxies?.length ?? 0, detail: "Configured endpoints" },
         { label: "Active", value: activeCount, detail: `${Math.max((proxies?.length ?? 0) - activeCount, 0)} disabled`, tone: "success" },
@@ -252,11 +256,12 @@ export function ProxiesPage() {
           <DialogHeader><DialogTitle>Create LLM gateway</DialogTitle><DialogDescription>Define the route first. Provider and client credentials are configured after creation.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div><FieldLabel>Gateway name</FieldLabel><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="production-chat" /></div>
-            <div><FieldLabel>Model provider</FieldLabel><Select value={provider} onValueChange={(value) => value && setProvider(value as typeof provider)}><SelectTrigger className="w-full"><SelectValue>{providerLabels[provider]}</SelectValue></SelectTrigger><SelectContent>{Object.entries(providerLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+            <div><FieldLabel>Model provider</FieldLabel><Select value={provider} onValueChange={(value) => value && setProvider(value)}><SelectTrigger className="w-full"><SelectValue>{providerLabels[provider]}</SelectValue></SelectTrigger><SelectContent>{Object.entries(providerLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
             <div><FieldLabel optional>Default model</FieldLabel><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. gpt-4o" /><p className="mt-1.5 text-[10px] text-muted-foreground">Leave blank to require every request to specify a model.</p></div>
+            <div><FieldLabel optional>Auto-Failover Model Chain</FieldLabel><Input value={fallbackChain} onChange={(e) => setFallbackChain(e.target.value)} placeholder="e.g. groq/llama-3.3-70b-versatile, openai/gpt-4o-mini" /><p className="mt-1.5 text-[10px] text-muted-foreground">Fallback sequence to retry automatically on 429, 500, or 529 provider outages.</p></div>
             <SecurityNotice title="Credential setup follows" tone="info">After creation, add an upstream provider key and a gateway-scoped client key before sending production traffic.</SecurityNotice>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button disabled={!name.trim() || createProxy.isPending} onClick={() => createProxy.mutate({ name: name.trim(), target_provider: provider, target_model: model.trim() })}>{createProxy.isPending ? "Creating…" : "Create gateway"}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button disabled={!name.trim() || createProxy.isPending} onClick={() => createProxy.mutate({ name: name.trim(), target_provider: provider as CreateProviderKeyRequest["provider"], target_model: model.trim() })}>{createProxy.isPending ? "Creating…" : "Create gateway"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

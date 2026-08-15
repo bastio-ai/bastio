@@ -6,6 +6,8 @@
     "bedrock",
     "azure",
     "google",
+    "deepseek",
+    "groq",
     "ollama"
   ]
 }

@@ -1,19 +1,24 @@
-import { useMemo, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Bot,
   CheckCircle2,
   Clock3,
   KeyRound,
   LayoutDashboard,
   Server,
   ShieldAlert,
+  Terminal,
 } from "lucide-react";
 
 import { api, type APIKey, type Proxy, type Session, type ThreatEvent, type Trace, type UserAnalytics } from "@/api/client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConnectCliDialog } from "@/components/connect-cli-dialog";
 import { DataCell, DataPanel, DataRow, DataTable } from "@/components/data/data-panel";
 import { useDashboardControls, type DashboardRange } from "@/components/dashboard-controls-context";
 import { LatencyChart } from "@/components/data/latency-chart";
@@ -60,6 +65,7 @@ const EMPTY_ANALYTICS = {
 
 export function OverviewPage() {
   const { range, setRange, environment } = useDashboardControls();
+  const [connectOpen, setConnectOpen] = useState(false);
   const window = useMemo(() => makeWindow(range), [range]);
   const overviewExtension = useOverviewExtension();
 
@@ -216,10 +222,55 @@ export function OverviewPage() {
             <UsageFootprint sessions={sessionData} users={userData} traces={traceData} loading={sessions.isPending || users.isPending || traces.isPending} />
           </div>
 
+          <QuickDeveloperConnectCard onOpenConnect={() => setConnectOpen(true)} />
+
           <RecentInvestigations threats={threatData} traces={traceData} loading={threats.isPending || traces.isPending} />
 
           {overviewExtension.insights}
         </div>
+      </div>
+
+      <ConnectCliDialog open={connectOpen} onOpenChange={setConnectOpen} />
+    </div>
+  );
+}
+
+function QuickDeveloperConnectCard({ onOpenConnect }: { onOpenConnect: () => void }) {
+  return (
+    <div className="rounded-xl border border-border/80 bg-gradient-to-r from-card to-accent/5 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <span className="flex size-6 items-center justify-center rounded-md bg-accent/10 text-accent">
+            <Terminal className="size-3.5" />
+          </span>
+          <h3 className="text-xs font-semibold text-foreground">
+            Connect Local Terminal CLI, MCP Firewalls &amp; Framework SDKs
+          </h3>
+          <Badge variant="outline" className="text-[10px] text-accent border-accent/30 bg-accent/10">
+            Zero-Dep
+          </Badge>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Stream traces and threat detections from <code className="text-foreground font-mono">bastio dev</code>, <code className="text-foreground font-mono">bastio scan</code>, or <code className="text-foreground font-mono">bastio mcp-proxy</code> directly into this dashboard.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onOpenConnect}
+          className="h-7 text-xs gap-1.5 border-border-subtle bg-background hover:bg-muted font-medium"
+        >
+          <Terminal className="size-3" />
+          CLI Quickstart
+        </Button>
+        <Link to="/mcp">
+          <Button size="sm" className="h-7 text-xs gap-1.5 font-medium">
+            <Bot className="size-3" />
+            Agent &amp; MCP Hub
+          </Button>
+        </Link>
       </div>
     </div>
   );

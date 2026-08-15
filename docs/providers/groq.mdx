@@ -1,0 +1,53 @@
+---
+title: Groq
+description: High-speed, ultra-low latency LLM inference behind Bastio inline threat detection.
+---
+
+Bastio connects directly to Groq's high-speed LPU inference engine, allowing you to run Llama 3.3, Mistral, and Gemma models with under 50ms security checks and sub-second token streaming.
+
+## Quickstart
+
+Configure your Groq provider API key in Bastio or pass it in requests:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4000/v1",
+    api_key=os.environ["BASTIO_API_KEY"],
+)
+
+response = client.chat.completions.create(
+    model="llama-3.3-70b-versatile",
+    messages=[
+        {"role": "user", "content": "Write a fast Go HTTP handler."}
+    ],
+    stream=True,
+)
+
+for chunk in response:
+    content = chunk.choices[0].delta.content or ""
+    print(content, end="", flush=True)
+```
+
+## Supported Models
+
+- `llama-3.3-70b-versatile`
+- `llama-3.1-8b-instant`
+- `mixtral-8x7b-32768`
+- `gemma2-9b-it`
+
+## Resilience & Fallbacks
+
+Pair ultra-fast Groq models with high-capacity fallbacks:
+
+```python
+response = client.chat.completions.create(
+    model="llama-3.3-70b-versatile",
+    extra_body={
+        "fallback_models": ["gpt-4o-mini", "gemini-2.5-flash"]
+    },
+    messages=[{"role": "user", "content": "Analyze system logs."}],
+)
+```

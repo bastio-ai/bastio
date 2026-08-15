@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bastio-ai/bastio/internal/auth"
+	semcache "github.com/bastio-ai/bastio/internal/cache"
 	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/internal/security/detection"
@@ -109,6 +110,13 @@ func TestInferProvider(t *testing.T) {
 		{"o4-mini", providers.ProviderOpenAI},
 		{"claude-3-5-sonnet", providers.ProviderAnthropic},
 		{"claude-opus-4", providers.ProviderAnthropic},
+		{"gemini-1.5-pro", providers.ProviderGemini},
+		{"gemini-1.5-flash", providers.ProviderGemini},
+		{"deepseek-chat", providers.ProviderDeepSeek},
+		{"deepseek-reasoner", providers.ProviderDeepSeek},
+		{"groq/llama-3.3-70b-versatile", providers.ProviderGroq},
+		{"ollama/llama3", providers.ProviderOllama},
+		{"bedrock/anthropic.claude-3", providers.ProviderBedrock},
 		{"mysterymodel", providers.ProviderOpenAI}, // default fallback
 		{"", providers.ProviderOpenAI},
 	}
@@ -784,3 +792,174 @@ func TestSanitizeOutboundBody_MultimodalContentSkipped(t *testing.T) {
 		t.Errorf("multimodal content must not be rewritten in v1")
 	}
 }
+
+type mockFailingClient struct {
+	name       providers.Provider
+	failErrors map[string]error
+	calls      []string
+}
+
+func (m *mockFailingClient) Name() providers.Provider { return m.name }
+func (m *mockFailingClient) Chat(_ context.Context, req *providers.ChatRequest, _ string) (*providers.ChatResponse, error) {
+	m.calls = append(m.calls, req.Model)
+	if err, ok := m.failErrors[req.Model]; ok && err != nil {
+		return nil, err
+	}
+	return &providers.ChatResponse{
+		ID:      "mock-id",
+		Model:   req.Model,
+		Content: "Response from " + req.Model,
+		Role:    "assistant",
+		Raw:     []byte(`{"id":"mock-id","choices":[{"message":{"role":"assistant","content":"Response from ` + req.Model + `"}}]}`),
+	}, nil
+}
+func (m *mockFailingClient) ChatStream(_ context.Context, _ *providers.ChatRequest, _ string) (<-chan providers.StreamChunk, error) {
+	return nil, nil
+}
+
+func TestChatCompletions_ModelFallback(t *testing.T) {
+	reg := providers.NewRegistry()
+	mockClient := &mockFailingClient{
+		name: providers.ProviderOpenAI,
+		failErrors: map[string]error{
+			"gpt-4o": fmt.Errorf("openai error (status 429): rate limit exceeded"),
+		},
+	}
+	reg.Register(mockClient)
+
+	h := NewHandler(reg, nil, nil, nil, nil, "fail-open")
+
+	body := `{"model":"gpt-4o","fallback_models":["gpt-3.5-turbo"],"messages":[{"role":"user","content":"hello"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req = req.WithContext(auth.WithInfo(req.Context(), &auth.APIKeyInfo{
+		ID:         uuid.New(),
+		CustomerID: uuid.New(),
+	}))
+	rr := httptest.NewRecorder()
+
+	h.ChatCompletions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK after fallback, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	if fallbackUsed := rr.Header().Get("X-Bastio-Fallback-Used"); fallbackUsed != "gpt-3.5-turbo" {
+		t.Errorf("expected X-Bastio-Fallback-Used: gpt-3.5-turbo, got %q", fallbackUsed)
+	}
+
+	if len(mockClient.calls) != 2 || mockClient.calls[0] != "gpt-4o" || mockClient.calls[1] != "gpt-3.5-turbo" {
+		t.Errorf("unexpected call sequence: %v", mockClient.calls)
+	}
+}
+
+func TestChatCompletions_SemanticCacheHit(t *testing.T) {
+	reg := providers.NewRegistry()
+	mockClient := &mockFailingClient{
+		name: providers.ProviderOpenAI,
+	}
+	reg.Register(mockClient)
+
+	h := NewHandler(reg, nil, nil, nil, nil, "fail-open")
+	sc := semcache.NewSemanticCache(100)
+	h.SetSemanticCache(sc)
+
+	custID := uuid.New()
+	model := "gpt-4o"
+	cachedEmb := []float32{0.1, 0.2, 0.3, 0.4}
+	cachedResp := []byte(`{"id":"cached-id","choices":[{"message":{"role":"assistant","content":"Cached semantic response"}}]}`)
+	sc.Store(context.Background(), custID.String(), model, "What is AI?", cachedEmb, cachedResp, 1*time.Hour)
+
+	// Send request with very similar embedding (>= 0.95)
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"Tell me about AI"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("X-Bastio-Embedding", "0.11,0.20,0.29,0.41")
+	req = req.WithContext(auth.WithInfo(req.Context(), &auth.APIKeyInfo{
+		ID:         uuid.New(),
+		CustomerID: custID,
+	}))
+	rr := httptest.NewRecorder()
+
+	h.ChatCompletions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for semantic cache hit, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	if cacheHeader := rr.Header().Get("X-Bastio-Cache"); cacheHeader != "SEMANTIC_HIT" {
+		t.Errorf("expected X-Bastio-Cache: SEMANTIC_HIT, got %q", cacheHeader)
+	}
+
+	if simHeader := rr.Header().Get("X-Bastio-Cache-Similarity"); simHeader == "" {
+		t.Errorf("expected X-Bastio-Cache-Similarity header to be present")
+	}
+
+	if !strings.Contains(rr.Body.String(), "Cached semantic response") {
+		t.Errorf("expected cached response body, got: %s", rr.Body.String())
+	}
+
+	// Verify upstream was NOT called
+	if len(mockClient.calls) != 0 {
+		t.Errorf("expected zero upstream calls on semantic cache hit, got %d", len(mockClient.calls))
+	}
+}
+
+func TestChatCompletions_SemanticCacheMissAndStore(t *testing.T) {
+	reg := providers.NewRegistry()
+	mockClient := &mockFailingClient{
+		name: providers.ProviderOpenAI,
+	}
+	reg.Register(mockClient)
+
+	h := NewHandler(reg, nil, nil, nil, nil, "fail-open")
+	sc := semcache.NewSemanticCache(100)
+	h.SetSemanticCache(sc)
+
+	custID := uuid.New()
+
+	// Request 1: cache miss -> calls upstream & stores
+	body1 := `{"model":"gpt-4o","embedding":[0.5,0.5,0.5,0.5],"messages":[{"role":"user","content":"Hello AI"}]}`
+	req1 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body1))
+	req1 = req1.WithContext(auth.WithInfo(req1.Context(), &auth.APIKeyInfo{
+		ID:         uuid.New(),
+		CustomerID: custID,
+	}))
+	rr1 := httptest.NewRecorder()
+
+	h.ChatCompletions(rr1, req1)
+
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on first request, got %d", rr1.Code)
+	}
+	if len(mockClient.calls) != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", len(mockClient.calls))
+	}
+
+	// Verify stored in semantic cache
+	if sc.Len() != 1 {
+		t.Fatalf("expected 1 entry stored in semantic cache, got %d", sc.Len())
+	}
+
+	// Request 2: identical embedding -> should hit semantic cache!
+	body2 := `{"model":"gpt-4o","embedding":[0.5,0.5,0.5,0.5],"messages":[{"role":"user","content":"Hello again AI"}]}`
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body2))
+	req2 = req2.WithContext(auth.WithInfo(req2.Context(), &auth.APIKeyInfo{
+		ID:         uuid.New(),
+		CustomerID: custID,
+	}))
+	rr2 := httptest.NewRecorder()
+
+	h.ChatCompletions(rr2, req2)
+
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on second request, got %d", rr2.Code)
+	}
+	if cacheHeader := rr2.Header().Get("X-Bastio-Cache"); cacheHeader != "SEMANTIC_HIT" {
+		t.Errorf("expected X-Bastio-Cache: SEMANTIC_HIT on second request, got %q", cacheHeader)
+	}
+	// Upstream call count should still be 1 (not called again)
+	if len(mockClient.calls) != 1 {
+		t.Errorf("expected upstream calls to remain 1, got %d", len(mockClient.calls))
+	}
+}
+
+

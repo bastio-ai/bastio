@@ -1,0 +1,57 @@
+---
+title: DeepSeek
+description: Route requests to DeepSeek-V3 and DeepSeek-R1 through the Bastio AI Security Gateway.
+---
+
+Bastio provides first-class support for DeepSeek models, including `deepseek-chat` (DeepSeek-V3) and `deepseek-reasoner` (DeepSeek-R1) with chain-of-thought reasoning token extraction.
+
+## Quickstart
+
+Point any OpenAI-compatible client at Bastio and use DeepSeek model identifiers:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4000/v1",
+    api_key=os.environ["BASTIO_API_KEY"],
+)
+
+response = client.chat.completions.create(
+    model="deepseek-chat",
+    messages=[
+        {"role": "user", "content": "Explain quantum computing in simple terms."}
+    ],
+)
+print(response.choices[0].message.content)
+```
+
+## Reasoning Models (DeepSeek-R1)
+
+When using `deepseek-reasoner`, Bastio inspects user prompts for jailbreaks and prompt injection before execution, passes reasoning output through, and records token usage in ClickHouse observability traces:
+
+```python
+response = client.chat.completions.create(
+    model="deepseek-reasoner",
+    messages=[
+        {"role": "user", "content": "Solve: What is the sum of integers from 1 to 100?"}
+    ],
+)
+# Access reasoning tokens if emitted
+print(response.choices[0].message.content)
+```
+
+## Automatic Fallbacks
+
+Configure DeepSeek as a primary cost-effective model with automatic failover to Claude or GPT-4o if rate limits (429) or timeouts occur:
+
+```python
+response = client.chat.completions.create(
+    model="deepseek-chat",
+    extra_body={
+        "fallback_models": ["gpt-4o-mini", "claude-3-5-haiku-20241022"]
+    },
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+```
