@@ -27,21 +27,21 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Light mode (mirror) */
-  --background:      #FAFAFA;
+  /* Light mode — cool porcelain, not browser-white. */
+  --background:      #F6F7F9;
   --surface-1:       #FFFFFF;
-  --surface-2:       #F4F4F5;
+  --surface-2:       #F0F2F5;
   --surface-3:       #FFFFFF;
-  --foreground:      #09090B;
-  --text-primary:    #09090B;
-  --text-secondary:  #52525B;
-  --text-muted:      #5F5F68;                       /* AA pass on #FAFAFA */
-  --text-disabled:   #A1A1AA;
+  --foreground:      #15171B;
+  --text-primary:    #15171B;
+  --text-secondary:  #4D535D;
+  --text-muted:      #6B7280;
+  --text-disabled:   #9CA3AF;
 
-  --border:          rgba(0, 0, 0, 0.08);
-  --border-subtle:   rgba(0, 0, 0, 0.06);
-  --border-default:  rgba(0, 0, 0, 0.10);
-  --border-strong:   rgba(0, 0, 0, 0.14);
+  --border:          rgba(20, 24, 31, 0.10);
+  --border-subtle:   rgba(20, 24, 31, 0.08);
+  --border-default:  rgba(20, 24, 31, 0.13);
+  --border-strong:   rgba(20, 24, 31, 0.20);
 
   --danger:          #DC2626;
   --danger-bg:       rgba(220, 38, 38, 0.08);
@@ -58,8 +58,8 @@
   --card-foreground:         var(--foreground);
   --popover:                 var(--surface-3);
   --popover-foreground:      var(--foreground);
-  --primary:                 #09090B;
-  --primary-foreground:      #FAFAFA;
+  --primary:                 #17191D;
+  --primary-foreground:      #FFFFFF;
   --secondary:               var(--surface-2);
   --secondary-foreground:    var(--foreground);
   --muted:                   var(--surface-2);
@@ -70,13 +70,13 @@
   --destructive-foreground:  var(--foreground);
   --warning:                 var(--warn);
   --input:                   var(--border-default);
-  --ring:                    rgba(0, 0, 0, 0.20);
+  --ring:                    rgba(171, 106, 35, 0.48);
 
-  --radius:     0.375rem;
-  --radius-sm:  0.25rem;
-  --radius-md:  0.375rem;
-  --radius-lg:  0.5rem;
-  --radius-xl:  0.75rem;
+  --radius:     0.3125rem;
+  --radius-sm:  0.1875rem;
+  --radius-md:  0.3125rem;
+  --radius-lg:  0.375rem;
+  --radius-xl:  0.5rem;
 
   --sidebar:                      var(--background);
   --sidebar-foreground:           var(--foreground);
@@ -98,21 +98,21 @@
 }
 
 .dark {
-  /* Dark mode (brand default) */
-  --background:      #0A0A0B;
-  --surface-1:       #111114;
-  --surface-2:       #18181B;
-  --surface-3:       #1F1F23;
-  --foreground:      #FAFAFA;
-  --text-primary:    #FAFAFA;
-  --text-secondary:  #B4B4BC;                       /* up from #A1A1AA for AA */
-  --text-muted:      #8A8A92;                       /* up from #71717A for AA on small text */
-  --text-disabled:   #52525B;
+  /* Dark mode — layered graphite with readable separation. */
+  --background:      #0C0E12;
+  --surface-1:       #12151A;
+  --surface-2:       #181C22;
+  --surface-3:       #20252C;
+  --foreground:      #F5F6F7;
+  --text-primary:    #F5F6F7;
+  --text-secondary:  #C1C6CE;
+  --text-muted:      #9299A3;
+  --text-disabled:   #5E6671;
 
-  --border:          rgba(255, 255, 255, 0.06);
-  --border-subtle:   rgba(255, 255, 255, 0.06);
-  --border-default:  rgba(255, 255, 255, 0.10);
-  --border-strong:   rgba(255, 255, 255, 0.14);
+  --border:          rgba(255, 255, 255, 0.10);
+  --border-subtle:   rgba(255, 255, 255, 0.075);
+  --border-default:  rgba(255, 255, 255, 0.12);
+  --border-strong:   rgba(255, 255, 255, 0.19);
 
   --danger:          #F87171;
   --danger-bg:       rgba(248, 113, 113, 0.10);
@@ -126,7 +126,7 @@
 
   --primary:              #FAFAFA;
   --primary-foreground:   #09090B;
-  --ring:                 rgba(255, 255, 255, 0.15);
+  --ring:                 rgba(229, 169, 92, 0.52);
 
   --chart-1: #FAFAFA;
   --chart-2: #B4B4BC;
@@ -220,14 +220,24 @@
   html.dark { color-scheme: dark; }
   body {
     @apply bg-background text-foreground antialiased;
-    font-size: 13px;
-    line-height: 20px;
+    font-size: 14px;
+    line-height: 21px;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
   code, kbd, samp, pre {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+  }
+  button, input, select, textarea {
+    font: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: rgba(198, 126, 50, 0.24);
   }
 }
 
@@ -238,11 +248,11 @@
 
   .surface-card {
     background-color: var(--surface-1);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.03),
-      0 1px 2px rgba(0, 0, 0, 0.20);
+      0 1px 2px rgba(0, 0, 0, 0.16);
   }
   :root:not(.dark) .surface-card {
     box-shadow:
@@ -256,14 +266,28 @@
     border-radius: var(--radius-lg);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.04),
-      0 8px 24px rgba(0, 0, 0, 0.40),
-      0 2px 6px rgba(0, 0, 0, 0.25);
+      0 18px 48px rgba(0, 0, 0, 0.32),
+      0 3px 10px rgba(0, 0, 0, 0.22);
   }
   :root:not(.dark) .surface-elevated {
     box-shadow:
       0 12px 32px rgba(0, 0, 0, 0.12),
       0 4px 12px rgba(0, 0, 0, 0.08);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 /* Pulsing status dot — keyed per tone so color token is baked in */

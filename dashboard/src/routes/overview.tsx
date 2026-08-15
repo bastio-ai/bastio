@@ -72,11 +72,11 @@ export function OverviewPage() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health });
   const analytics = useQuery({
     queryKey: ["overview", "analytics", range, environment, window.current.from, window.current.to],
-    queryFn: () => api.analytics.overview({ ...window.current, environment: environment || undefined }),
+    queryFn: async () => (await api.analytics.overview({ ...window.current, environment: environment || undefined })) ?? EMPTY_ANALYTICS,
   });
   const previousAnalytics = useQuery({
     queryKey: ["overview", "analytics", "previous", range, environment, window.previous.from, window.previous.to],
-    queryFn: () => api.analytics.overview({ ...window.previous, environment: environment || undefined }),
+    queryFn: async () => (await api.analytics.overview({ ...window.previous, environment: environment || undefined })) ?? EMPTY_ANALYTICS,
   });
   const traces = useQuery({
     queryKey: ["overview", "traces", range, environment, window.current.from, window.current.to],
