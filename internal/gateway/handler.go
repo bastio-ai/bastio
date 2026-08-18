@@ -362,19 +362,19 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(cached)
 				h.recordTrace(recordInput{
-					TraceID:      traceID,
-					Info:         info,
-					Model:        chatReq.Model,
-					Provider:     "cache",
-					Path:         r.URL.Path,
-					Start:        start,
-					Status:       "ok",
-					Scan:         scanResult,
-					ReqBody:      body,
-					RespBody:     cached,
-					Headers:      r.Header,
-					IPAddress:    r.RemoteAddr,
-					UserAgent:    r.UserAgent(),
+					TraceID:   traceID,
+					Info:      info,
+					Model:     chatReq.Model,
+					Provider:  "cache",
+					Path:      r.URL.Path,
+					Start:     start,
+					Status:    "ok",
+					Scan:      scanResult,
+					ReqBody:   body,
+					RespBody:  cached,
+					Headers:   r.Header,
+					IPAddress: r.RemoteAddr,
+					UserAgent: r.UserAgent(),
 				})
 				return
 			}
@@ -391,19 +391,19 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(entry.Response)
 				h.recordTrace(recordInput{
-					TraceID:      traceID,
-					Info:         info,
-					Model:        chatReq.Model,
-					Provider:     "cache",
-					Path:         r.URL.Path,
-					Start:        start,
-					Status:       "ok",
-					Scan:         scanResult,
-					ReqBody:      body,
-					RespBody:     entry.Response,
-					Headers:      r.Header,
-					IPAddress:    r.RemoteAddr,
-					UserAgent:    r.UserAgent(),
+					TraceID:   traceID,
+					Info:      info,
+					Model:     chatReq.Model,
+					Provider:  "cache",
+					Path:      r.URL.Path,
+					Start:     start,
+					Status:    "ok",
+					Scan:      scanResult,
+					ReqBody:   body,
+					RespBody:  entry.Response,
+					Headers:   r.Header,
+					IPAddress: r.RemoteAddr,
+					UserAgent: r.UserAgent(),
 				})
 				return
 			}
@@ -1496,7 +1496,10 @@ func (h *Handler) recordTrace(in recordInput) {
 	var tags map[string]string
 	if in.Headers != nil {
 		endUserID = in.Headers.Get("X-End-User-Id")
-		sessionID = in.Headers.Get("X-Session-Id")
+		sessionID = in.Headers.Get("X-Bastio-Session-Id")
+		if sessionID == "" {
+			sessionID = in.Headers.Get("X-Session-Id")
+		}
 		environment = in.Headers.Get("X-Bastio-Environment")
 		release = in.Headers.Get("X-Bastio-Release")
 		traceName = in.Headers.Get("X-Bastio-Trace-Name")
@@ -2107,5 +2110,3 @@ func extractCacheThreshold(header http.Header, defaultThreshold float32) float32
 func sanitizeLog(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
 }
-
-

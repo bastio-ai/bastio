@@ -241,6 +241,20 @@ func (d *TopicPolicyDetector) load(ctx context.Context, customerID uuid.UUID) (*
 	return compiled, nil
 }
 
+// Invalidate drops the compiled cache for customerID so the next Detect
+// reloads from Postgres. Called after dashboard pattern writes.
+func (d *TopicPolicyDetector) Invalidate(customerID uuid.UUID) {
+	if d == nil || customerID == uuid.Nil {
+		return
+	}
+	d.mu.Lock()
+	if d.compiled != nil {
+		delete(d.compiled, customerID)
+	}
+	d.lastLoad = time.Time{}
+	d.mu.Unlock()
+}
+
 // compileRule translates a (kind, pattern) row into a compiled regex.
 // keyword patterns become case-insensitive word-boundary matches;
 // regex patterns are compiled with case-insensitive flag only —

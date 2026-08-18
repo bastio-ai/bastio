@@ -63,12 +63,12 @@ type StepResult struct {
 // > mask > warn > pass). SanitizedContent reflects the content after all
 // rewrite steps have run in order.
 type StepsResult struct {
-	Direction        Direction     `json:"direction"`
-	Steps            []StepResult  `json:"steps"`
-	Action           Action        `json:"action"`
-	ShouldBlock      bool          `json:"should_block"`
-	SanitizedContent string        `json:"sanitized_content,omitempty"`
-	TokenMap         *TokenMap     `json:"-"`
+	Direction        Direction    `json:"direction"`
+	Steps            []StepResult `json:"steps"`
+	Action           Action       `json:"action"`
+	ShouldBlock      bool         `json:"should_block"`
+	SanitizedContent string       `json:"sanitized_content,omitempty"`
+	TokenMap         *TokenMap    `json:"-"`
 	// Transforms applied by the canonicalization stage (e.g.
 	// "base64-decoded", "fold-homoglyphs"). Empty when canonicalization
 	// was disabled or produced no changes.
@@ -86,6 +86,9 @@ type StepsResult struct {
 type RunOptions struct {
 	Canonicalize bool
 	Role         string
+	// Suppressions are false-positive skips applied after each detector
+	// returns, before the step's threshold and strategy run.
+	Suppressions []PatternSuppression
 }
 
 // RunSteps executes the ordered step list against content, honoring each
@@ -161,6 +164,9 @@ func (e *Engine) RunSteps(ctx context.Context, content string, steps []Step, opt
 			continue
 		}
 
+		if opts != nil {
+			findings = filterSuppressed(findings, opts.Suppressions)
+		}
 		setWeightedScores(findings)
 		out.Findings = findings
 		maxScore := 0.0
@@ -279,20 +285,23 @@ func rank(a Action) int {
 //     so bad tool/retrieval content never reaches downstream detectors
 //     that might rewrite and forward it.
 //  2. injection — user-role prompt injection; blocks high-confidence hits.
-//  3. jailbreak — warn-level; the attack surface is broader and more
-//     prone to benign-sounding phrasings.
+//  3. jailbreak — warn at 0.6, block at 0.8. Mid-confidence hits
+//     (fiction framing, hypotheticals) surface as findings without
+//     dropping the request; high-confidence DAN-style hits block.
 //  4. secrets — mask before forwarding; distinct from PII.
 //  5. topic_policy — per-customer rules (no-op unless enabled + rows).
 //  6. pii — last because rewrites change the text other detectors saw.
 func DefaultInputSteps() []Step {
-	return []Step{
+	steps := []Step{
 		{Detector: "indirect_injection", Strategy: ActionBlock},
 		{Detector: "injection", Strategy: ActionBlock, Threshold: 0.72},
-		{Detector: "jailbreak", Strategy: ActionWarn, Threshold: 0.6},
-		{Detector: "secrets", Strategy: ActionMask},
-		{Detector: "topic_policy", Strategy: ActionWarn},
-		{Detector: "pii", Strategy: ActionMask},
 	}
+	steps = append(steps, jailbreakSteps(ActionBlock, 0.6)...)
+	return append(steps,
+		Step{Detector: "secrets", Strategy: ActionMask},
+		Step{Detector: "topic_policy", Strategy: ActionWarn},
+		Step{Detector: "pii", Strategy: ActionMask},
+	)
 }
 
 // DefaultOutputSteps returns the default response pipeline: scan
@@ -341,11 +350,7 @@ func StepsFromLegacyProfile(p Profile) (input []Step, output []Step) {
 		if threshold == 0 {
 			threshold = 0.6
 		}
-		input = append(input, Step{
-			Detector:  "jailbreak",
-			Strategy:  strategyOr(p.JailbreakStrategy, ActionWarn),
-			Threshold: threshold,
-		})
+		input = append(input, jailbreakSteps(strategyOr(p.JailbreakStrategy, ActionWarn), threshold)...)
 	}
 	if p.SecretsEnabled {
 		input = append(input, Step{
@@ -399,6 +404,32 @@ func strategyOr(configured, fallback Action) Action {
 		return fallback
 	}
 	return configured
+}
+
+const (
+	jailbreakWarnThreshold  = 0.6
+	jailbreakBlockThreshold = 0.8
+)
+
+// jailbreakSteps emits the jailbreak pipeline for a profile strategy.
+// Block is dual-band: warn at the configured (or default 0.6) threshold
+// so mid-confidence hits still create findings, then block at 0.8.
+// Warn and log_only stay a single step at the configured threshold.
+func jailbreakSteps(strategy Action, threshold float64) []Step {
+	if threshold <= 0 {
+		threshold = jailbreakWarnThreshold
+	}
+	if strategy != ActionBlock {
+		return []Step{{Detector: "jailbreak", Strategy: strategy, Threshold: threshold}}
+	}
+	warnAt := threshold
+	if warnAt >= jailbreakBlockThreshold {
+		return []Step{{Detector: "jailbreak", Strategy: ActionBlock, Threshold: warnAt}}
+	}
+	return []Step{
+		{Detector: "jailbreak", Strategy: ActionWarn, Threshold: warnAt},
+		{Detector: "jailbreak", Strategy: ActionBlock, Threshold: jailbreakBlockThreshold},
+	}
 }
 
 // Validate reports whether a step list is internally consistent. Called

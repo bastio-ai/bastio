@@ -170,26 +170,27 @@ type detectRequest struct {
 	Source      string          `json:"source,omitempty"`
 	ProxyID     string          `json:"proxy_id,omitempty"`
 	BypassCache bool            `json:"bypass_cache,omitempty"`
+	SessionID   string          `json:"session_id,omitempty"`
 }
 
 // detectMessageResult reports what happened to a single message.
 type detectMessageResult struct {
-	Role             string        `json:"role"`
-	Original         string        `json:"original"`
-	SanitizedContent string        `json:"sanitized_content"`
-	Action           Action        `json:"action"`
-	ShouldBlock      bool          `json:"should_block"`
-	Steps            []StepResult  `json:"steps"`
+	Role             string       `json:"role"`
+	Original         string       `json:"original"`
+	SanitizedContent string       `json:"sanitized_content"`
+	Action           Action       `json:"action"`
+	ShouldBlock      bool         `json:"should_block"`
+	Steps            []StepResult `json:"steps"`
 }
 
 // detectResponse is the envelope; the SDK maps this onto Mastra/Vercel
 // processor return shapes.
 type detectResponse struct {
-	Profile     string                 `json:"profile"`
-	Direction   Direction              `json:"direction"`
-	Action      Action                 `json:"action"`
-	ShouldBlock bool                   `json:"should_block"`
-	Messages    []detectMessageResult  `json:"messages"`
+	Profile     string                `json:"profile"`
+	Direction   Direction             `json:"direction"`
+	Action      Action                `json:"action"`
+	ShouldBlock bool                  `json:"should_block"`
+	Messages    []detectMessageResult `json:"messages"`
 }
 
 // Detect runs the selected step list against each message. Steps run
@@ -286,6 +287,8 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 	// a tenant policy to shadow against).
 	var baseProfile Profile
 	var haveBaseProfile bool
+	var rateAnomalyEnabled bool
+	var suppressions []PatternSuppression
 	var activeIdent overlay.Identity
 
 	if len(steps) == 0 {
@@ -316,6 +319,8 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 				r = r.WithContext(overlay.WithActive(r.Context(), snap, ident))
 			}
 		}
+		rateAnomalyEnabled = p.RateAnomalyEnabled
+		suppressions = p.Suppressions
 		if req.Direction == DirectionOutput {
 			steps = p.Output
 		} else {
@@ -337,7 +342,15 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 		stepsRes := h.engine.RunSteps(r.Context(), m.Content, steps, &RunOptions{
 			Canonicalize: canonicalize,
 			Role:         m.Role,
+			Suppressions: suppressions,
 		})
+		sessionID := strings.TrimSpace(req.SessionID)
+		if sessionID == "" {
+			sessionID = strings.TrimSpace(r.Header.Get("X-Bastio-Session-Id"))
+		}
+		if sessionID == "" {
+			sessionID = strings.TrimSpace(r.Header.Get("X-Session-Id"))
+		}
 		msgRes := detectMessageResult{
 			Role:             m.Role,
 			Original:         m.Content,
@@ -345,6 +358,32 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 			Action:           stepsRes.Action,
 			ShouldBlock:      stepsRes.ShouldBlock,
 			Steps:            stepsRes.Steps,
+		}
+		if sessionID != "" {
+			scanRes := &ScanResult{
+				Action:      stepsRes.Action,
+				ShouldBlock: stepsRes.ShouldBlock,
+			}
+			for _, s := range stepsRes.Steps {
+				if s.Skipped {
+					continue
+				}
+				scanRes.Findings = append(scanRes.Findings, s.Findings...)
+			}
+			coreCount := len(scanRes.Findings)
+			h.engine.applySessionAware(r.Context(), &ScanRequest{
+				Content:            m.Content,
+				CustomerID:         h.tenant(r.Context()).String(),
+				SessionID:          sessionID,
+				RateAnomalyEnabled: rateAnomalyEnabled,
+				Suppressions:       suppressions,
+			}, scanRes)
+			extra := scanRes.Findings[coreCount:]
+			if len(extra) > 0 {
+				msgRes.Steps = append(msgRes.Steps, sessionStepResults(extra)...)
+			}
+			msgRes.Action = scanRes.Action
+			msgRes.ShouldBlock = scanRes.ShouldBlock
 		}
 
 		// Overlay plugin detectors run after the core engine. Their
@@ -535,6 +574,7 @@ func (h *DetectHandler) runShadow(
 		shadowRes := h.engine.RunSteps(ctx, m.Content, steps, &RunOptions{
 			Canonicalize: canonicalize,
 			Role:         m.Role,
+			Suppressions: shadowProfile.Suppressions,
 		})
 		div, ok := overlay.Classify(
 			string(primary[i].Action), string(shadowRes.Action),
@@ -662,6 +702,45 @@ func stepsTotalDuration(steps []StepResult) time.Duration {
 	return total
 }
 
+func sessionStepResults(findings []Finding) []StepResult {
+	grouped := map[string][]Finding{}
+	order := make([]string, 0)
+	for _, f := range findings {
+		name := f.DetectorName
+		if name == "" {
+			name = "session"
+		}
+		if _, ok := grouped[name]; !ok {
+			order = append(order, name)
+		}
+		grouped[name] = append(grouped[name], f)
+	}
+	out := make([]StepResult, 0, len(order))
+	for _, name := range order {
+		fs := grouped[name]
+		max := 0.0
+		act := ActionWarn
+		for _, f := range fs {
+			w := f.Score * f.Confidence
+			if w > max {
+				max = w
+			}
+			if f.Action == ActionBlock {
+				act = ActionBlock
+			}
+		}
+		out = append(out, StepResult{
+			Detector: name,
+			Strategy: act,
+			Fired:    true,
+			Action:   act,
+			Score:    max,
+			Findings: fs,
+		})
+	}
+	return out
+}
+
 // resolveProfile falls back to the code default when a named profile
 // doesn't exist, so SDK users aren't blocked by first-run empty DBs.
 func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profile, error) {
@@ -683,6 +762,7 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 	}
 
 	var (
+		profileID                 uuid.UUID
 		canonicalizeEnabled       bool
 		injectionEnabled          bool
 		injectionThreshold        float32
@@ -704,7 +784,7 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 		outputExfilStrategy       string
 	)
 	err := h.db.QueryRow(ctx, `
-		SELECT canonicalize_enabled,
+		SELECT id, canonicalize_enabled,
 			injection_enabled, injection_threshold,
 			jailbreak_enabled, jailbreak_threshold,
 			pii_enabled, pii_action, pii_scan_response, pii_restore_response, pii_token_style,
@@ -713,8 +793,10 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 			indirect_injection_strategy, output_exfil_strategy
 		FROM security_profiles
 		WHERE customer_id = $1 AND name = $2
+		ORDER BY updated_at DESC
 		LIMIT 1
 	`, customerID, name).Scan(
+		&profileID,
 		&canonicalizeEnabled,
 		&injectionEnabled, &injectionThreshold,
 		&jailbreakEnabled, &jailbreakThreshold,
@@ -760,6 +842,7 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 		OutputExfilStrategy:       normalizeStrategy(outputExfilStrategy, ActionBlock),
 	}
 	p.Input, p.Output = StepsFromLegacyProfile(p)
+	p.Suppressions = loadSuppressions(ctx, h.db, customerID, profileID)
 	return p, nil
 }
 

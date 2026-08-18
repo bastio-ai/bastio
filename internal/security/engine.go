@@ -109,10 +109,10 @@ type Finding struct {
 
 // ScanRequest is the input to the security engine.
 type ScanRequest struct {
-	Content    string            // Text to scan (user message content)
-	CustomerID string            // For per-customer config
-	ProxyID    string            // For per-proxy config
-	EndUserID  string            // End user of the AI app
+	Content    string // Text to scan (user message content)
+	CustomerID string // For per-customer config
+	ProxyID    string // For per-proxy config
+	EndUserID  string // End user of the AI app
 	IPAddress  string
 	UserAgent  string
 	Metadata   map[string]string
@@ -162,6 +162,10 @@ type ScanRequest struct {
 	// so existing deployments see zero behavior change until they
 	// flip the toggle.
 	RateAnomalyEnabled bool
+	// Suppressions skip findings whose detector + matched_pattern (or
+	// subcategory / matched_content) match a tenant-owned allow. Applied
+	// before aggregation so an allowed pattern cannot block or warn.
+	Suppressions []PatternSuppression
 }
 
 // ScanResult is the output of a full security scan.
@@ -302,6 +306,7 @@ func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
 	// Append synthetic findings for normalization flags that fired
 	// so the aggregate step sees them alongside detector findings.
 	result.Findings = append(result.Findings, normalizeFindings(normResult)...)
+	result.Findings = filterSuppressed(result.Findings, req.Suppressions)
 
 	// Aggregate results. PIIAction influences whether PII findings count
 	// toward the auto-block threshold: mask/tokenize/warn/log_only mean
@@ -349,6 +354,7 @@ func (e *Engine) scanViaSteps(ctx context.Context, req *ScanRequest, start time.
 	opts := &RunOptions{
 		Canonicalize: req.Canonicalize,
 		Role:         req.Role,
+		Suppressions: req.Suppressions,
 	}
 	stepsRes := e.RunSteps(ctx, req.Content, req.Steps, opts)
 

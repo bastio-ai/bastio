@@ -10,10 +10,10 @@ func TestPIIDetector_Detect(t *testing.T) {
 	d := NewPIIDetector()
 
 	tests := []struct {
-		name       string
-		content    string
-		wantTypes  []string
-		wantCount  int
+		name      string
+		content   string
+		wantTypes []string
+		wantCount int
 	}{
 		{
 			name:      "no PII",
@@ -99,9 +99,9 @@ func TestPIIDetector_Redact(t *testing.T) {
 	d := NewPIIDetector()
 
 	tests := []struct {
-		name    string
-		input   string
-		check   func(string) bool
+		name  string
+		input string
+		check func(string) bool
 	}{
 		{
 			name:  "redact SSN",
@@ -192,5 +192,36 @@ func TestPIIDetector_EUVAT(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected eu_vat finding")
+	}
+}
+
+func TestPIIDetector_DanishCPR(t *testing.T) {
+	d := NewPIIDetector()
+	findings, _ := d.Detect(context.Background(), "CPR 190987-2231 on the form")
+	found := false
+	for _, f := range findings {
+		if f.MatchedPattern == "danish_cpr" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected danish_cpr, got %+v", findings)
+	}
+	spaced, _ := d.Detect(context.Background(), "personnummer 19 09 87 2231")
+	found = false
+	for _, f := range spaced {
+		if f.MatchedPattern == "danish_cpr" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected spaced danish_cpr, got %+v", spaced)
+	}
+	// Hyphenless 10-digit runs are intentionally not matched.
+	bare, _ := d.Detect(context.Background(), "order 1909872231 shipped")
+	for _, f := range bare {
+		if f.MatchedPattern == "danish_cpr" {
+			t.Errorf("hyphenless CPR should not fire: %+v", f)
+		}
 	}
 }

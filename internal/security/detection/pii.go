@@ -364,5 +364,29 @@ func (d *PIIDetector) initPatterns() {
 				return "[AADHAAR]"
 			},
 		},
+
+		// Danish CPR (personnummer). Hyphenated and space-separated
+		// forms only — the hyphenless 10-digit form collides with
+		// order IDs and is left to the extension-era paste detector.
+		// Day is anchored 01-31 so random digit runs don't fire.
+		{
+			regex:    regexp.MustCompile(`\b(0[1-9]|[12]\d|3[01])\d{4}-\d{4}\b`),
+			piiType:  "danish_cpr",
+			severity: security.SeverityHigh,
+			maskFn: func(s string) string {
+				if len(s) >= 4 {
+					return s[:2] + "****-****"
+				}
+				return "[CPR]"
+			},
+		},
+		{
+			regex:    regexp.MustCompile(`\b(0[1-9]|[12]\d|3[01])\s+\d{2}\s+\d{2}\s+\d{4}\b`),
+			piiType:  "danish_cpr",
+			severity: security.SeverityHigh,
+			maskFn: func(s string) string {
+				return "[CPR]"
+			},
+		},
 	}
 }

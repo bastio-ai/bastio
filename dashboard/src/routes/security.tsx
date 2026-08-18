@@ -5,11 +5,14 @@ import {
   Check,
   ChevronDown,
   FileOutput,
+  Gauge,
   GitBranch,
   KeyRound,
   ListChecks,
   Lock,
+  Plus,
   ShieldCheck,
+  Trash2,
   Unlock,
   Wand2,
 } from "lucide-react";
@@ -17,6 +20,7 @@ import { AdminSummaryStrip, SecurityNotice } from "@/components/admin/admin-prim
 import { PageHeader } from "@/components/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSecurityExtension } from "@/components/security-extension";
@@ -65,12 +69,13 @@ const STRATEGY_OPTIONS: Record<"text" | "secrets", { value: Strategy; label: str
 
 const detectorMeta = [
   { key: "injection", label: "Prompt Injection", enabledField: "injection_enabled" as const, strategyField: "injection_strategy" as const, thresholdField: "injection_threshold" as const, strategyOptions: STRATEGY_OPTIONS.text, patterns: 24, description: "System instruction override, prompt extraction, and multilingual injection variants.", icon: ShieldCheck },
-  { key: "pii", label: "PII Detection", enabledField: "pii_enabled" as const, strategyField: null, thresholdField: null, strategyOptions: null, patterns: 11, description: "Emails, government identifiers, payment data, phone numbers, IPs, and banking identifiers.", icon: ShieldCheck },
+  { key: "pii", label: "PII Detection", enabledField: "pii_enabled" as const, strategyField: null, thresholdField: null, strategyOptions: null, patterns: 13, description: "Emails, government identifiers (including Danish CPR), payment data, phone numbers, IPs, and banking identifiers.", icon: ShieldCheck },
   { key: "jailbreak", label: "Jailbreak Detection", enabledField: "jailbreak_enabled" as const, strategyField: "jailbreak_strategy" as const, thresholdField: "jailbreak_threshold" as const, strategyOptions: STRATEGY_OPTIONS.text, patterns: 20, description: "DAN, developer-mode impersonation, fiction framing, and hypothetical sandbagging.", icon: ShieldCheck },
-  { key: "secrets", label: "Secrets Detection", enabledField: "secrets_enabled" as const, strategyField: "secrets_strategy" as const, thresholdField: null, strategyOptions: STRATEGY_OPTIONS.secrets, patterns: 12, description: "Cloud, source control, payment, LLM and communication credentials, JWTs, and private keys.", icon: KeyRound },
+  { key: "secrets", label: "Secrets Detection", enabledField: "secrets_enabled" as const, strategyField: "secrets_strategy" as const, thresholdField: null, strategyOptions: STRATEGY_OPTIONS.secrets, patterns: 22, description: "Cloud, source control, payment, LLM, SaaS and communication credentials, connection strings, JWTs, and private keys.", icon: KeyRound },
   { key: "indirect_injection", label: "Indirect Injection", enabledField: "indirect_injection_enabled" as const, strategyField: "indirect_injection_strategy" as const, thresholdField: null, strategyOptions: STRATEGY_OPTIONS.text, patterns: 10, description: "Embedded prompts retrieved from tools, memory, documents, and RAG content.", icon: GitBranch },
   { key: "output_exfil", label: "Output Exfiltration", enabledField: "output_exfil_enabled" as const, strategyField: "output_exfil_strategy" as const, thresholdField: null, strategyOptions: STRATEGY_OPTIONS.text, patterns: 8, description: "Model responses that expose system prompts, embedded secrets, or memorized data.", icon: FileOutput },
   { key: "topic_policy", label: "Topic Policy", enabledField: "topic_policy_enabled" as const, strategyField: null, thresholdField: null, strategyOptions: null, patterns: 0, description: "Customer-defined rules for regulated topics, competitors, and internal terminology.", icon: ListChecks },
+  { key: "rate_anomaly", label: "Rate anomaly", enabledField: "rate_anomaly_enabled" as const, strategyField: null, thresholdField: null, strategyOptions: null, patterns: 0, description: "Flags request-rate bursts within a session. Requires X-Bastio-Session-Id. Default off.", icon: Gauge },
   { key: "bot", label: "Bot Detection", enabledField: "bot_detection_enabled" as const, strategyField: null, thresholdField: null, strategyOptions: null, patterns: 0, description: "Behavioral fingerprinting and automated request detection.", icon: Bot },
 ] as const;
 
@@ -152,7 +157,7 @@ export function SecurityPage() {
                     <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setExpanded(isExpanded ? null : detector.key)} aria-expanded={isExpanded}>
                       <div className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg border", enabled ? "border-success-border bg-success-bg text-success" : "border-border bg-muted/40 text-muted-foreground")}><Icon className="size-3.5" /></div>
                       <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="text-[12px] font-medium">{detector.label}</h3>{detector.key === "bot" ? <Badge variant="secondary" className="h-4 px-1.5 text-[8px]">coming soon</Badge> : null}</div><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{detector.description}</p></div>
-                      <div className="hidden items-center gap-5 sm:flex"><div className="w-20"><p className="text-[9px] uppercase tracking-wide text-muted-foreground">Action</p><p className="mt-0.5 font-mono text-[10px] text-foreground">{strategy ? String(strategy).replace("_", " ") : "Custom"}</p></div><div className="w-16"><p className="text-[9px] uppercase tracking-wide text-muted-foreground">Coverage</p><p className="mt-0.5 font-mono text-[10px] text-foreground">{detector.patterns ? `${detector.patterns} rules` : "Policy"}</p></div></div>
+                      <div className="hidden items-center gap-5 sm:flex"><div className="w-20"><p className="text-[9px] uppercase tracking-wide text-muted-foreground">Action</p><p className="mt-0.5 font-mono text-[10px] text-foreground">{detector.key === "jailbreak" && strategy === "block" ? "warn+block" : detector.key === "rate_anomaly" ? "Warn" : strategy ? String(strategy).replace("_", " ") : "Custom"}</p></div><div className="w-16"><p className="text-[9px] uppercase tracking-wide text-muted-foreground">Coverage</p><p className="mt-0.5 font-mono text-[10px] text-foreground">{detector.patterns ? `${detector.patterns} rules` : detector.key === "rate_anomaly" ? "Session" : "Policy"}</p></div></div>
                       <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
                     </button>
                     <Button variant={enabled ? "outline" : "ghost"} size="sm" className={cn("w-20", enabled && "text-success")} disabled={!profile || detector.key === "bot" || updateProfile.isPending} onClick={() => profile && update({ [detector.enabledField]: !enabled } as UpdateSecurityProfileRequest)}>{enabled ? "Enabled" : "Disabled"}</Button>
@@ -162,9 +167,10 @@ export function SecurityPage() {
                     <div className="border-t border-border/50 bg-muted/10 px-4 py-4 sm:pl-15">
                       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.75fr)]">
                         <div><p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">Protection coverage</p><p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-foreground/80">{detector.description}</p><div className="mt-3 flex flex-wrap gap-2"><Badge variant="outline" className="font-mono text-[9px]">{detector.patterns ? `${detector.patterns} built-in patterns` : "customer-defined policy"}</Badge><Badge variant={enabled ? "success" : "secondary"} className="text-[9px]">{enabled ? "evaluating traffic" : "not evaluating traffic"}</Badge></div></div>
-                        <div className={cn("rounded-lg border border-border/70 bg-background p-3", !enabled && "opacity-60")}>
-                          <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">Enforcement</p>
-                          {detector.key === "pii" && profile ? <PiiControls profile={profile} disabled={!enabled || updateProfile.isPending} onUpdate={update} /> : detector.strategyField && detector.strategyOptions && profile ? <div className="space-y-4"><StrategyField value={(profile[detector.strategyField] ?? detector.strategyOptions[0]?.value) as Strategy} options={detector.strategyOptions} onChange={(next) => update({ [detector.strategyField as string]: next } as UpdateSecurityProfileRequest)} disabled={!enabled || updateProfile.isPending} />{detector.thresholdField ? <ThresholdField value={(profile[detector.thresholdField] as number) ?? 0} onChange={(next) => update({ [detector.thresholdField as string]: next } as UpdateSecurityProfileRequest)} disabled={!enabled || updateProfile.isPending} /> : null}</div> : <p className="text-[10px] leading-relaxed text-muted-foreground">This detector is configured through policy rules. Add or edit rules in the corresponding policy workspace.</p>}
+                        <div className={cn("space-y-4 rounded-lg border border-border/70 bg-background p-3", !enabled && "opacity-60")}>
+                          <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">Enforcement</p>
+                          {detector.key === "pii" && profile ? <PiiControls profile={profile} disabled={!enabled || updateProfile.isPending} onUpdate={update} /> : detector.key === "topic_policy" && profile ? <TopicPatternList profileId={profile.id} disabled={updateProfile.isPending} /> : detector.key === "rate_anomaly" ? <p className="text-[10px] leading-relaxed text-muted-foreground">Warns when a session’s request rate jumps well above its own trailing baseline. Clients must send <code className="rounded border border-border bg-muted/40 px-1 font-mono">X-Bastio-Session-Id</code>. The playground sends one automatically.</p> : detector.strategyField && detector.strategyOptions && profile ? <div className="space-y-4"><StrategyField value={(profile[detector.strategyField] ?? detector.strategyOptions[0]?.value) as Strategy} options={detector.strategyOptions} onChange={(next) => update({ [detector.strategyField as string]: next } as UpdateSecurityProfileRequest)} disabled={!enabled || updateProfile.isPending} />{detector.key === "jailbreak" && strategy === "block" ? <p className="text-[9px] leading-relaxed text-muted-foreground">Scores ≥0.8 block the request; 0.6–0.8 warn and continue.</p> : null}{detector.thresholdField ? <ThresholdField value={(profile[detector.thresholdField] as number) ?? 0} onChange={(next) => update({ [detector.thresholdField as string]: next } as UpdateSecurityProfileRequest)} disabled={!enabled || updateProfile.isPending} /> : null}</div> : <p className="text-[10px] leading-relaxed text-muted-foreground">This detector is configured through policy rules. Add or edit rules in the corresponding policy workspace.</p>}
+                          {profile && detector.key !== "bot" ? <AllowedPatternList profileId={profile.id} detector={detector.key} disabled={updateProfile.isPending} /> : null}
                         </div>
                       </div>
                     </div>
@@ -190,6 +196,114 @@ export function SecurityPage() {
         {extraTabs.map((tab) => <TabsContent key={tab.id} value={tab.id}>{tab.component}</TabsContent>)}
       </Tabs>
     </>
+  );
+}
+
+function AllowedPatternList({
+  profileId,
+  detector,
+  disabled,
+}: {
+  profileId: string;
+  detector: string;
+  disabled: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const listed = useQuery({
+    queryKey: ["security-suppressions", profileId],
+    queryFn: () => api.security.listSuppressions(profileId),
+  });
+  const rows = (listed.data ?? []).filter(
+    (row) => row.detector.toLowerCase() === detector.toLowerCase(),
+  );
+  const remove = useMutation({
+    mutationFn: (id: string) => api.security.deleteSuppression(profileId, id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["security-suppressions"] });
+    },
+  });
+  return (
+    <div className="space-y-2 border-t border-border/50 pt-3">
+      <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">Allowed patterns</p>
+      {rows.length ? (
+        <ul className="space-y-1.5">
+          {rows.map((row) => (
+            <li key={row.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{row.pattern}</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                disabled={disabled || remove.isPending}
+                onClick={() => remove.mutate(row.id)}
+                aria-label={`Stop allowing ${row.pattern}`}
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[10px] text-muted-foreground">None. Allow a false positive from a threat row.</p>
+      )}
+    </div>
+  );
+}
+
+function TopicPatternList({ profileId, disabled }: { profileId: string; disabled: boolean }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState("");
+  const [action, setAction] = useState<"warn" | "block">("warn");
+  const patterns = useQuery({
+    queryKey: ["security-patterns", profileId],
+    queryFn: () => api.security.listPatterns(profileId),
+  });
+  const create = useMutation({
+    mutationFn: () => api.security.createPattern(profileId, { pattern: draft.trim(), action, pattern_type: "keyword" }),
+    onSuccess: () => {
+      setDraft("");
+      void queryClient.invalidateQueries({ queryKey: ["security-patterns", profileId] });
+      void queryClient.invalidateQueries({ queryKey: ["security-profiles"] });
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (patternId: string) => api.security.deletePattern(profileId, patternId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["security-patterns", profileId] });
+    },
+  });
+  const submit = () => {
+    if (!draft.trim() || create.isPending) return;
+    create.mutate();
+  };
+  return (
+    <div className="space-y-3">
+      <p className="text-[9px] leading-relaxed text-muted-foreground">Keywords matched in prompts. Adding the first keyword enables Topic Policy.</p>
+      <div className="flex items-center gap-2">
+        <Input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} placeholder="e.g. competitor name" disabled={disabled || create.isPending} className="h-8 text-[11px]" />
+        <Select value={action} onValueChange={(next) => next && setAction(next as "warn" | "block")}>
+          <SelectTrigger className="h-8 w-[88px]" disabled={disabled || create.isPending}><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="warn">Warn</SelectItem>
+            <SelectItem value="block">Block</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button size="sm" variant="outline" disabled={disabled || create.isPending || !draft.trim()} onClick={submit}><Plus className="size-3.5" /> Add</Button>
+      </div>
+      {patterns.data?.length ? (
+        <ul className="space-y-1.5">
+          {patterns.data.map((pattern) => (
+            <li key={pattern.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{pattern.pattern}</span>
+              <Badge variant="outline" className="h-4 px-1.5 text-[8px]">{pattern.action}</Badge>
+              <Button variant="ghost" size="icon-xs" disabled={disabled || remove.isPending} onClick={() => remove.mutate(pattern.id)} aria-label={`Remove ${pattern.pattern}`}><Trash2 className="size-3" /></Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[10px] text-muted-foreground">No keywords yet.</p>
+      )}
+      {create.isError ? <p className="text-[10px] text-destructive">{(create.error as Error).message}</p> : null}
+    </div>
   );
 }
 

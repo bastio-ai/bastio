@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import type { ThreatEvent } from "@/api/client";
+import { AllowPatternAction } from "@/components/observe/allow-pattern-action";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn, weightedThreatScore } from "@/lib/utils";
@@ -86,6 +87,7 @@ export function ThreatInspector({
       </div>
 
       <div className="space-y-2 border-t border-border-subtle p-3">
+        <AllowPatternAction threat={threat} className="w-full text-[11px]" />
         <Link to="/overlays" className={buttonVariants({ size: "sm" }) + " w-full text-[11px]"}><ShieldPlus className="h-3.5 w-3.5" /> Create policy from event</Link>
         <Link to="/traces/$id" params={{ id: threat.trace_id }} className={buttonVariants({ variant: "outline", size: "sm" }) + " w-full text-[11px]"}>Open related trace <ExternalLink className="h-3 w-3" /></Link>
         <Button variant="outline" size="sm" className="w-full text-[11px]"><ListPlus className="h-3.5 w-3.5" /> Add to investigation</Button>

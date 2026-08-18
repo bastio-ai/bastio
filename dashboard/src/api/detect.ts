@@ -35,6 +35,8 @@ export interface DetectRequest {
   source?: "playground";
   /** Associate a run with a proxy; persisted into playground_runs.proxy_id. */
   proxy_id?: string;
+  /** Shared across playground runs in this tab so Crescendo can see prior turns. */
+  session_id?: string;
 }
 
 export interface DetectFinding {
@@ -80,9 +82,13 @@ export interface DetectResponse {
 }
 
 export async function detect(req: DetectRequest): Promise<DetectResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (req.session_id) {
+    headers["X-Bastio-Session-Id"] = req.session_id;
+  }
   const res = await fetch(`${baseUrl}/v1/detect`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(req),
   });
   const text = await res.text();

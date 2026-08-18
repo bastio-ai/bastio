@@ -82,5 +82,11 @@
     "text": "Aadhaar 2345 6789 0123 must be verified before the SIM activation.",
     "labels": ["pii"],
     "source": "handwritten"
+  },
+  {
+    "name": "pii_danish_cpr",
+    "text": "Update HR: CPR 190987-2231 for the Copenhagen hire.",
+    "labels": ["pii"],
+    "source": "handwritten"
   }
 ]
