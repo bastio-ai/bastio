@@ -105,9 +105,9 @@ func (d *SecretsDetector) initPatterns() {
 	}
 
 	d.prefixes = []secretPattern{
-		// AWS — 20-char access keys and 40-char secrets.
+		// AWS — 20-char access keys (AKIA long-lived, ASIA STS) and 40-char secrets.
 		{
-			regex:      regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),
+			regex:      regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`),
 			kind:       "aws_access_key",
 			severity:   security.SeverityCritical,
 			confidence: 0.98,
@@ -121,9 +121,9 @@ func (d *SecretsDetector) initPatterns() {
 			maskFn:     maskPrefix(8),
 		},
 
-		// GitHub — modern PATs (classic + fine-grained).
+		// GitHub — classic PAT plus ghs/gho/ghr/ghu prefixes.
 		{
-			regex:      regexp.MustCompile(`\bghp_[A-Za-z0-9]{36}\b`),
+			regex:      regexp.MustCompile(`\b(?:ghp|ghs|gho|ghr|ghu)_[A-Za-z0-9]{36,}\b`),
 			kind:       "github_pat",
 			severity:   security.SeverityCritical,
 			confidence: 0.99,
@@ -137,20 +137,31 @@ func (d *SecretsDetector) initPatterns() {
 			maskFn:     maskPrefix(12),
 		},
 
-		// OpenAI / Anthropic / Gemini.
-		{
-			regex:      regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}\b`),
-			kind:       "openai_api_key",
-			severity:   security.SeverityCritical,
-			confidence: 0.95,
-			maskFn:     maskPrefix(6),
-		},
+		// Anthropic before the generic sk- rule so sk-ant-* is not
+		// classified as an OpenAI key.
 		{
 			regex:      regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_-]{40,}\b`),
 			kind:       "anthropic_api_key",
 			severity:   security.SeverityCritical,
 			confidence: 0.98,
 			maskFn:     maskPrefix(8),
+		},
+		// OpenAI user keys (sk- + alphanumerics) and project keys.
+		// Body of the user-key rule is [A-Za-z0-9] so sk-ant-* stays
+		// on the Anthropic rule (Go's RE2 has no lookahead).
+		{
+			regex:      regexp.MustCompile(`\bsk-proj-[A-Za-z0-9_-]{20,}\b`),
+			kind:       "openai_api_key",
+			severity:   security.SeverityCritical,
+			confidence: 0.98,
+			maskFn:     maskPrefix(8),
+		},
+		{
+			regex:      regexp.MustCompile(`\bsk-[A-Za-z0-9]{20,}\b`),
+			kind:       "openai_api_key",
+			severity:   security.SeverityCritical,
+			confidence: 0.95,
+			maskFn:     maskPrefix(6),
 		},
 
 		// Stripe (test + live).
@@ -162,9 +173,9 @@ func (d *SecretsDetector) initPatterns() {
 			maskFn:     maskPrefix(10),
 		},
 
-		// Slack — bot, user, app tokens.
+		// Slack — bot, user, app, and session tokens.
 		{
-			regex:      regexp.MustCompile(`\bxox[abpr]-[A-Za-z0-9-]{10,}\b`),
+			regex:      regexp.MustCompile(`\bxox[abprs]-[A-Za-z0-9-]{10,}\b`),
 			kind:       "slack_token",
 			severity:   security.SeverityCritical,
 			confidence: 0.97,
@@ -197,6 +208,74 @@ func (d *SecretsDetector) initPatterns() {
 			severity:   security.SeverityCritical,
 			confidence: 0.99,
 			maskFn:     func(_ string) string { return "[PRIVATE_KEY_HEADER]" },
+		},
+
+		// Azure Storage account keys — distinctive AccountKey= prefix
+		// plus 86-char base64 payload ending in ==.
+		{
+			regex:      regexp.MustCompile(`\bAccountKey=[A-Za-z0-9+/]{86}==`),
+			kind:       "azure_storage_key",
+			severity:   security.SeverityCritical,
+			confidence: 0.98,
+			maskFn:     maskPrefix(16),
+		},
+		// MongoDB connection URIs (standard + SRV). Credential lives in
+		// the authority section; mask the whole URI.
+		{
+			regex:      regexp.MustCompile(`\bmongodb(?:\+srv)?:\/\/[^\s'"<>]{15,}`),
+			kind:       "mongodb_uri",
+			severity:   security.SeverityCritical,
+			confidence: 0.95,
+			maskFn:     func(_ string) string { return "mongodb://[REDACTED]" },
+		},
+		{
+			regex:      regexp.MustCompile(`\bAC[a-f0-9]{32}\b`),
+			kind:       "twilio_sid",
+			severity:   security.SeverityHigh,
+			confidence: 0.92,
+			maskFn:     maskPrefix(6),
+		},
+		{
+			regex:      regexp.MustCompile(`\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b`),
+			kind:       "sendgrid_key",
+			severity:   security.SeverityCritical,
+			confidence: 0.98,
+			maskFn:     maskPrefix(6),
+		},
+		{
+			regex:      regexp.MustCompile(`(?:^|[^A-Za-z0-9.-])https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d{17,20}/[A-Za-z0-9_-]{60,}`),
+			kind:       "discord_webhook",
+			severity:   security.SeverityHigh,
+			confidence: 0.97,
+			maskFn:     func(_ string) string { return "https://discord.com/api/webhooks/[REDACTED]" },
+		},
+		{
+			regex:      regexp.MustCompile(`\bnpm_[A-Za-z0-9]{36}\b`),
+			kind:       "npm_token",
+			severity:   security.SeverityCritical,
+			confidence: 0.98,
+			maskFn:     maskPrefix(8),
+		},
+		{
+			regex:      regexp.MustCompile(`\btskey-(?:auth|api|client)-[A-Za-z0-9]{16,}-[A-Za-z0-9]{32,}\b`),
+			kind:       "tailscale_key",
+			severity:   security.SeverityCritical,
+			confidence: 0.98,
+			maskFn:     maskPrefix(12),
+		},
+		{
+			regex:      regexp.MustCompile(`\bpypi-AgEIcHlwaS5vcmcC[A-Za-z0-9_-]{40,}`),
+			kind:       "pypi_token",
+			severity:   security.SeverityCritical,
+			confidence: 0.99,
+			maskFn:     maskPrefix(12),
+		},
+		{
+			regex:      regexp.MustCompile(`(?i)\bheroku[_-]?api[_-]?key[\s:=]+[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b`),
+			kind:       "heroku_api_key",
+			severity:   security.SeverityCritical,
+			confidence: 0.97,
+			maskFn:     maskPrefix(16),
 		},
 
 		// Generic "SECRET=" style assignment with high-entropy value —

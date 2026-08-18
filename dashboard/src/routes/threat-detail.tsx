@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { EmptyState, PageHeader } from "@/components/card";
 import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
+import { AllowPatternAction } from "@/components/observe/allow-pattern-action";
 import { SkeletonRows } from "@/components/skeleton";
 import { weightedThreatScore } from "@/lib/utils";
 
@@ -98,6 +99,7 @@ export function ThreatDetailPage() {
         }
         actions={
           <div className="flex items-center gap-2">
+            <AllowPatternAction threat={threat} />
             <CapturePolicyAction threatID={threat.id} />
             <BackToThreats />
           </div>

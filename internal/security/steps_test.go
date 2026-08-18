@@ -174,3 +174,42 @@ func TestStepsFromLegacyProfile_OrderInjectionBeforePII(t *testing.T) {
 		t.Fatalf("injection must be first so it short-circuits before PII rewrites: %v", input)
 	}
 }
+
+func TestDefaultInputSteps_JailbreakDualBand(t *testing.T) {
+	steps := DefaultInputSteps()
+	var jailbreak []Step
+	for _, s := range steps {
+		if s.Detector == "jailbreak" {
+			jailbreak = append(jailbreak, s)
+		}
+	}
+	if len(jailbreak) != 2 {
+		t.Fatalf("default jailbreak must be warn then block, got %v", jailbreak)
+	}
+	if jailbreak[0].Strategy != ActionWarn || jailbreak[0].Threshold != 0.6 {
+		t.Errorf("first jailbreak step: want warn@0.6, got %+v", jailbreak[0])
+	}
+	if jailbreak[1].Strategy != ActionBlock || jailbreak[1].Threshold != 0.8 {
+		t.Errorf("second jailbreak step: want block@0.8, got %+v", jailbreak[1])
+	}
+}
+
+func TestStepsFromLegacyProfile_JailbreakBlockDualBand(t *testing.T) {
+	p := Profile{JailbreakEnabled: true, JailbreakStrategy: ActionBlock, JailbreakThreshold: 0.6}
+	input, _ := StepsFromLegacyProfile(p)
+	if len(input) != 2 {
+		t.Fatalf("block strategy should emit two jailbreak steps, got %v", input)
+	}
+	if input[0].Strategy != ActionWarn || input[0].Threshold != 0.6 {
+		t.Errorf("want warn@0.6, got %+v", input[0])
+	}
+	if input[1].Strategy != ActionBlock || input[1].Threshold != 0.8 {
+		t.Errorf("want block@0.8, got %+v", input[1])
+	}
+
+	warn := Profile{JailbreakEnabled: true, JailbreakStrategy: ActionWarn, JailbreakThreshold: 0.6}
+	warnIn, _ := StepsFromLegacyProfile(warn)
+	if len(warnIn) != 1 || warnIn[0].Strategy != ActionWarn {
+		t.Fatalf("warn strategy should stay a single step, got %v", warnIn)
+	}
+}

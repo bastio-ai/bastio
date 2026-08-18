@@ -655,7 +655,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	// Build the engine + profile lookup via the shared constructor
 	// so every Bastio surface (gateway, workspace, worker, detect
 	// SDK) runs the same detector list. See BuildSecurityEngine.
-	secEngine, profileLookup := BuildSecurityEngine(context.Background(), s.db.Pool, s.redis)
+	secEngine, profileLookup, topicPolicy := BuildSecurityEngine(context.Background(), s.db.Pool, s.redis)
 
 	providerRegistry := providers.NewRegistry()
 	providerRegistry.Register(providers.NewOpenAIClient())
@@ -700,6 +700,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	promptHandler.SetSecurityProfiles(profileLookup)
 	apiKeyHandler := auth.NewAPIKeyHandler(s.db.Pool)
 	secProfileHandler := security.NewProfileHandler(s.db.Pool)
+	secProfileHandler.SetTopicInvalidator(topicPolicy.Invalidate)
 	detectHandler := security.NewDetectHandler(secEngine, profileLookup, s.db.Pool)
 	detectHandler.SetCache(s.redis)
 	detectHandler.SetOverlayLoader(overlayLoader)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/bastio-ai/bastio/pkg/tenant"
@@ -32,7 +33,8 @@ func tenantIDFromCtx(ctx context.Context) string {
 
 // ProfileHandler manages security profile endpoints.
 type ProfileHandler struct {
-	db *pgxpool.Pool
+	db              *pgxpool.Pool
+	invalidateTopic func(uuid.UUID)
 }
 
 // NewProfileHandler creates a new security profile handler.
@@ -45,6 +47,8 @@ func (h *ProfileHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/profiles", h.ListProfiles)
 	r.Put("/profiles/{id}", h.UpdateProfile)
+	h.topicRoutes(r)
+	h.suppressionRoutes(r)
 	return r
 }
 

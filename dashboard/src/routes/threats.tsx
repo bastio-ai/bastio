@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
@@ -28,7 +28,7 @@ import {
 } from "@/components/observe/threat-filter-bar";
 import { SkeletonRows } from "@/components/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -416,7 +416,14 @@ function Pagination({ page, returned, onPage }: { page: number; returned: number
 }
 
 function ThreatsEmptyState({ hasActiveFilters }: { hasActiveFilters: boolean }) {
-  return <EmptyState icon={<ShieldAlert className="h-6 w-6" />} title={hasActiveFilters ? "No threats match these filters" : "No threats detected"} description={hasActiveFilters ? "Try loosening or resetting the filters." : "Threat events detected by the gateway will appear here."} />;
+  return (
+    <EmptyState
+      icon={<ShieldAlert className="h-6 w-6" />}
+      title={hasActiveFilters ? "No threats match these filters" : "No threats detected"}
+      description={hasActiveFilters ? "Try loosening or resetting the filters." : "Threat events detected by the gateway will appear here."}
+      action={!hasActiveFilters ? <Link to="/playground" className={buttonVariants({ variant: "outline", size: "sm" })}>Try a sample in the playground</Link> : undefined}
+    />
+  );
 }
 
 function useWideViewport() {

@@ -25,10 +25,10 @@ import (
 
 // ThreatAlertArgs is enqueued when a high-severity threat is detected.
 type ThreatAlertArgs struct {
-	TraceID    string `json:"trace_id"`
-	CustomerID string `json:"customer_id"`
-	ThreatType string `json:"threat_type"`
-	Severity   string `json:"severity"`
+	TraceID    string  `json:"trace_id"`
+	CustomerID string  `json:"customer_id"`
+	ThreatType string  `json:"threat_type"`
+	Severity   string  `json:"severity"`
 	Score      float64 `json:"score"`
 }
 
@@ -121,7 +121,7 @@ func main() {
 			defer redisCache.Close()
 		}
 	}
-	secEngine, secProfiles := server.BuildSecurityEngine(ctx, db.Pool, redisCache)
+	secEngine, secProfiles, _ := server.BuildSecurityEngine(ctx, db.Pool, redisCache)
 	ingestWorker.SetSecurityEngine(secEngine)
 	ingestWorker.SetSecurityProfiles(secProfiles)
 	slog.Info("worker: security gate wired for KB ingest",
@@ -147,7 +147,7 @@ func main() {
 	client, err := river.NewClient(riverpgxv5.New(db.Pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 100},
-			"alerts":          {MaxWorkers: 20},
+			"alerts":           {MaxWorkers: 20},
 		},
 		Workers: workers,
 		PeriodicJobs: []*river.PeriodicJob{

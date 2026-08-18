@@ -62,6 +62,11 @@ type Profile struct {
 
 	Input  []Step
 	Output []Step
+
+	// Suppressions are tenant-owned false-positive skips loaded with
+	// the profile. The engine drops matching findings before strategy
+	// evaluation. Empty when none are configured.
+	Suppressions []PatternSuppression
 }
 
 // DefaultProfile returns a safe baseline used when no security_profiles
@@ -69,18 +74,18 @@ type Profile struct {
 // the historical behaviour before profiles were loaded per-request.
 func DefaultProfile() Profile {
 	return Profile{
-		CanonicalizeEnabled:      true,
-		NormalizeUnicode:         true,
-		NormalizeDecode:          true,
-		InjectionEnabled:         true,
-		InjectionThreshold:       0.72,
-		JailbreakEnabled:         true,
-		JailbreakThreshold:       0.6,
-		PIIEnabled:               true,
-		PIIAction:                ActionMask,
-		PIIScanResponse:          true,
-		PIIRestoreResponse:       true,
-		PIITokenStyle:            TokenStyleAngle,
+		CanonicalizeEnabled:       true,
+		NormalizeUnicode:          true,
+		NormalizeDecode:           true,
+		InjectionEnabled:          true,
+		InjectionThreshold:        0.72,
+		JailbreakEnabled:          true,
+		JailbreakThreshold:        0.6,
+		PIIEnabled:                true,
+		PIIAction:                 ActionMask,
+		PIIScanResponse:           true,
+		PIIRestoreResponse:        true,
+		PIITokenStyle:             TokenStyleAngle,
 		SecretsEnabled:            true,
 		IndirectInjectionEnabled:  true,
 		OutputExfilEnabled:        true,
@@ -143,6 +148,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		secretsStrategy           string
 		indirectInjectionStrategy string
 		outputExfilStrategy       string
+		suppressionsRaw           []byte
 	)
 	err := l.db.QueryRow(ctx, `
 		SELECT canonicalize_enabled, normalize_unicode, normalize_decode,
@@ -152,9 +158,15 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 			secrets_enabled, indirect_injection_enabled, output_exfil_enabled, topic_policy_enabled,
 			rate_anomaly_enabled,
 			injection_strategy, jailbreak_strategy, secrets_strategy,
-			indirect_injection_strategy, output_exfil_strategy
+			indirect_injection_strategy, output_exfil_strategy,
+			COALESCE((
+				SELECT json_agg(json_build_object('detector', s.detector, 'pattern', s.pattern) ORDER BY s.created_at)
+				FROM security_suppressions s
+				WHERE s.customer_id = security_profiles.customer_id AND s.profile_id = security_profiles.id
+			), '[]'::json)
 		FROM security_profiles
 		WHERE customer_id = $1 AND name = 'default'
+		ORDER BY updated_at DESC
 		LIMIT 1
 	`, customerID).Scan(
 		&canonicalizeEnabled, &normalizeUnicode, &normalizeDecode,
@@ -165,6 +177,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		&rateAnomalyEnabled,
 		&injectionStrategy, &jailbreakStrategy, &secretsStrategy,
 		&indirectInjectionStrategy, &outputExfilStrategy,
+		&suppressionsRaw,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -214,6 +227,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 	// the flat fields would have produced so the gateway's behavior is
 	// identical until migrations populate dedicated columns.
 	p.Input, p.Output = StepsFromLegacyProfile(p)
+	p.Suppressions = decodeSuppressionsJSON(suppressionsRaw)
 	return &p, nil
 }
 

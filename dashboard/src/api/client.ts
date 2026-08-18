@@ -28,14 +28,48 @@ export type UserAnalytics = components["schemas"]["UserAnalytics"];
 export type ThreatEvent = components["schemas"]["ThreatEvent"];
 export type AnalyticsOverview = components["schemas"]["AnalyticsOverview"];
 export type APIKey = components["schemas"]["APIKey"];
-export type SecurityProfile = components["schemas"]["SecurityProfile"];
+export type SecurityProfile = components["schemas"]["SecurityProfile"] & {
+  rate_anomaly_enabled?: boolean;
+};
+export type UpdateSecurityProfileRequest = components["schemas"]["UpdateSecurityProfileRequest"] & {
+  rate_anomaly_enabled?: boolean;
+};
 export type CreateProxyRequest = components["schemas"]["CreateProxyRequest"];
 export type UpdateProxyRequest = components["schemas"]["UpdateProxyRequest"];
 export type CreateAPIKeyRequest = components["schemas"]["CreateAPIKeyRequest"];
 export type ProviderKey = components["schemas"]["ProviderKey"];
 export type CreateProviderKeyRequest = components["schemas"]["CreateProviderKeyRequest"];
 export type AppConfig = components["schemas"]["AppConfig"];
-export type UpdateSecurityProfileRequest = components["schemas"]["UpdateSecurityProfileRequest"];
+
+export type SecurityPattern = {
+  id: string;
+  name: string;
+  pattern_type: "keyword" | "regex";
+  pattern: string;
+  action: "block" | "warn" | "log" | "log_only";
+  severity: string;
+};
+
+export type SecuritySuppression = {
+  id: string;
+  detector: string;
+  pattern: string;
+};
+
+const apiBase = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL ?? "";
+
+async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${apiBase}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(text || res.statusText);
+  }
+  return (text ? JSON.parse(text) : null) as T;
+}
 
 export type Environment = components["schemas"]["Environment"];
 export type CreateEnvironmentRequest = components["schemas"]["CreateEnvironmentRequest"];
@@ -261,6 +295,29 @@ export const api = {
           params: { path: { id } },
           body: data,
         }),
+      ),
+    listPatterns: (profileId: string) =>
+      fetchJSON<SecurityPattern[]>(`/v1/security/profiles/${profileId}/patterns`),
+    createPattern: (profileId: string, data: { pattern: string; action?: "block" | "warn"; pattern_type?: "keyword" | "regex" }) =>
+      fetchJSON<SecurityPattern>(`/v1/security/profiles/${profileId}/patterns`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deletePattern: (profileId: string, patternId: string) =>
+      fetchJSON<{ status: string }>(`/v1/security/profiles/${profileId}/patterns/${patternId}`, {
+        method: "DELETE",
+      }),
+    listSuppressions: (profileId: string) =>
+      fetchJSON<SecuritySuppression[]>(`/v1/security/profiles/${profileId}/suppressions`),
+    createSuppression: (profileId: string, data: { detector: string; pattern: string }) =>
+      fetchJSON<SecuritySuppression>(`/v1/security/profiles/${profileId}/suppressions`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deleteSuppression: (profileId: string, suppressionId: string) =>
+      fetchJSON<{ status: string }>(
+        `/v1/security/profiles/${profileId}/suppressions/${suppressionId}`,
+        { method: "DELETE" },
       ),
   },
 

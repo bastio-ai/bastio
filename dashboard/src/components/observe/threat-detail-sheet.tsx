@@ -13,6 +13,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { ThreatEvent } from "@/api/client";
+import { AllowPatternAction } from "@/components/observe/allow-pattern-action";
 import { weightedThreatScore } from "@/lib/utils";
 
 const severityVariant = (s: string) => {
@@ -138,6 +139,7 @@ function ThreatDetailBody({ threat }: { threat: ThreatEvent }) {
       </div>
 
       <SheetFooter>
+        <AllowPatternAction threat={threat} className="text-xs" />
         <Link
           to="/threats/$id"
           params={{ id: threat.id }}

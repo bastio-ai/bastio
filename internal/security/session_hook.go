@@ -3,6 +3,7 @@ package security
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/bastio-ai/bastio/internal/security/session"
@@ -21,6 +22,7 @@ func (e *Engine) applySessionAware(ctx context.Context, req *ScanRequest, result
 	if req.SessionID == "" {
 		return
 	}
+	sessionID := scopedSessionID(req.CustomerID, req.SessionID)
 
 	// Run the session-aware detectors first so they see the current
 	// turn's max signal as "currentScore". Findings from them get
@@ -39,10 +41,11 @@ func (e *Engine) applySessionAware(ctx context.Context, req *ScanRequest, result
 			if gated, ok := sd.(GatedSessionDetector); ok && !gated.EnabledFor(req) {
 				continue
 			}
-			extra, err := sd.DetectWithSession(ctx, req.SessionID, req.Content, maxScore)
+			extra, err := sd.DetectWithSession(ctx, sessionID, req.Content, maxScore)
 			if err != nil {
-				slog.Warn("session detector error", "error", err, "session", req.SessionID)
+				slog.Warn("session detector error", "error", err)
 			}
+			extra = filterSuppressed(extra, req.Suppressions)
 			if len(extra) == 0 {
 				continue
 			}
@@ -79,8 +82,19 @@ func (e *Engine) applySessionAware(ctx context.Context, req *ScanRequest, result
 			Action:         string(result.Action),
 			At:             time.Now().UTC(),
 		}
-		if err := e.sessionStore.Append(ctx, req.SessionID, entry); err != nil {
-			slog.Warn("crescendo store append error", "error", err, "session", req.SessionID)
+		if err := e.sessionStore.Append(ctx, sessionID, entry); err != nil {
+			slog.Warn("crescendo store append error", "error", err)
 		}
 	}
+}
+
+// scopedSessionID namespaces the caller-supplied session id by tenant so
+// playground /v1/detect cannot poison another customer's gateway
+// Crescendo buffer. Empty customer id keeps the raw id (tests, offline).
+func scopedSessionID(customerID, sessionID string) string {
+	customerID = strings.TrimSpace(customerID)
+	if customerID == "" {
+		return sessionID
+	}
+	return customerID + ":" + sessionID
 }

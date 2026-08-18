@@ -34,9 +34,16 @@ import (
 //     When nil, Crescendo no-ops — single-turn detection still works
 //     fully via the other detectors.
 //
-// Returns the engine and the per-customer profile lookup. Both are
-// safe to share across goroutines.
-func BuildSecurityEngine(_ context.Context, pool *pgxpool.Pool, redis *cache.Cache) (*security.Engine, security.ProfileLookup) {
+// Returns the engine, the per-customer profile lookup, and the topic
+// detector (for cache invalidation after dashboard pattern writes).
+// All three are safe to share across goroutines.
+func BuildSecurityEngine(_ context.Context, pool *pgxpool.Pool, redis *cache.Cache) (*security.Engine, security.ProfileLookup, *detection.TopicPolicyDetector) {
+	topic := detection.NewTopicPolicyDetector(pool, func(ctx context.Context) uuid.UUID {
+		if id, err := tenant.FromContext(ctx); err == nil {
+			return id
+		}
+		return tenant.DefaultOSSID
+	}, 0)
 	engine := security.NewEngine(
 		detection.NewInjectionDetector(),
 		detection.NewPIIDetector(),
@@ -44,14 +51,7 @@ func BuildSecurityEngine(_ context.Context, pool *pgxpool.Pool, redis *cache.Cac
 		detection.NewSecretsDetector(),
 		detection.NewIndirectInjectionDetector(),
 		detection.NewExfilDetector(),
-		detection.NewTopicPolicyDetector(pool, func(_ context.Context) uuid.UUID {
-			// OSS single-tenant default. The tenant middleware
-			// installed at request time stamps the real tenant
-			// ID into the context — this fallback only fires
-			// during startup-time profile inits, which use the
-			// default tenant by design.
-			return tenant.DefaultOSSID
-		}, 0),
+		topic,
 	)
 	if redis != nil {
 		// Crescendo needs cross-request memory; without Redis the
@@ -65,5 +65,5 @@ func BuildSecurityEngine(_ context.Context, pool *pgxpool.Pool, redis *cache.Cac
 		// whose profile sets rate_anomaly_enabled (default off).
 		engine.AddSessionDetector(detection.NewRateAnomalyDetector(store, detection.DefaultRateAnomalyConfig()))
 	}
-	return engine, security.NewProfileLookup(pool)
+	return engine, security.NewProfileLookup(pool), topic
 }

@@ -83,3 +83,73 @@ func TestSecretsDetector_PrivateKeyHeader(t *testing.T) {
 		t.Fatal("expected private_key finding")
 	}
 }
+
+func TestSecretsDetector_ExtensionCatalog(t *testing.T) {
+	d := NewSecretsDetector()
+	azureKey := "AccountKey=" + strings.Repeat("A", 86) + "=="
+	npmTok := "npm_" + strings.Repeat("a", 36)
+	sendgrid := "SG." + strings.Repeat("x", 22) + "." + strings.Repeat("y", 43)
+	pypi := "pypi-AgEIcHlwaS5vcmcC" + strings.Repeat("z", 40)
+	tailscale := "tskey-auth-" + strings.Repeat("a", 16) + "-" + strings.Repeat("b", 32)
+	twilio := "AC" + strings.Repeat("a", 32)
+	discord := "https://discord.com/api/webhooks/123456789012345678/" + strings.Repeat("W", 60)
+	heroku := "heroku_api_key=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	cases := []struct {
+		content string
+		kind    string
+	}{
+		{"sts key ASIAIOSFODNN7EXAMPLE in logs", "aws_access_key"},
+		{azureKey + " in the connection string", "azure_storage_key"},
+		{"uri mongodb+srv://user:pass@cluster0.mongodb.net/app", "mongodb_uri"},
+		{"sid " + twilio, "twilio_sid"},
+		{"key " + sendgrid, "sendgrid_key"},
+		{"hook " + discord, "discord_webhook"},
+		{"auth " + npmTok, "npm_token"},
+		{"auth " + tailscale, "tailscale_key"},
+		{"auth " + pypi, "pypi_token"},
+		{heroku, "heroku_api_key"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.kind, func(t *testing.T) {
+			findings, err := d.Detect(context.Background(), tt.content)
+			if err != nil {
+				t.Fatalf("detect: %v", err)
+			}
+			found := false
+			for _, f := range findings {
+				if f.MatchedPattern == tt.kind {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("want %s in %+v", tt.kind, findings)
+			}
+			masked := d.Mask(tt.content)
+			if masked == tt.content {
+				t.Errorf("mask left content unchanged for %s", tt.kind)
+			}
+		})
+	}
+}
+
+func TestSecretsDetector_AnthropicNotClassifiedAsOpenAI(t *testing.T) {
+	d := NewSecretsDetector()
+	key := "sk-ant-" + strings.Repeat("a", 40)
+	findings, _ := d.Detect(context.Background(), "key "+key)
+	for _, f := range findings {
+		if f.MatchedPattern == "openai_api_key" {
+			t.Fatalf("sk-ant key classified as openai: %+v", findings)
+		}
+	}
+	found := false
+	for _, f := range findings {
+		if f.MatchedPattern == "anthropic_api_key" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected anthropic_api_key, got %+v", findings)
+	}
+}
