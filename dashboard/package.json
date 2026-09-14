@@ -12,7 +12,7 @@
     "generate:api": "openapi-typescript ../cmd/server/openapi.yaml -o src/api/schema.ts"
   },
   "dependencies": {
-    "@base-ui/react": "^1.4.1",
+    "@base-ui/react": "^1.8.0",
     "openapi-fetch": "^0.17.0",
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
@@ -21,20 +21,20 @@
     "@radix-ui/react-select": "^2.1.4",
     "@radix-ui/react-slot": "^1.1.1",
     "@radix-ui/react-tabs": "^1.1.2",
-    "@tanstack/react-query": "^5.100.9",
-    "@tanstack/react-router": "^1.169.2",
-    "@tanstack/react-table": "^9.1.2",
+    "@tanstack/react-query": "^5.102.8",
+    "@tanstack/react-router": "^1.170.35",
+    "@tanstack/react-table": "^9.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "highlight.js": "^11.10.0",
-    "lucide-react": "^1.14.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
+    "highlight.js": "^11.12.0",
+    "lucide-react": "^1.44.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
-    "shadcn": "^4.7.0",
+    "shadcn": "^4.21.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "^1.4.0"
@@ -42,12 +42,12 @@
   "devDependencies": {
     "openapi-typescript": "^7.5.0",
     "@tailwindcss/vite": "^4.3.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.0.2",
-    "autoprefixer": "^10.4.20",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.5.6",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
-    "vite": "^8.0.13"
+    "vite": "^8.3.0"
   }
 }
