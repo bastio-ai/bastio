@@ -31,7 +31,7 @@ func ProviderEndpoint(path string) string {
 
 func IsGenerationEndpoint(endpoint string) bool {
 	switch endpoint {
-	case "/chat/completions", "/completions", "/responses", "/messages", "/embeddings", "/rerank", "/images/generations", "/images/edits", "/audio/speech", "/audio/transcriptions", "/audio/translations", "/videos":
+	case "/chat/completions", "/completions", "/responses", "/responses/compact", "/messages", "/messages/batches", "/batches", "/embeddings", "/moderations", "/rerank", "/images/generations", "/images/edits", "/images/variations", "/audio/speech", "/audio/transcriptions", "/audio/translations", "/videos":
 		return true
 	default:
 		return false

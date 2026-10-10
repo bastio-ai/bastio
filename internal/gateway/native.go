@@ -434,14 +434,24 @@ func (h *Handler) tryNativeChat(w http.ResponseWriter, r *http.Request, body []b
 // mapNativeOutput covers native Messages/Responses and OpenAI assistant text,
 // including reasoning and tool arguments, leaving provider metadata untouched.
 func mapNativeOutput(raw json.RawMessage, transform textTransform) (json.RawMessage, bool) {
+	return mapNativeOutputPolicy(raw, transform, transform)
+}
+
+func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransform) (json.RawMessage, bool) {
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(raw, &obj) != nil || obj == nil {
 		return raw, false
 	}
+	var kind string
+	_ = json.Unmarshal(obj["type"], &kind)
 	changed := false
 	for _, key := range []string{"content", "output", "text", "arguments", "refusal", "reasoning", "reasoning_content", "reasoning_details", "thinking", "partial_json"} {
 		if value, exists := obj[key]; exists {
-			next, ch := mapContent(value, transform)
+			apply := transform
+			if (kind == "thinking" || kind == "thinking_delta") && key == "thinking" {
+				apply = thinking
+			}
+			next, ch := mapContentPolicy(value, apply, thinking)
 			obj[key], changed = next, changed || ch
 		}
 	}
@@ -454,7 +464,7 @@ func mapNativeOutput(raw json.RawMessage, transform textTransform) (json.RawMess
 		if json.Unmarshal(value, &items) == nil && items != nil {
 			listChanged := false
 			for i, item := range items {
-				next, ch := mapNativeOutput(item, transform)
+				next, ch := mapNativeOutputPolicy(item, transform, thinking)
 				items[i], listChanged = next, listChanged || ch
 			}
 			if listChanged {
@@ -462,9 +472,9 @@ func mapNativeOutput(raw json.RawMessage, transform textTransform) (json.RawMess
 				changed = true
 			}
 		} else {
-			next, ch := mapNativeOutput(value, transform)
+			next, ch := mapNativeOutputPolicy(value, transform, thinking)
 			if key == "delta" && !ch {
-				next, ch = mapContent(value, transform)
+				next, ch = mapContentPolicy(value, transform, thinking)
 			}
 			obj[key], changed = next, changed || ch
 		}
@@ -504,12 +514,18 @@ func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte
 		return nil, false, ""
 	}
 	blocked, reason := false, ""
-	out, changed := mapNativeOutput(raw, func(text string) string {
+	out, changed := mapNativeOutputPolicy(raw, func(text string) string {
 		next, block, why := processAssistantText(r.Context(), h.security, text, tm, needScan, needRestore)
 		if block {
 			blocked, reason = true, why
 		}
 		return next
+	}, func(text string) string {
+		_, block, why := processSignedThinking(r, h.security, text, tm, needScan)
+		if block {
+			blocked, reason = true, why
+		}
+		return text
 	})
 	if blocked {
 		return nil, true, reason
@@ -533,4 +549,14 @@ func (h *Handler) RegisterNativeRoutes(r chi.Router) {
 	r.Handle("/models/*", h.NativeAPI("", "/models/*"))
 	r.Post("/messages", h.NativeAPI(providers.ProviderAnthropic, "/messages"))
 	r.Post("/messages/count_tokens", h.NativeAPI(providers.ProviderAnthropic, "/messages/count_tokens"))
+}
+
+// Claude signatures cover thinking text, including tokenized values. Restore
+// regular output while leaving thinking reusable in subsequent API requests.
+func processSignedThinking(r *http.Request, engine *security.Engine, text string, tm *security.TokenMap, needScan bool) (string, bool, string) {
+	next, blocked, reason := processAssistantText(r.Context(), engine, text, tm, needScan, false)
+	if !blocked && next != text {
+		return text, true, "security policy cannot rewrite signed thinking content"
+	}
+	return text, blocked, reason
 }

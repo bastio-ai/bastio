@@ -158,3 +158,10 @@ structured output and tool configuration are forwarded to Claude unchanged.
 
 Use the provider's model discovery API rather than treating example model IDs
 as a maintained catalog of the latest releases.
+
+
+Signed thinking blocks keep their provider text and signatures intact, including
+PII placeholders, so they remain reusable in later Claude turns. Restoration
+applies to ordinary response text and tool data. If a response policy requires
+rewriting signed thinking text, Bastio blocks the response rather than emitting
+an invalid signed block.

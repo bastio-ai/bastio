@@ -12,6 +12,10 @@ type textTransform func(string) string
 // mapContent visits textual content while preserving images, file references,
 // cache controls, signatures, tool IDs and other provider metadata verbatim.
 func mapContent(raw json.RawMessage, transform textTransform) (json.RawMessage, bool) {
+	return mapContentPolicy(raw, transform, transform)
+}
+
+func mapContentPolicy(raw json.RawMessage, transform, thinking textTransform) (json.RawMessage, bool) {
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
 		next := transform(text)
@@ -25,7 +29,7 @@ func mapContent(raw json.RawMessage, transform textTransform) (json.RawMessage, 
 	if json.Unmarshal(raw, &parts) == nil && parts != nil {
 		changed := false
 		for i, part := range parts {
-			next, ch := mapContent(part, transform)
+			next, ch := mapContentPolicy(part, transform, thinking)
 			parts[i], changed = next, changed || ch
 		}
 		if !changed {
@@ -46,7 +50,11 @@ func mapContent(raw json.RawMessage, transform textTransform) (json.RawMessage, 
 		if !exists {
 			continue
 		}
-		next, ch := mapContent(value, transform)
+		apply := transform
+		if kind == "thinking" && key == "thinking" {
+			apply = thinking
+		}
+		next, ch := mapContentPolicy(value, apply, thinking)
 		obj[key], changed = next, changed || ch
 	}
 	// Claude tool-use input is arbitrary user data, unlike the outer
@@ -118,6 +126,19 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 		return body, false
 	}
 	changed := false
+	// Claude batches carry full Messages requests under requests[].params.
+	var batch []map[string]json.RawMessage
+	if json.Unmarshal(obj["requests"], &batch) == nil && batch != nil {
+		for _, request := range batch {
+			if params, exists := request["params"]; exists {
+				next, ch := mapInput(params, transform)
+				request["params"], changed = next, changed || ch
+			}
+		}
+		if changed {
+			obj["requests"], _ = json.Marshal(batch)
+		}
+	}
 	for _, key := range []string{"messages", "input"} {
 		value, exists := obj[key]
 		if !exists {

@@ -159,7 +159,14 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 			return nil
 		}
 		if h.streamSecrets != nil {
-			data, changed := mapNativeOutput(frame.Data, h.streamSecrets.Mask)
+			signedBlocked := false
+			data, changed := mapNativeOutputPolicy(frame.Data, h.streamSecrets.Mask, func(text string) string {
+				signedBlocked = signedBlocked || h.streamSecrets.Mask(text) != text
+				return text
+			})
+			if signedBlocked {
+				return fmt.Errorf("security policy cannot rewrite signed thinking content")
+			}
 			if changed {
 				frame.Raw = providers.RewriteSSEData(frame, data)
 			}
@@ -193,14 +200,26 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 		mapStreamDeltas(frame.Data, func(key, text string) string { channels[key] += text; return text })
 	}
 	for key, text := range channels {
-		next, blocked, reason := processAssistantText(r.Context(), h.security, text, tm, needScan, needRestore)
+		var next, reason string
+		var blocked bool
+		if strings.HasPrefix(key, "block:") && strings.HasSuffix(key, ":thinking") {
+			next, blocked, reason = processSignedThinking(r, h.security, text, tm, needScan)
+		} else {
+			next, blocked, reason = processAssistantText(r.Context(), h.security, text, tm, needScan, needRestore)
+		}
 		if blocked {
 			metadata.HTTPStatus = 403
 			writeRouteError(w, &routeError{403, reason})
 			return nil, inTokens, outTokens, "blocked"
 		}
 		if h.streamSecrets != nil {
-			next = h.streamSecrets.Mask(next)
+			masked := h.streamSecrets.Mask(next)
+			if masked != next && strings.HasPrefix(key, "block:") && strings.HasSuffix(key, ":thinking") {
+				metadata.HTTPStatus = 403
+				writeRouteError(w, &routeError{403, "security policy cannot rewrite signed thinking content"})
+				return nil, inTokens, outTokens, "blocked"
+			}
+			next = masked
 		}
 		channels[key] = next
 	}

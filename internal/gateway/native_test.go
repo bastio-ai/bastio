@@ -94,6 +94,7 @@ func TestStructuredPIIInputsAndNativeOutputs(t *testing.T) {
 		`{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"keep","content":[{"type":"text","text":"SSN 123-45-6789"}]}]}]}`,
 		`{"input":[{"role":"user","content":[{"type":"input_text","text":"SSN 123-45-6789"}]},{"type":"function_call_output","call_id":"keep","output":"SSN 123-45-6789"}]}`,
 		`{"input":["SSN 123-45-6789","another 123-45-6789"]}`,
+		`{"requests":[{"custom_id":"keep","params":{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"SSN 123-45-6789"}]}}]}`,
 	} {
 		tm := security.NewTokenMap(security.TokenStyleAngle)
 		out, changed := sanitizeInput([]byte(body), engine, security.ActionTokenize, tm)
@@ -304,5 +305,40 @@ func TestOpenRouterReasoningDetailChannels(t *testing.T) {
 	}
 	if len(channels) != 1 || channels["choice:0:reasoning:0:text"] != "SSN 123-45-6789" {
 		t.Fatalf("reasoning fragments not joined: %v", channels)
+	}
+}
+
+func TestClaudeSignedThinkingIsReusableWithPIIRestoration(t *testing.T) {
+	tm := security.NewTokenMap(security.TokenStyleAngle)
+	token := tm.Add("ssn", "123-45-6789")
+	profile := security.DefaultProfile()
+	profile.PIIScanResponse = true
+	profile.PIIRestoreResponse = true
+	ctx := security.WithTokenMap(security.WithProfile(context.Background(), &profile), tm)
+	r := nativeRequest("POST", "/v1/anthropic/messages", "").WithContext(ctx)
+	h := NewHandler(providers.NewRegistry(), nil, security.NewEngine(detection.NewPIIDetector()), nil, nil, "fail-open")
+	body := []byte(`{"content":[{"type":"thinking","thinking":"` + token + `","signature":"keep-signature"},{"type":"text","text":"` + token + `"}]}`)
+	out, blocked, reason := h.postProcessNativeResponse(r, body)
+	var result struct {
+		Content []struct {
+			Thinking  string `json:"thinking"`
+			Text      string `json:"text"`
+			Signature string `json:"signature"`
+		} `json:"content"`
+	}
+	_ = json.Unmarshal(out, &result)
+	if blocked || len(result.Content) != 2 || result.Content[0].Thinking != token || result.Content[0].Signature != "keep-signature" || result.Content[1].Text != "123-45-6789" {
+		t.Fatalf("signed content or normal restoration broken: %s %s", out, reason)
+	}
+	body = []byte(`{"content":[{"type":"thinking","thinking":"SSN 123-45-6789","signature":"keep-signature"}]}`)
+	if _, blocked, _ := h.postProcessNativeResponse(r, body); !blocked {
+		t.Fatal("policy rewrote signed thinking instead of blocking")
+	}
+	stream := "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"" + token + "\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"keep-signature\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	rr := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}
+	_, _, _, status := h.forwardNativeStream(rr, r, resp, &nativeMetadata{})
+	if status != "ok" || rr.Body.String() != stream {
+		t.Fatalf("signed stream changed: %s %s", status, rr.Body.String())
 	}
 }
