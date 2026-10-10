@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 )
 
 // AnthropicClient implements the Client interface for Anthropic.
@@ -17,10 +19,15 @@ type AnthropicClient struct {
 
 // NewAnthropicClient creates a new Anthropic client.
 func NewAnthropicClient() *AnthropicClient {
-	return &AnthropicClient{
-		baseURL:    "https://api.anthropic.com/v1",
-		httpClient: &http.Client{},
+	base := os.Getenv("ANTHROPIC_BASE_URL")
+	if base == "" {
+		base = "https://api.anthropic.com/v1"
 	}
+	return NewAnthropicClientWithBaseURL(base)
+}
+
+func NewAnthropicClientWithBaseURL(base string) *AnthropicClient {
+	return &AnthropicClient{baseURL: strings.TrimRight(base, "/"), httpClient: providerHTTPClient()}
 }
 
 func (c *AnthropicClient) Name() Provider { return ProviderAnthropic }
@@ -29,9 +36,12 @@ func (c *AnthropicClient) Name() Provider { return ProviderAnthropic }
 func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest, apiKey string) (*ChatResponse, error) {
 	var body []byte
 	if req.Raw != nil {
-		var m map[string]any
+		var m map[string]json.RawMessage
 		if err := json.Unmarshal(req.Raw, &m); err == nil {
-			m["stream"] = false
+			m["stream"] = json.RawMessage(`false`)
+			if req.Model != "" {
+				m["model"], _ = json.Marshal(strings.TrimPrefix(req.Model, "anthropic/"))
+			}
 			body, _ = json.Marshal(m)
 		}
 	}
@@ -53,6 +63,7 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest, apiKey str
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", apiKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
+	forwardRequestHeaders(httpReq.Header, req.Headers)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -66,7 +77,7 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest, apiKey str
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("anthropic error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, &ProviderError{Provider: c.Name(), Status: resp.StatusCode, Body: respBody, Headers: resp.Header.Clone()}
 	}
 
 	var anthropicResp anthropicMessagesResponse
@@ -99,9 +110,12 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest, apiKey str
 func (c *AnthropicClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey string) (<-chan StreamChunk, error) {
 	var body []byte
 	if req.Raw != nil {
-		var m map[string]any
+		var m map[string]json.RawMessage
 		if err := json.Unmarshal(req.Raw, &m); err == nil {
-			m["stream"] = true
+			m["stream"] = json.RawMessage(`true`)
+			if req.Model != "" {
+				m["model"], _ = json.Marshal(strings.TrimPrefix(req.Model, "anthropic/"))
+			}
 			body, _ = json.Marshal(m)
 		}
 	}
@@ -123,6 +137,7 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req *ChatRequest, apiK
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", apiKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
+	forwardRequestHeaders(httpReq.Header, req.Headers)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -132,7 +147,7 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req *ChatRequest, apiK
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("anthropic error (status %d): %s", resp.StatusCode, string(body))
+		return nil, &ProviderError{Provider: c.Name(), Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	}
 
 	// Anthropic uses "event: message_stop" as the done signal, but we pass raw chunks

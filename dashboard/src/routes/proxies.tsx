@@ -35,14 +35,13 @@ import { cn } from "@/lib/utils";
 
 const providerLabels: Record<string, string> = {
   openai: "OpenAI",
+  openrouter: "OpenRouter",
   anthropic: "Anthropic",
   deepseek: "DeepSeek (V3 & R1)",
   groq: "Groq LPU (Ultra-low latency)",
-  google: "Google Gemini / Vertex",
+  gemini: "Google Gemini",
   ollama: "Ollama (Self-hosted / Local)",
   bedrock: "Amazon Bedrock",
-  vertex: "Vertex AI",
-  azure: "Azure OpenAI",
 };
 
 function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: () => void; onToggle: () => void }) {
@@ -103,6 +102,7 @@ function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: 
     return key.is_active && scopes.includes(`proxy:${proxy.id}`);
   });
   const hasProviderKey = Boolean(providerKeys?.length);
+  const nativeBasePath = ["openai", "openrouter", "anthropic"].includes(proxy.target_provider) ? `/v1/guard/${proxy.id}/v1` : "/v1";
 
   const copyValue = async (value: string, name: string) => {
     await navigator.clipboard.writeText(value);
@@ -149,7 +149,7 @@ function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: 
               <dl className="mt-4 space-y-3 text-[11px]">
                 <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Provider</dt><dd>{providerLabels[proxy.target_provider] ?? proxy.target_provider}</dd></div>
                 <div className="flex items-start justify-between gap-4"><dt className="text-muted-foreground">Default model</dt><dd className="text-right font-mono">{proxy.target_model || "Not set"}</dd></div>
-                <div className="flex items-center justify-between gap-2"><dt className="text-muted-foreground">Endpoint</dt><dd className="flex items-center gap-1"><code className="font-mono">{proxy.listen_path}</code><Button size="icon-xs" variant="ghost" onClick={() => copyValue(proxy.listen_path, "endpoint")} aria-label="Copy endpoint">{copied === "endpoint" ? <Check /> : <Copy />}</Button></dd></div>
+                <div className="flex items-center justify-between gap-2"><dt className="text-muted-foreground">Endpoint</dt><dd className="flex items-center gap-1"><code className="font-mono">{nativeBasePath}</code><Button size="icon-xs" variant="ghost" onClick={() => copyValue(nativeBasePath, "endpoint")} aria-label="Copy endpoint">{copied === "endpoint" ? <Check /> : <Copy />}</Button></dd></div>
               </dl>
               <div className="mt-4 border-t border-border/60 pt-3">
                 {editingModel ? (
@@ -217,13 +217,12 @@ export function ProxiesPage() {
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<string>("openai");
   const [model, setModel] = useState("");
-  const [fallbackChain, setFallbackChain] = useState("");
 
   const createProxy = useMutation({
     mutationFn: api.proxies.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["proxies"] });
-      setCreateOpen(false); setName(""); setModel(""); setFallbackChain("");
+      setCreateOpen(false); setName(""); setModel("");
     },
   });
   const deleteProxy = useMutation({ mutationFn: api.proxies.delete, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["proxies"] }); setDeleteTarget(null); } });
@@ -257,8 +256,7 @@ export function ProxiesPage() {
           <div className="space-y-4">
             <div><FieldLabel>Gateway name</FieldLabel><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="production-chat" /></div>
             <div><FieldLabel>Model provider</FieldLabel><Select value={provider} onValueChange={(value) => value && setProvider(value)}><SelectTrigger className="w-full"><SelectValue>{providerLabels[provider]}</SelectValue></SelectTrigger><SelectContent>{Object.entries(providerLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-            <div><FieldLabel optional>Default model</FieldLabel><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. gpt-4o" /><p className="mt-1.5 text-[10px] text-muted-foreground">Leave blank to require every request to specify a model.</p></div>
-            <div><FieldLabel optional>Auto-Failover Model Chain</FieldLabel><Input value={fallbackChain} onChange={(e) => setFallbackChain(e.target.value)} placeholder="e.g. groq/llama-3.3-70b-versatile, openai/gpt-4o-mini" /><p className="mt-1.5 text-[10px] text-muted-foreground">Fallback sequence to retry automatically on 429, 500, or 529 provider outages.</p></div>
+            <div><FieldLabel optional>Default model</FieldLabel><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === "openrouter" ? "e.g. anthropic/claude-sonnet-4.5" : provider === "anthropic" ? "e.g. claude-sonnet-4-5" : "Provider model identifier"} /><p className="mt-1.5 text-[10px] text-muted-foreground">Leave blank to use the provider default or the model supplied with each request.</p></div>
             <SecurityNotice title="Credential setup follows" tone="info">After creation, add an upstream provider key and a gateway-scoped client key before sending production traffic.</SecurityNotice>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button disabled={!name.trim() || createProxy.isPending} onClick={() => createProxy.mutate({ name: name.trim(), target_provider: provider as CreateProviderKeyRequest["provider"], target_model: model.trim() })}>{createProxy.isPending ? "Creating…" : "Create gateway"}</Button></DialogFooter>

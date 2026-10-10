@@ -117,9 +117,9 @@ Common picks:
   requests without it. Bastio doesn't fill it in for you — pass
   it explicitly.
 - **`anthropic-version` header.** Anthropic versions their API
-  by date string. The current standard is `2023-06-01`. Older
-  values still work but newer features (extended thinking,
-  prompt caching) require newer headers.
+  by date string. Bastio defaults to `2023-06-01` and forwards the
+  version supplied by your SDK. Beta features use `anthropic-beta`; do not
+  invent a newer API-version date to enable them.
 - **System prompts go in `system`, not `messages`.** The inbound scan deliberately evaluates user content and does not treat the operator-authored top-level system prompt as user input.
 - **Beta features.** `extended-thinking` and others ship behind
   beta headers (`anthropic-beta`). Bastio passes them through
@@ -140,3 +140,21 @@ content blocks, not OpenAI choices). See
   IAM auth instead of an API key.
 - [SDKs](/docs/sdks) — keep your direct Anthropic connection,
   scan separately via `@bastio/core`.
+
+## Native Claude SDK base
+
+Use `https://api.bastio.com/v1/anthropic` as the Claude SDK base URL, or
+`https://api.bastio.com/v1/guard/{proxyId}/v1` for a specific gateway. The SDK
+adds `/messages`, `/messages/count_tokens` and other native resource paths.
+User content, structured text, plain-text document sources and tool results
+receive PII scanning and configured masking/tokenization. Native response
+content, including tool inputs, supports scanning and token restoration.
+
+Claude's native SSE event names, `message_stop`, errors, usage, version and
+beta headers are preserved. Complete response policies buffer SSE before
+release; see [Gateway streaming](/docs/gateway#streaming). Binary image/file
+content is forwarded without OCR or decoding. Current model IDs, thinking,
+structured output and tool configuration are forwarded to Claude unchanged.
+
+Use the provider's model discovery API rather than treating example model IDs
+as a maintained catalog of the latest releases.

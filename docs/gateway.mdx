@@ -4,7 +4,7 @@ description: Proxy your existing LLM client through Bastio with zero code change
 ---
 
 The gateway is the simplest way to put Bastio in the request path.
-Point your existing OpenAI or Anthropic client at Bastio's
+Point your existing OpenRouter, OpenAI or Anthropic client at Bastio's
 URL, and every prompt + response is scanned before it leaves your
 network.
 
@@ -14,7 +14,7 @@ Bastio supports two ways to insert security into the LLM call:
 
 | Pattern | What you do | When |
 |---|---|---|
-| **Gateway** (this page) | Change `baseURL` on your existing LLM client | OpenAI chat completions or Anthropic Messages |
+| **Gateway** (this page) | Change `baseURL` on your existing LLM client | OpenRouter, OpenAI Chat/Responses, or Claude Messages |
 | [**Developer APIs**](/docs/developer-apis) | Call a focused security endpoint before your provider | More control, custom block UX, and any provider |
 
 Both end up at the same security engine. Choose the gateway when
@@ -40,7 +40,7 @@ A request through the gateway:
 5. If allowed: forwards the request to the resolved provider,
    stripping internal headers, optionally rewriting redacted
    content.
-6. Streams the response back. In-flight streaming protection currently masks detected secrets; complete response policies run on non-streaming responses.
+6. Returns the native response, preserving API statuses, error bodies, headers and SSE event names. Complete response policies run before buffered streams are released.
 7. Records a trace row (PostgreSQL + ClickHouse).
 
 ## Set up a proxy
@@ -92,28 +92,99 @@ curl http://localhost:4000/v1/guard/$BASTIO_PROXY_ID/v1/messages \
   }'
 ```
 
-The OpenAI route passes the `/v1/chat/completions` JSON body upstream. Bastio's inbound text scan currently extracts string content from `role: "user"` messages; test richer content-part and tool-call payloads against your policy before production. The Anthropic route mirrors the Messages contract behind the proxy-specific path and scans user text blocks.
+Text scanning and PII masking/tokenization cover user text, structured text parts,
+tool results, Responses input, plain-text documents and embedding input. Native
+Claude Messages apply the same controls. Provider metadata, IDs, cache controls
+and binary attachments retain their original structure. Binary image, audio,
+video and uploaded file content is forwarded without OCR or speech decoding.
+
+## OpenRouter
+
+Store an **OpenRouter** provider credential in **LLM Gateways**, then issue a
+Bastio gateway key. The two keys remain separate. OpenRouter model slugs keep
+their provider prefix, such as `anthropic/claude-sonnet-4.5`.
+
+```typescript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.BASTIO_API_KEY,
+  baseURL: "https://api.bastio.com/v1/openrouter",
+  defaultHeaders: {
+    "HTTP-Referer": "https://your-app.example",
+    "X-OpenRouter-Title": "Your app",
+  },
+});
+
+const result = await client.chat.completions.create({
+  model: "anthropic/claude-sonnet-4.5",
+  messages: [{ role: "user", content: "Hello" }],
+});
+```
+
+The same base URL works with the OpenRouter SDK. Native `provider`, `models`,
+`route`, `reasoning`, `plugins`, tool calling and structured-output fields are
+passed through. Model discovery, Responses, embeddings, generation lookup and
+other OpenRouter API paths use the same native base. Forwarding an account
+management API requires an upstream credential with the permissions OpenRouter
+requires; a Bastio key does not grant extra OpenRouter permissions.
+
+For a specific gateway, use `https://api.bastio.com/v1/guard/{proxyId}/v1` as
+the SDK base URL. The proxy selects the provider and credential, validates
+tenant ownership and active status, and applies its policy overlay. Keys scoped
+to a proxy cannot select another proxy or provider. The dashboard's **Endpoint**
+field shows this base path.
+
+## Native OpenAI and Claude APIs
+
+Use `/v1/openai` as the OpenAI SDK base URL and `/v1/anthropic` as the Claude
+SDK base URL. Their native endpoint paths follow those bases, including
+OpenAI Responses and Claude Messages/token counting. These bases also forward
+other native API paths, HTTP methods, query parameters and multipart requests.
+The provider's current model IDs and JSON fields do not require a Bastio schema
+update. OpenAI project/organization headers and Claude version/beta headers are
+forwarded; client credentials and cookies are replaced or stripped.
 
 ## Provider routing
 
-Bastio currently infers `gpt-*`, `o1-*`, `o3-*`, and `o4-*` as OpenAI and `claude-*` as Anthropic. Unknown model prefixes fall back to OpenAI. The request body does not currently expose a provider override.
+Bastio infers the provider on the shared `/v1/chat/completions` route from the
+model prefix. Use `X-Bastio-Provider: openrouter`, the `/v1/openrouter` base,
+or an OpenRouter proxy to send provider-qualified slugs through OpenRouter.
+Alternatively `openrouter/anthropic/...` selects OpenRouter and removes only
+the `openrouter/` prefix upstream. Bare `anthropic/...` and `openai/...` select
+the direct providers. Unknown model prefixes fall back to OpenAI.
 
 | Provider | Public gateway status | Recommended integration |
 |---|---|---|
 | OpenAI | Available | `POST /v1/chat/completions` |
+| OpenRouter | Available | Native base `/v1/openrouter` |
 | Anthropic | Available | `POST /v1/guard/{proxyId}/v1/messages` |
 | AWS Bedrock | Provider client exists, public model routing incomplete | Call Bedrock directly after [`/v1/detect`](/docs/developer-apis/detect) |
 | Azure OpenAI | Not registered on the public gateway | Call Azure directly after `/v1/detect` |
-| Vertex AI / Gemini | Not registered on the public gateway | Call Google directly after `/v1/detect` |
-| Ollama | Provider client exists, public model routing incomplete | Call Ollama directly after `/v1/detect` |
+| Gemini | Available | Shared chat route with `gemini-*` model |
+| DeepSeek / Groq | Available | Shared chat route with provider model prefix |
+| Ollama | Available | Shared chat route with `ollama/` or `local/` prefix |
+
+Self-hosted operators may set `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL` or
+`OPENROUTER_BASE_URL`. These default to the providers' native `/v1` bases;
+OpenRouter defaults to `https://openrouter.ai/api/v1`. Credentials may be stored
+per tenant/proxy or configured with `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` and
+`OPENROUTER_API_KEY`. Never pass an OpenRouter key as an OpenAI credential.
 
 ## Streaming
 
-`stream: true` works without extra config. Bastio passes through SSE chunks and masks secret patterns it can identify inside OpenAI-shaped `choices[].delta.content`. Other detector families require complete-document context and do not block individual chunks today.
+Native API streams preserve provider event names, comments, usage and terminal
+events. Claude retains `message_stop`; Bastio does not append an OpenAI
+`[DONE]` marker to Claude or Responses streams. Provider error events remain
+provider error events. Trace metadata is available in `X-Bastio-*` headers.
 
-The `bastio` envelope lands as a final SSE event immediately before the
-provider's `[DONE]`, so existing clients that only consume
-`choices[].delta.content` keep working.
+When response PII scanning or token restoration is enabled, Bastio buffers up
+to 32 MiB of SSE output and processes each text/tool-argument channel across
+chunk boundaries before releasing the events. `X-Bastio-Stream-Buffered:
+security-policy` identifies this mode. It increases time to first token, while
+keeping secrets and PII out of output that a complete-response policy blocks.
+Policies with both settings disabled stream immediately with per-event secret
+masking; complete-document protection requires buffering.
 
 ## Auth + rate limit
 
@@ -132,3 +203,14 @@ gates every query with the right `customer_id`.
 
 - [Threats](/docs/threats) — what gets scanned and how to tune it.
 - [SDKs](/docs/sdks) — alternative integration pattern.
+
+
+### Provider-stored state and PII tokens
+
+Reversible PII mappings live only for the current request. Native requests use
+unique placeholders, so a token retained in `previous_response_id`, a stored
+response, a conversation, or a background job cannot resolve to another
+request's PII. Retrieving provider-stored output later leaves older placeholders
+intact. To restore all values, send the original conversation input with each
+request; use masking when you prefer permanent redaction in provider-side state.
+Bastio never persists the reversible mapping.

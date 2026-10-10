@@ -39,13 +39,17 @@ type Image = providers.Image
 // StreamChunk is one chunk in a ChatStream response channel.
 type StreamChunk = providers.StreamChunk
 
+type NativeRequest = providers.NativeRequest
+type NativeClient = providers.NativeClient
+
 // Provider name constants. Re-exported so callers can switch on the
 // provider returned by Client.Name() or ChatRequest.Provider.
 const (
-	ProviderOpenAI    = providers.ProviderOpenAI
-	ProviderAnthropic = providers.ProviderAnthropic
-	ProviderBedrock   = providers.ProviderBedrock
-	ProviderVertex    = providers.ProviderVertex
-	ProviderAzure     = providers.ProviderAzure
-	ProviderOllama    = providers.ProviderOllama
+	ProviderOpenAI     = providers.ProviderOpenAI
+	ProviderOpenRouter = providers.ProviderOpenRouter
+	ProviderAnthropic  = providers.ProviderAnthropic
+	ProviderBedrock    = providers.ProviderBedrock
+	ProviderVertex     = providers.ProviderVertex
+	ProviderAzure      = providers.ProviderAzure
+	ProviderOllama     = providers.ProviderOllama
 )

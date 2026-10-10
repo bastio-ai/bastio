@@ -4,21 +4,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 )
 
 // Provider identifies an LLM provider.
 type Provider string
 
 const (
-	ProviderOpenAI    Provider = "openai"
-	ProviderAnthropic Provider = "anthropic"
-	ProviderBedrock   Provider = "bedrock"
-	ProviderVertex    Provider = "vertex"
-	ProviderAzure     Provider = "azure"
-	ProviderOllama    Provider = "ollama"
-	ProviderGemini    Provider = "gemini"
-	ProviderDeepSeek  Provider = "deepseek"
-	ProviderGroq      Provider = "groq"
+	ProviderOpenAI     Provider = "openai"
+	ProviderAnthropic  Provider = "anthropic"
+	ProviderBedrock    Provider = "bedrock"
+	ProviderVertex     Provider = "vertex"
+	ProviderAzure      Provider = "azure"
+	ProviderOllama     Provider = "ollama"
+	ProviderGemini     Provider = "gemini"
+	ProviderDeepSeek   Provider = "deepseek"
+	ProviderGroq       Provider = "groq"
+	ProviderOpenRouter Provider = "openrouter"
 )
 
 // Message represents a chat message.
@@ -58,26 +60,30 @@ type ChatRequest struct {
 	TopP           *float64  `json:"top_p,omitempty"`
 	Stream         bool      `json:"stream"`
 	// Raw holds the original request body for pass-through proxying.
-	Raw []byte `json:"-"`
+	Raw     []byte      `json:"-"`
+	Headers http.Header `json:"-"`
 }
 
 // ChatResponse is a normalized non-streaming response.
 type ChatResponse struct {
-	ID           string   `json:"id"`
-	Model        string   `json:"model"`
-	Content      string   `json:"content"`
-	Role         string   `json:"role"`
-	InputTokens  int      `json:"input_tokens"`
-	OutputTokens int      `json:"output_tokens"`
-	FinishReason string   `json:"finish_reason"`
-	Raw          []byte   `json:"-"` // Original provider response for pass-through
+	ID           string `json:"id"`
+	Model        string `json:"model"`
+	Content      string `json:"content"`
+	Role         string `json:"role"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+	FinishReason string `json:"finish_reason"`
+	Raw          []byte `json:"-"` // Original provider response for pass-through
 }
 
 // StreamChunk is a single chunk in a streaming response.
 type StreamChunk struct {
-	Data  []byte // Raw SSE data line (without "data: " prefix)
-	Done  bool   // True if this is the final chunk
-	Error error  // Non-nil if an error occurred
+	Data    []byte // Raw SSE data line (without "data: " prefix)
+	Done    bool   // True if this is the final chunk
+	Error   error  // Non-nil if an error occurred
+	Event   string // Native SSE event name (required by Anthropic and Responses)
+	ID      string
+	Comment string
 }
 
 // Client is the interface all provider clients implement.
@@ -141,104 +147,45 @@ func (r *Registry) Get(provider Provider) (Client, error) {
 // Shared utility for all providers that use SSE.
 func ReadSSEStream(ctx context.Context, body io.ReadCloser, doneMarker string) <-chan StreamChunk {
 	ch := make(chan StreamChunk, 16)
-
 	go func() {
 		defer close(ch)
 		defer body.Close()
-
-		buf := make([]byte, 4096)
-		var leftover []byte
-
-		for {
+		send := func(chunk StreamChunk) error {
 			select {
+			case ch <- chunk:
+				return nil
 			case <-ctx.Done():
-				ch <- StreamChunk{Error: ctx.Err()}
-				return
-			default:
+				return ctx.Err()
 			}
-
-			n, err := body.Read(buf)
-			if n > 0 {
-				data := append(leftover, buf[:n]...)
-				leftover = nil
-
-				// Process complete lines
-				for {
-					idx := -1
-					for i := 0; i < len(data)-1; i++ {
-						if data[i] == '\n' && data[i+1] == '\n' {
-							idx = i
-							break
-						}
-					}
-					if idx == -1 {
-						// Check for single newline terminated data lines without skipping bytes
-						for {
-							nlIdx := -1
-							for i := 0; i < len(data); i++ {
-								if data[i] == '\n' {
-									nlIdx = i
-									break
-								}
-							}
-							if nlIdx == -1 {
-								break
-							}
-							line := string(data[:nlIdx])
-							data = data[nlIdx+1:]
-							if len(line) > 6 && line[:6] == "data: " {
-								payload := line[6:]
-								if payload == doneMarker {
-									ch <- StreamChunk{Done: true}
-									return
-								}
-								ch <- StreamChunk{Data: []byte(payload)}
-							}
-						}
-						leftover = data
-						break
-					}
-
-					block := string(data[:idx])
-					data = data[idx+2:]
-
-					// Parse SSE block
-					for _, line := range splitLines(block) {
-						if len(line) > 6 && line[:6] == "data: " {
-							payload := line[6:]
-							if payload == doneMarker {
-								ch <- StreamChunk{Done: true}
-								return
-							}
-							ch <- StreamChunk{Data: []byte(payload)}
-						}
-					}
+		}
+		err := ReadSSE(ctx, body, func(frame SSEFrame) error {
+			if string(frame.Data) == doneMarker {
+				if err := send(StreamChunk{Done: true}); err != nil {
+					return err
+				}
+				return io.EOF
+			}
+			for _, comment := range frame.Comments {
+				if err := send(StreamChunk{Comment: comment}); err != nil {
+					return err
 				}
 			}
-
-			if err != nil {
-				if err != io.EOF {
-					ch <- StreamChunk{Error: err}
+			if len(frame.Data) > 0 {
+				if err := send(StreamChunk{Data: frame.Data, Event: frame.Event, ID: frame.ID}); err != nil {
+					return err
 				}
-				return
 			}
+			if frame.Event == "message_stop" {
+				if err := send(StreamChunk{Done: true}); err != nil {
+					return err
+				}
+				return io.EOF
+			}
+			return nil
+		})
+		if err != nil && err != io.EOF {
+			_ = send(StreamChunk{Error: err})
 		}
 	}()
-
 	return ch
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
 }

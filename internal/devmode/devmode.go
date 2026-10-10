@@ -21,6 +21,8 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/google/uuid"
 
+	"github.com/bastio-ai/bastio/internal/auth"
+	"github.com/bastio-ai/bastio/internal/gateway"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/security"
@@ -200,6 +202,7 @@ func BuildDefaultSecurityEngine() *security.Engine {
 func BuildDefaultProviderRegistry() *providers.Registry {
 	reg := providers.NewRegistry()
 	reg.Register(providers.NewOpenAIClient())
+	reg.Register(providers.NewOpenRouterClient())
 	reg.Register(providers.NewAnthropicClient())
 	reg.Register(providers.NewBedrockClient())
 	reg.Register(providers.NewOllamaClient())
@@ -250,6 +253,17 @@ func (s *DevServer) setupRoutes() {
 	r.Get("/", s.handleRoot)
 
 	r.Route("/v1", func(r chi.Router) {
+		native := gateway.NewHandler(s.providers, nil, s.engine, nil, nil, s.cfg.SecurityMode)
+		native.SetNativeKeyResolver(resolveDevAPIKey)
+		r.Group(func(r chi.Router) {
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					ctx := auth.WithInfo(req.Context(), &auth.APIKeyInfo{CustomerID: uuid.Nil})
+					next.ServeHTTP(w, req.WithContext(ctx))
+				})
+			})
+			native.RegisterNativeRoutes(r)
+		})
 		r.Get("/", s.handleRoot)
 		r.Post("/chat/completions", s.handleChatCompletions)
 		r.Post("/guard/{proxyId}/v1/messages", s.handleAnthropicMessages)
@@ -341,7 +355,7 @@ func (s *DevServer) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		"security_mode": s.cfg.SecurityMode,
 		"storage":       "in-memory",
 		"detectors":     []string{"injection", "pii", "jailbreak", "secrets", "indirect_injection", "exfil"},
-		"providers":     []string{"openai", "anthropic", "gemini", "deepseek", "groq", "bedrock", "ollama"},
+		"providers":     []string{"openai", "openrouter", "anthropic", "gemini", "deepseek", "groq", "bedrock", "ollama"},
 	})
 }
 
@@ -549,6 +563,14 @@ func (s *DevServer) handleChatCompletions(w http.ResponseWriter, r *http.Request
 }
 
 func (s *DevServer) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.providers.Native(providers.ProviderAnthropic); err == nil && s.cfg.UpstreamURL == "" {
+		native := gateway.NewHandler(s.providers, nil, s.engine, nil, nil, s.cfg.SecurityMode)
+		native.SetNativeKeyResolver(resolveDevAPIKey)
+		ctx := auth.WithInfo(r.Context(), &auth.APIKeyInfo{CustomerID: uuid.Nil})
+		native.NativeAPI(providers.ProviderAnthropic, "/messages")(w, r.WithContext(ctx))
+		return
+	}
+
 	start := time.Now()
 	traceID := uuid.New()
 	w.Header().Set("X-Bastio-Trace-Id", traceID.String())
@@ -823,6 +845,8 @@ func (s *DevServer) recordDevTrace(traceID uuid.UUID, model, provider, path stri
 func inferDevProvider(model string) providers.Provider {
 	m := strings.ToLower(strings.TrimSpace(model))
 	switch {
+	case strings.HasPrefix(m, "openrouter/"):
+		return providers.ProviderOpenRouter
 	case strings.HasPrefix(m, "gpt") || strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3") || strings.HasPrefix(m, "o4") || strings.HasPrefix(m, "text-embedding") || strings.HasPrefix(m, "openai/"):
 		return providers.ProviderOpenAI
 	case strings.HasPrefix(m, "claude") || strings.HasPrefix(m, "anthropic/"):
@@ -847,7 +871,7 @@ func resolveDevAPIKey(r *http.Request, provider providers.Provider) string {
 	if authH := r.Header.Get("Authorization"); authH != "" {
 		token := strings.TrimPrefix(authH, "Bearer ")
 		token = strings.TrimSpace(token)
-		if token != "" && !strings.HasPrefix(token, "bastio-") {
+		if token != "" && !strings.HasPrefix(token, "bastio-") && !strings.HasPrefix(token, "sk-bastio-") {
 			return token
 		}
 	}
@@ -857,6 +881,8 @@ func resolveDevAPIKey(r *http.Request, provider providers.Provider) string {
 
 	// Check environment variables
 	switch provider {
+	case providers.ProviderOpenRouter:
+		return os.Getenv("OPENROUTER_API_KEY")
 	case providers.ProviderOpenAI:
 		return os.Getenv("OPENAI_API_KEY")
 	case providers.ProviderAnthropic:
