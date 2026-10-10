@@ -186,6 +186,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Read request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if _, oversized := err.(*http.MaxBytesError); oversized {
+			writeRouteError(w, &routeError{413, "request exceeds gateway body limit"})
+			return
+		}
 		http.Error(w, `{"error":"failed to read request"}`, http.StatusBadRequest)
 		return
 	}

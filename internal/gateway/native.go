@@ -149,6 +149,10 @@ func (h *Handler) NativeAPI(provider providers.Provider, path string) http.Handl
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			if _, oversized := err.(*http.MaxBytesError); oversized {
+				writeRouteError(w, &routeError{413, "request exceeds gateway body limit"})
+				return
+			}
 			writeRouteError(w, &routeError{400, "failed to read request"})
 			return
 		}
