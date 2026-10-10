@@ -79,15 +79,18 @@ func forwardNative(ctx context.Context, client *http.Client, base string, provid
 	if !strings.HasPrefix(req.Path, "/") || strings.Contains(req.Path, "..") || strings.ContainsAny(req.Path, "?#\\") || strings.HasPrefix(req.Path, "//") {
 		return nil, fmt.Errorf("invalid provider API path")
 	}
-	u, err := url.Parse(strings.TrimRight(base, "/") + req.Path)
-	if err != nil {
-		return nil, fmt.Errorf("parse provider URL: %w", err)
-	}
-	u.RawQuery = req.Query.Encode()
-	r, err := http.NewRequestWithContext(ctx, req.Method, u.String(), bytes.NewReader(req.Body))
+	// Parse only the trusted server-configured base as a URL. Caller-controlled
+	// resource paths and queries cannot alter its scheme, authority or userinfo.
+	r, err := http.NewRequestWithContext(ctx, req.Method, base, bytes.NewReader(req.Body))
 	if err != nil {
 		return nil, fmt.Errorf("create provider request: %w", err)
 	}
+	if (r.URL.Scheme != "https" && r.URL.Scheme != "http") || r.URL.Host == "" || r.URL.User != nil {
+		return nil, fmt.Errorf("invalid configured provider base URL")
+	}
+	r.URL.Path = strings.TrimRight(r.URL.Path, "/") + req.Path
+	r.URL.RawPath = ""
+	r.URL.RawQuery = req.Query.Encode()
 	forwardRequestHeaders(r.Header, req.Headers)
 	if r.Header.Get("Content-Type") == "" && len(req.Body) > 0 {
 		r.Header.Set("Content-Type", "application/json")

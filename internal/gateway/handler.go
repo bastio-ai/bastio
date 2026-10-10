@@ -329,7 +329,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				lastErr = err
 				if isRetryableError(err) && i < len(candidateModels)-1 {
-					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", sanitizeLog(err.Error()))
 					continue
 				}
 				break
@@ -429,7 +429,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				lastErr = err
 				if isRetryableError(err) && i < len(candidateModels)-1 {
-					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", sanitizeLog(err.Error()))
 					continue
 				}
 				break

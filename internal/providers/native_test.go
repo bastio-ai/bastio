@@ -119,3 +119,31 @@ func TestStreamCancellationUnblocksChannelProducer(t *testing.T) {
 	for range stream {
 	}
 }
+
+func TestNativeCallerPathCannotChangeAuthority(t *testing.T) {
+	requests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if !strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Query().Get("redirect") != "https://other.example" {
+			t.Errorf("configured API base lost: %s", r.URL)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	client := NewOpenRouterClientWithBaseURL(upstream.URL + "/v1")
+	for _, path := range []string{"/@other.example", "/https://other.example", "/%2f%2fother.example"} {
+		resp, err := client.Forward(context.Background(), &NativeRequest{Method: http.MethodGet, Path: path, Query: url.Values{"redirect": {"https://other.example"}}}, "secret")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	for _, path := range []string{"//other.example", "/../key", "https://other.example", "/key?redirect=1"} {
+		if _, err := client.Forward(context.Background(), &NativeRequest{Method: http.MethodGet, Path: path}, "secret"); err == nil {
+			t.Fatalf("unsafe path accepted: %s", path)
+		}
+	}
+	if requests != 3 {
+		t.Fatalf("unexpected outbound requests: %d", requests)
+	}
+}
