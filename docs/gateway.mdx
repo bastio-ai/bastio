@@ -225,3 +225,7 @@ request-body limit, including multipart uploads. Configure these with
 Management routes retain their 60-second deadline and separate
 `BASTIO_MAX_BODY_BYTES` limit. Upstream provider and hosting limits still apply;
 response security buffering has its own 32 MiB limit described above.
+
+Ordinary assistant history and previously restored tool arguments are re-scanned
+and sanitized when sent back in later turns. System/developer instructions and
+provider-signed thinking blocks retain their original contents.
