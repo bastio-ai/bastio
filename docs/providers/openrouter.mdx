@@ -1,0 +1,102 @@
+---
+title: OpenRouter
+description: Use OpenRouter model routing, tools, reasoning and native APIs through Bastio.
+---
+
+Bastio forwards OpenRouter's native APIs through `/v1/openrouter`, with your
+workspace's stored OpenRouter credential. Your application authenticates to
+Bastio with its own gateway key.
+
+## Configure the gateway
+
+1. In **LLM Gateways**, create a gateway with provider **OpenRouter**.
+2. Store an OpenRouter API key as its provider credential.
+3. Generate a gateway-scoped Bastio key and select the application's environment.
+4. Copy the gateway's SDK base path, `/v1/guard/{proxyId}/v1`.
+
+Model slugs remain OpenRouter slugs, such as `openai/gpt-4o` or
+`anthropic/claude-sonnet-4.5`. You can leave the default model blank and choose
+the model with each request. Provider availability and permissions are
+determined by your OpenRouter account.
+
+## OpenAI SDK
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.bastio.com/v1/openrouter",
+    api_key=os.environ["BASTIO_GATEWAY_KEY"],
+    default_headers={
+        "HTTP-Referer": "https://your-app.example",
+        "X-OpenRouter-Title": "Your app",
+    },
+)
+
+response = client.chat.completions.create(
+    model="anthropic/claude-sonnet-4.5",
+    messages=[{"role": "user", "content": "Hello"}],
+    extra_body={
+        "provider": {"zdr": True, "allow_fallbacks": True},
+        "reasoning": {"effort": "high"},
+    },
+)
+```
+
+The OpenRouter SDK can use the same base URL. For proxy-specific credentials
+and policies, replace that base with the gateway's `/v1/guard/{proxyId}/v1`
+path. Do not add another `/api/v1` segment.
+
+## API coverage
+
+The native base forwards API paths and HTTP methods without translating the
+provider contract. This includes Chat Completions, Responses, embeddings,
+models and endpoints, generation lookup, credits and account APIs. It preserves
+query parameters, multipart request bodies, JSON extension fields, tools,
+structured outputs, plugins, reasoning and provider/model routing preferences.
+Account APIs still require the upstream key's OpenRouter permissions.
+
+Upstream errors retain their status, JSON error details and retry headers.
+Native SSE events retain names, comments, usage and completion/error events.
+Bastio trace IDs are available in response headers.
+
+## Security behavior
+
+User text, structured content parts, tool results, Responses input and embedding
+text receive inbound scanning and configured PII masking or tokenization.
+Images, audio, video and binary files are forwarded without OCR or decoding.
+Response PII scanning and token restoration buffer streams before release so
+PII split across events is handled consistently. The response header
+`X-Bastio-Stream-Buffered: security-policy` identifies this mode. See
+[Gateway streaming](/docs/gateway#streaming) for the limits and latency tradeoff.
+
+## Self-hosted configuration
+
+`OPENROUTER_API_KEY` supplies a fallback credential; stored tenant/proxy keys
+take precedence. `OPENROUTER_BASE_URL` defaults to
+`https://openrouter.ai/api/v1` and can point at an OpenRouter regional endpoint
+or your own compatible upstream. Keep provider credentials on the server.
+
+The shared `/v1/chat/completions` endpoint also supports
+`X-Bastio-Provider: openrouter`. OpenRouter's `provider` JSON object controls
+OpenRouter routing; it does not select Bastio's upstream provider.
+
+See [OpenRouter's official API documentation](https://openrouter.ai/docs/api_reference/overview)
+for current model parameters and account requirements.
+
+
+### Provider-stored state and PII tokens
+
+Reversible PII mappings live only for the current request. Native requests use
+unique placeholders, so a token retained in `previous_response_id`, a stored
+response, a conversation, or a background job cannot resolve to another
+request's PII. Retrieving provider-stored output later leaves older placeholders
+intact. To restore all values, send the original conversation input with each
+request; use masking when you prefer permanent redaction in provider-side state.
+Bastio never persists the reversible mapping.
+
+Bastio's `fallback_models` field and `X-Bastio-Fallback-Models` header are also
+accepted on native OpenRouter Chat Completions. Bastio translates these into
+OpenRouter's `models` list and `route: "fallback"`; do not combine them with a
+separate native `models` list.

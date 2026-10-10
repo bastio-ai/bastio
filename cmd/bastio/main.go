@@ -107,7 +107,7 @@ func runDev(args []string) {
 	if cfg.UpstreamURL != "" {
 		fmt.Printf("• Upstream Proxy: %s\n", cfg.UpstreamURL)
 	} else {
-		fmt.Println("• Provider Mesh: OpenAI, Anthropic, Gemini, DeepSeek, Groq, Bedrock, Ollama")
+		fmt.Println("• Provider Mesh: OpenRouter, OpenAI, Anthropic, Gemini, DeepSeek, Groq, Bedrock, Ollama")
 	}
 	fmt.Println("• Storage: In-Memory (Zero Postgres/Redis/ClickHouse required)")
 	fmt.Println("• Active Detectors: Injection, PII, Jailbreak, Secrets, Exfiltration")

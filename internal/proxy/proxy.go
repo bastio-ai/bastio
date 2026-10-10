@@ -79,12 +79,12 @@ func tenantIDFromCtx(ctx context.Context) string {
 }
 
 // GetByID retrieves a proxy by ID (internal use with uuid types).
-func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*Proxy, error) {
+func (s *Service) GetByID(ctx context.Context, customerID, id uuid.UUID) (*Proxy, error) {
 	var p Proxy
 	err := s.db.QueryRow(ctx, `
 		SELECT id, customer_id, name, slug, listen_path, target_provider, target_model, settings, is_active
-		FROM proxies WHERE id = $1
-	`, id).Scan(&p.ID, &p.CustomerID, &p.Name, &p.Slug, &p.ListenPath,
+		FROM proxies WHERE customer_id = $1 AND id = $2
+	`, customerID, id).Scan(&p.ID, &p.CustomerID, &p.Name, &p.Slug, &p.ListenPath,
 		&p.TargetProvider, &p.TargetModel, &p.Settings, &p.IsActive)
 	if err != nil {
 		return nil, fmt.Errorf("proxy not found: %w", err)

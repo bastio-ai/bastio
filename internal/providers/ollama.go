@@ -121,11 +121,20 @@ func (c *OllamaClient) do(ctx context.Context, body []byte, apiKey string) (*htt
 // through with the stream flag coerced.
 func buildOpenAICompatBody(req *ChatRequest, stream, includeUsage bool) ([]byte, error) {
 	if req.Raw != nil {
-		var m map[string]any
+		var m map[string]json.RawMessage
 		if err := json.Unmarshal(req.Raw, &m); err == nil {
-			m["stream"] = stream
+			m["stream"], _ = json.Marshal(stream)
+			if req.Model != "" {
+				m["model"], _ = json.Marshal(req.Model)
+			}
 			if stream && includeUsage {
-				m["stream_options"] = map[string]any{"include_usage": true}
+				var opts map[string]json.RawMessage
+				_ = json.Unmarshal(m["stream_options"], &opts)
+				if opts == nil {
+					opts = make(map[string]json.RawMessage)
+				}
+				opts["include_usage"] = json.RawMessage(`true`)
+				m["stream_options"], _ = json.Marshal(opts)
 			}
 			return json.Marshal(m)
 		}

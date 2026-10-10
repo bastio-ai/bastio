@@ -15,7 +15,7 @@ tags:
   - name: Developer APIs
     description: Standalone inline threat scanning, reversible PII redaction, and autonomous agent tool call guardrails.
   - name: Gateway
-    description: OpenAI and Anthropic compatible LLM security proxies.
+    description: Native OpenRouter, OpenAI and Claude API security proxies.
   - name: Observability
     description: Traces, sessions, user metrics, and Redis response cache settings.
   - name: Security
@@ -134,6 +134,365 @@ paths:
           description: Anthropic messages response
         "403":
           description: Request blocked by security policy
+
+  /v1/openrouter/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native OpenRouter endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: openRouterNativeGet
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: openRouterNativePost
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: openRouterNativePut
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: openRouterNativePatch
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: openRouterNativeDelete
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
+  /v1/openai/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native OpenAI endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: openAINativeGet
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: openAINativePost
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: openAINativePut
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: openAINativePatch
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: openAINativeDelete
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
+  /v1/anthropic/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native Claude endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: claudeNativeGet
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: claudeNativePost
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: claudeNativePut
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: claudeNativePatch
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: claudeNativeDelete
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
+  /v1/responses:
+    post:
+      operationId: createNativeResponse
+      summary: OpenAI or OpenRouter Responses API
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/embeddings:
+    post:
+      operationId: createNativeEmbeddings
+      summary: OpenAI or OpenRouter embeddings
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/models:
+    get:
+      operationId: listNativeModels
+      summary: Native provider model discovery
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, anthropic] }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/messages:
+    post:
+      operationId: createClaudeMessage
+      summary: Claude Messages API
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/messages/count_tokens:
+    post:
+      operationId: countClaudeMessageTokens
+      summary: Claude message token counting
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/guard/{proxyId}/v1/{endpoint}:
+    parameters:
+      - name: proxyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: endpoint
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: proxyNativeGet
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    post:
+      operationId: proxyNativePost
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    put:
+      operationId: proxyNativePut
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    patch:
+      operationId: proxyNativePatch
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    delete:
+      operationId: proxyNativeDelete
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
 
   # Management API
   /v1/proxies:
@@ -2151,7 +2510,7 @@ components:
           type: string
         target_provider:
           type: string
-          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+          enum: [openai, openrouter, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         target_model:
           type: string
         settings:
@@ -2494,7 +2853,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+          enum: [openai, openrouter, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         key:
           type: string
           description: Plaintext key. Stored encrypted at rest.
@@ -2514,7 +2873,7 @@ components:
           type: string
         target_provider:
           type: string
-          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+          enum: [openai, openrouter, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         target_model:
           type: string
         is_active:

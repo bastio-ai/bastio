@@ -667,12 +667,12 @@ func TestScanStreamChunkForSecrets_HandlesMalformedJSON(t *testing.T) {
 
 func TestParseImageURLAllowlist(t *testing.T) {
 	cases := map[string][]string{
-		"":                                  nil,
-		"  ":                                nil,
-		"example.com":                       {"example.com"},
-		"a.com,b.com":                       {"a.com", "b.com"},
-		"  A.com  , B.COM ,  ":              {"a.com", "b.com"},
-		",,,a.com,,b.com,,":                 {"a.com", "b.com"},
+		"":                     nil,
+		"  ":                   nil,
+		"example.com":          {"example.com"},
+		"a.com,b.com":          {"a.com", "b.com"},
+		"  A.com  , B.COM ,  ": {"a.com", "b.com"},
+		",,,a.com,,b.com,,":    {"a.com", "b.com"},
 	}
 	for in, want := range cases {
 		got := parseImageURLAllowlist(in)
@@ -781,15 +781,13 @@ func extractDeltaContent(t *testing.T, chunk []byte) string {
 	return env.Choices[0].Delta.Content
 }
 
-func TestSanitizeOutboundBody_MultimodalContentSkipped(t *testing.T) {
-	// Structured content arrays (multimodal) aren't rewritten in v1. The
-	// message must round-trip unchanged (modulo JSON key ordering).
+func TestSanitizeOutboundBody_MultimodalContentMasked(t *testing.T) {
 	engine := security.NewEngine(detection.NewPIIDetector())
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":[{"type":"text","text":"SSN 123-45-6789"}]}]}`)
 
-	_, ok := sanitizeOutboundBody(body, engine, security.ActionMask, nil)
-	if ok {
-		t.Errorf("multimodal content must not be rewritten in v1")
+	out, ok := sanitizeOutboundBody(body, engine, security.ActionMask, nil)
+	if !ok || strings.Contains(string(out), "123-45-6789") {
+		t.Errorf("structured user text must be sanitized: %s", out)
 	}
 }
 
@@ -961,5 +959,3 @@ func TestChatCompletions_SemanticCacheMissAndStore(t *testing.T) {
 		t.Errorf("expected upstream calls to remain 1, got %d", len(mockClient.calls))
 	}
 }
-
-

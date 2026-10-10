@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/google/uuid"
 )
 
 // TokenStyle controls the placeholder shape emitted by reversible
@@ -41,6 +43,7 @@ func (s TokenStyle) Prefix() string {
 type TokenMap struct {
 	mu        sync.RWMutex
 	style     TokenStyle
+	namespace string
 	entries   map[string]string // placeholder -> original
 	originals map[string]string // original -> placeholder (dedupe)
 	counts    map[string]int    // piiType -> next index
@@ -58,6 +61,15 @@ func NewTokenMap(style TokenStyle) *TokenMap {
 	}
 }
 
+// NewRequestTokenMap prevents a placeholder retained in provider-side state
+// from matching a different value in a later request. Originals remain strictly
+// request-scoped; older placeholders are deliberately left unchanged.
+func NewRequestTokenMap(style TokenStyle) *TokenMap {
+	tm := NewTokenMap(style)
+	tm.namespace = strings.ReplaceAll(uuid.NewString(), "-", "")
+	return tm
+}
+
 // Add returns a stable placeholder for a (piiType, original) pair.
 // Repeated calls with the same original return the same placeholder so
 // the LLM sees consistent references across message turns.
@@ -72,7 +84,11 @@ func (tm *TokenMap) Add(piiType, original string) string {
 		return existing
 	}
 	tm.counts[piiType]++
-	ph := formatPlaceholder(tm.style, piiType, tm.counts[piiType])
+	kind := piiType
+	if tm.namespace != "" {
+		kind += "_" + tm.namespace
+	}
+	ph := formatPlaceholder(tm.style, kind, tm.counts[piiType])
 	tm.entries[ph] = original
 	tm.originals[original] = ph
 	return ph

@@ -7,33 +7,59 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 )
 
 // OpenAIClient implements the Client interface for OpenAI.
 type OpenAIClient struct {
 	baseURL    string
 	httpClient *http.Client
+	provider   Provider
 }
 
 // NewOpenAIClient creates a new OpenAI client.
 func NewOpenAIClient() *OpenAIClient {
-	return &OpenAIClient{
-		baseURL:    "https://api.openai.com/v1",
-		httpClient: &http.Client{},
+	base := os.Getenv("OPENAI_BASE_URL")
+	if base == "" {
+		base = "https://api.openai.com/v1"
 	}
+	return NewOpenAIClientWithBaseURL(base)
 }
 
-func (c *OpenAIClient) Name() Provider { return ProviderOpenAI }
+func NewOpenAIClientWithBaseURL(base string) *OpenAIClient {
+	return &OpenAIClient{baseURL: strings.TrimRight(base, "/"), httpClient: providerHTTPClient()}
+}
+
+func (c *OpenAIClient) Name() Provider {
+	if c.provider != "" {
+		return c.provider
+	}
+	return ProviderOpenAI
+}
+
+func (c *OpenAIClient) outboundModel(model string) string {
+	if c.Name() == ProviderOpenRouter {
+		return strings.TrimPrefix(model, "openrouter/")
+	}
+	return strings.TrimPrefix(model, "openai/")
+}
 
 // Chat sends a non-streaming chat completion request.
 func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest, apiKey string) (*ChatResponse, error) {
+	copyReq := *req
+	copyReq.Model = c.outboundModel(req.Model)
+	req = &copyReq
 	// Use raw body if available (pass-through proxy mode)
 	var body []byte
 	if req.Raw != nil {
 		// Ensure stream is false
-		var m map[string]any
+		var m map[string]json.RawMessage
 		if err := json.Unmarshal(req.Raw, &m); err == nil {
-			m["stream"] = false
+			m["stream"] = json.RawMessage(`false`)
+			if req.Model != "" {
+				m["model"], _ = json.Marshal(c.outboundModel(req.Model))
+			}
 			body, _ = json.Marshal(m)
 		}
 	}
@@ -53,6 +79,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest, apiKey string
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	forwardRequestHeaders(httpReq.Header, req.Headers)
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -67,7 +94,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest, apiKey string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("openai error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, &ProviderError{Provider: c.Name(), Status: resp.StatusCode, Body: respBody, Headers: resp.Header.Clone()}
 	}
 
 	var openaiResp openAIChatResponse
@@ -97,13 +124,25 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest, apiKey string
 
 // ChatStream sends a streaming chat completion request.
 func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey string) (<-chan StreamChunk, error) {
+	copyReq := *req
+	copyReq.Model = c.outboundModel(req.Model)
+	req = &copyReq
 	var body []byte
 	if req.Raw != nil {
 		// Ensure stream is true and include usage
-		var m map[string]any
+		var m map[string]json.RawMessage
 		if err := json.Unmarshal(req.Raw, &m); err == nil {
-			m["stream"] = true
-			m["stream_options"] = map[string]any{"include_usage": true}
+			m["stream"] = json.RawMessage(`true`)
+			if req.Model != "" {
+				m["model"], _ = json.Marshal(c.outboundModel(req.Model))
+			}
+			var opts map[string]json.RawMessage
+			_ = json.Unmarshal(m["stream_options"], &opts)
+			if opts == nil {
+				opts = make(map[string]json.RawMessage)
+			}
+			opts["include_usage"] = json.RawMessage(`true`)
+			m["stream_options"], _ = json.Marshal(opts)
 			body, _ = json.Marshal(m)
 		}
 	}
@@ -124,6 +163,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey 
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	forwardRequestHeaders(httpReq.Header, req.Headers)
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -134,7 +174,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("openai error (status %d): %s", resp.StatusCode, string(body))
+		return nil, &ProviderError{Provider: c.Name(), Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	}
 
 	return ReadSSEStream(ctx, resp.Body, "[DONE]"), nil
@@ -143,13 +183,13 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey 
 // OpenAI-specific types
 
 type openAIChatRequest struct {
-	Model         string                `json:"model"`
-	Messages      []openAIMessage       `json:"messages"`
-	MaxTokens     *int                  `json:"max_tokens,omitempty"`
-	Temperature   *float64              `json:"temperature,omitempty"`
-	TopP          *float64              `json:"top_p,omitempty"`
-	Stream        bool                  `json:"stream"`
-	StreamOptions *openAIStreamOptions  `json:"stream_options,omitempty"`
+	Model         string               `json:"model"`
+	Messages      []openAIMessage      `json:"messages"`
+	MaxTokens     *int                 `json:"max_tokens,omitempty"`
+	Temperature   *float64             `json:"temperature,omitempty"`
+	TopP          *float64             `json:"top_p,omitempty"`
+	Stream        bool                 `json:"stream"`
+	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
 }
 
 // openAIMessage carries either a plain-string content (when no

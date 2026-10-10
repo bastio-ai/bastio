@@ -560,8 +560,9 @@ func (s *Server) Handler() http.Handler {
 	if len(s.cfg.CORSOrigins) > 0 {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.cfg.CORSOrigins,
-			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Authorization", "Content-Type", "X-End-User-Id"},
+			AllowedMethods:   []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Authorization", "Content-Type", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match"},
+			ExposedHeaders:   []string{"X-Bastio-Trace-Id", "X-Bastio-Request-Id", "X-Bastio-Stream-Buffered", "X-Request-Id", "Request-Id", "Retry-After"},
 			AllowCredentials: true,
 			MaxAge:           300,
 		}))
@@ -659,6 +660,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 
 	providerRegistry := providers.NewRegistry()
 	providerRegistry.Register(providers.NewOpenAIClient())
+	providerRegistry.Register(providers.NewOpenRouterClient())
 	providerRegistry.Register(providers.NewAnthropicClient())
 	providerRegistry.Register(providers.NewBedrockClient())
 	providerRegistry.Register(providers.NewOllamaClient())
@@ -900,6 +902,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			}
 			r.Post("/chat/completions", gw.ChatCompletions)
 			r.Post("/guard/{proxyId}/v1/messages", gw.AnthropicMessages)
+			gw.RegisterNativeRoutes(r)
 
 			// OTLP/HTTP trace ingestion. POST is authenticated; GET
 			// /v1/traces (in the dashboard group above) lists traces.

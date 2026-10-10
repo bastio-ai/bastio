@@ -109,6 +109,7 @@ type ChatTraceInput struct {
 	Recorder *observability.Recorder // nil → no-op (OSS without ClickHouse)
 
 	TraceID    uuid.UUID
+	ProxyID    uuid.UUID
 	CustomerID uuid.UUID
 	APIKeyID   uuid.UUID // gateway only; workspace passes uuid.Nil
 
@@ -183,6 +184,7 @@ func RecordChatTrace(in ChatTraceInput) {
 	trace := &observability.TraceRecord{
 		ID:             in.TraceID,
 		CustomerID:     in.CustomerID,
+		ProxyID:        in.ProxyID,
 		APIKeyID:       in.APIKeyID,
 		Method:         method,
 		Path:           in.Path,
@@ -213,7 +215,7 @@ func RecordChatTrace(in ChatTraceInput) {
 	in.Recorder.RecordTrace(trace)
 	in.Recorder.RecordAnalytics(trace)
 	if in.ScanResult != nil && len(in.ScanResult.Findings) > 0 {
-		in.Recorder.RecordThreats(in.TraceID, in.CustomerID, uuid.Nil, in.ScanResult, in.EndUserID, in.IPHash, in.UserAgent)
+		in.Recorder.RecordThreats(in.TraceID, in.CustomerID, in.ProxyID, in.ScanResult, in.EndUserID, in.IPHash, in.UserAgent)
 	}
 }
 

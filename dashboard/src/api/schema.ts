@@ -90,6 +90,232 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/openrouter/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["openRouterNativeGet"];
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["openRouterNativePut"];
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["openRouterNativePost"];
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["openRouterNativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["openRouterNativePatch"];
+        trace?: never;
+    };
+    "/v1/openai/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["openAINativeGet"];
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["openAINativePut"];
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["openAINativePost"];
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["openAINativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["openAINativePatch"];
+        trace?: never;
+    };
+    "/v1/anthropic/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["claudeNativeGet"];
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["claudeNativePut"];
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["claudeNativePost"];
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["claudeNativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["claudeNativePatch"];
+        trace?: never;
+    };
+    "/v1/responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** OpenAI or OpenRouter Responses API */
+        post: operations["createNativeResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/embeddings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** OpenAI or OpenRouter embeddings */
+        post: operations["createNativeEmbeddings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native provider model discovery */
+        get: operations["listNativeModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claude Messages API */
+        post: operations["createClaudeMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/count_tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claude message token counting */
+        post: operations["countClaudeMessageTokens"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/guard/{proxyId}/v1/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /** Native API through a tenant-owned gateway proxy */
+        get: operations["proxyNativeGet"];
+        /** Native API through a tenant-owned gateway proxy */
+        put: operations["proxyNativePut"];
+        /** Native API through a tenant-owned gateway proxy */
+        post: operations["proxyNativePost"];
+        /** Native API through a tenant-owned gateway proxy */
+        delete: operations["proxyNativeDelete"];
+        options?: never;
+        head?: never;
+        /** Native API through a tenant-owned gateway proxy */
+        patch: operations["proxyNativePatch"];
+        trace?: never;
+    };
     "/v1/proxies": {
         parameters: {
             query?: never;
@@ -1344,7 +1570,7 @@ export interface components {
         CreateProxyRequest: {
             name: string;
             /** @enum {string} */
-            target_provider: "openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama";
+            target_provider: "openai" | "openrouter" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             target_model?: string;
             settings?: Record<string, never>;
         };
@@ -1500,7 +1726,7 @@ export interface components {
         };
         CreateProviderKeyRequest: {
             /** @enum {string} */
-            provider: "openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama";
+            provider: "openai" | "openrouter" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             /** @description Plaintext key. Stored encrypted at rest. */
             key: string;
             /**
@@ -1513,7 +1739,7 @@ export interface components {
         UpdateProxyRequest: {
             name: string;
             /** @enum {string} */
-            target_provider: "openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama";
+            target_provider: "openai" | "openrouter" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             target_model: string;
             is_active?: boolean;
         };
@@ -2921,6 +3147,636 @@ export interface operations {
             };
             /** @description Request blocked by security policy */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createNativeResponse: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createNativeEmbeddings: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listNativeModels: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createClaudeMessage: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    countClaudeMessageTokens: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
                 headers: {
                     [name: string]: unknown;
                 };
