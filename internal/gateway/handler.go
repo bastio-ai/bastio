@@ -1020,7 +1020,7 @@ func validateImageContent(raw json.RawMessage, allowlist []string) (string, bool
 			return imageURL, false
 		}
 	}
-	for _, key := range []string{"messages", "input", "content"} {
+	for _, key := range []string{"messages", "input", "content", "requests", "params"} {
 		if nested, exists := obj[key]; exists {
 			if rejected, ok := validateImageContent(nested, allowlist); !ok {
 				return rejected, false

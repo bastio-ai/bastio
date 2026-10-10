@@ -185,6 +185,10 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 			}
 		}
 	}
+	if len(fallbacks) > 0 && route.provider == providers.ProviderOpenRouter && endpoint != "/chat/completions" {
+		writeRouteError(w, &routeError{400, "Bastio fallback_models on native OpenRouter routes require Chat Completions"})
+		return
+	}
 	if len(fallbacks) > 0 && route.provider != providers.ProviderOpenRouter {
 		writeRouteError(w, &routeError{400, "use the shared chat route for Bastio model fallbacks, or OpenRouter native models routing"})
 		return
@@ -250,7 +254,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		_ = json.Unmarshal(body, &obj)
 		_, hasModel := obj["model"]
 		_, hasModels := obj["models"]
-		if route.model != "" && (hasModel || (!hasModels && IsGenerationEndpoint(endpoint))) {
+		if route.model != "" && (hasModel || (!hasModels && IsGenerationEndpoint(endpoint) && endpoint != "/batches" && endpoint != "/messages/batches")) {
 			model = route.model
 			if route.provider == providers.ProviderOpenRouter {
 				model = strings.TrimPrefix(model, "openrouter/")

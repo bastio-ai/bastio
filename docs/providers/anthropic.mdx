@@ -165,3 +165,8 @@ PII placeholders, so they remain reusable in later Claude turns. Restoration
 applies to ordinary response text and tool data. If a response policy requires
 rewriting signed thinking text, Bastio blocks the response rather than emitting
 an invalid signed block.
+
+Inline Message Batch requests receive the same user/tool text scanning as
+individual Messages calls. Batch results fetched later keep request-scoped
+placeholders. Uploaded files and remote references are forwarded as opaque
+content; their contents are not inspected by the inline text scanner.
