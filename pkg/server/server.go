@@ -365,7 +365,7 @@ func WithShutdownTimeout(d time.Duration) Option {
 func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, error) {
 	o := options{
 		readTimeout:     30 * time.Second,
-		writeTimeout:    90 * time.Second,
+		writeTimeout:    gatewayTimeout(cfg.GatewayRequestTimeout) + time.Minute,
 		idleTimeout:     120 * time.Second,
 		shutdownTimeout: 30 * time.Second,
 	}
@@ -552,11 +552,8 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(requestLimitsMiddleware(s.cfg.MaxRequestBodyBytes, s.cfg.GatewayMaxRequestBodyBytes, s.cfg.GatewayRequestTimeout))
 	r.Use(echoRequestIDMiddleware)
-	if s.cfg.MaxRequestBodyBytes > 0 {
-		r.Use(maxBodyBytesMiddleware(s.cfg.MaxRequestBodyBytes))
-	}
 	if len(s.cfg.CORSOrigins) > 0 {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.cfg.CORSOrigins,

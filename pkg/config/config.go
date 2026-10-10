@@ -25,13 +25,15 @@ const (
 )
 
 type Config struct {
-	Mode         Mode
-	Port         int
-	DatabaseURL  string
-	RedisURL     string
-	ClickHouseURL string
-	SecurityMode SecurityMode
-	LogLevel     string
+	Mode                       Mode
+	Port                       int
+	DatabaseURL                string
+	RedisURL                   string
+	ClickHouseURL              string
+	SecurityMode               SecurityMode
+	LogLevel                   string
+	GatewayRequestTimeout      time.Duration
+	GatewayMaxRequestBodyBytes int64
 
 	// Encryption
 	MasterEncryptionKey string
@@ -41,7 +43,7 @@ type Config struct {
 	CORSOrigins []string
 
 	// MaxRequestBodyBytes caps the size of JSON request bodies to management
-	// endpoints. Gateway chat/completions has its own larger cap.
+	// endpoints. Provider-native requests have a separate configurable cap.
 	MaxRequestBodyBytes int64
 
 	// DataDir is the root for blob storage the OSS deployment owns
@@ -81,17 +83,19 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		Mode:         Mode(envOr("BASTIO_MODE", "all-in-one")),
-		Port:         envIntOr("BASTIO_PORT", 4000),
-		DatabaseURL:  os.Getenv("DATABASE_URL"),
-		RedisURL:     envOr("REDIS_URL", "redis://localhost:6379"),
-		ClickHouseURL: envOr("CLICKHOUSE_URL", "http://localhost:8123"),
-		SecurityMode: SecurityMode(envOr("BASTIO_SECURITY_MODE", "fail-open")),
-		LogLevel:     envOr("BASTIO_LOG_LEVEL", "info"),
-		MasterEncryptionKey: os.Getenv("BASTIO_MASTER_ENCRYPTION_KEY"),
-		CORSOrigins:         envListOr("BASTIO_CORS_ORIGINS", nil),
-		MaxRequestBodyBytes: int64(envIntOr("BASTIO_MAX_BODY_BYTES", 1<<20)),
-		DataDir:             envOr("BASTIO_DATA_DIR", "./data"),
+		Mode:                       Mode(envOr("BASTIO_MODE", "all-in-one")),
+		Port:                       envIntOr("BASTIO_PORT", 4000),
+		DatabaseURL:                os.Getenv("DATABASE_URL"),
+		RedisURL:                   envOr("REDIS_URL", "redis://localhost:6379"),
+		ClickHouseURL:              envOr("CLICKHOUSE_URL", "http://localhost:8123"),
+		SecurityMode:               SecurityMode(envOr("BASTIO_SECURITY_MODE", "fail-open")),
+		LogLevel:                   envOr("BASTIO_LOG_LEVEL", "info"),
+		GatewayRequestTimeout:      envDurationOr("BASTIO_GATEWAY_TIMEOUT", 10*time.Minute),
+		GatewayMaxRequestBodyBytes: int64(envIntOr("BASTIO_MAX_GATEWAY_BODY_BYTES", 64<<20)),
+		MasterEncryptionKey:        os.Getenv("BASTIO_MASTER_ENCRYPTION_KEY"),
+		CORSOrigins:                envListOr("BASTIO_CORS_ORIGINS", nil),
+		MaxRequestBodyBytes:        int64(envIntOr("BASTIO_MAX_BODY_BYTES", 1<<20)),
+		DataDir:                    envOr("BASTIO_DATA_DIR", "./data"),
 		PlatformHosts: envListOr("BASTIO_PLATFORM_HOSTS", []string{
 			"localhost", "127.0.0.1", "0.0.0.0",
 		}),

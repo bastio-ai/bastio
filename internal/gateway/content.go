@@ -154,21 +154,24 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 		for i, raw := range items {
 			var item map[string]json.RawMessage
 			if json.Unmarshal(raw, &item) == nil && item != nil {
-				var role, kind string
+				var role string
 				_ = json.Unmarshal(item["role"], &role)
-				_ = json.Unmarshal(item["type"], &kind)
-				if role == "system" || role == "developer" || role == "assistant" {
+				if role == "system" || role == "developer" {
 					continue
 				}
-				if key == "messages" && role != "user" && role != "tool" {
-					continue
-				}
-				// Responses supports role-less function_call_output and text parts.
-				if key == "input" && role == "" && kind == "function_call" {
+				if key == "messages" && role != "user" && role != "tool" && role != "assistant" {
 					continue
 				}
 			}
-			next, ch := mapContent(raw, transform)
+			// Restored assistant text and tool arguments can return as history.
+			// Re-sanitize ordinary data; signed thinking must remain reusable.
+			var next json.RawMessage
+			var ch bool
+			if item != nil {
+				next, ch = mapNativeOutputPolicy(raw, transform, func(text string) string { return text })
+			} else {
+				next, ch = mapContent(raw, transform)
+			}
 			items[i], listChanged = next, listChanged || ch
 		}
 		if listChanged {

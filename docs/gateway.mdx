@@ -214,3 +214,18 @@ request's PII. Retrieving provider-stored output later leaves older placeholders
 intact. To restore all values, send the original conversation input with each
 request; use masking when you prefer permanent redaction in provider-side state.
 Bastio never persists the reversible mapping.
+
+
+### Native request limits
+
+Provider-native APIs default to a 10-minute request deadline and a 64 MiB
+request-body limit, including multipart uploads. Configure these with
+`BASTIO_GATEWAY_TIMEOUT` (a Go duration such as `10m`) and
+`BASTIO_MAX_GATEWAY_BODY_BYTES`. Oversized gateway bodies return HTTP 413.
+Management routes retain their 60-second deadline and separate
+`BASTIO_MAX_BODY_BYTES` limit. Upstream provider and hosting limits still apply;
+response security buffering has its own 32 MiB limit described above.
+
+Ordinary assistant history and previously restored tool arguments are re-scanned
+and sanitized when sent back in later turns. System/developer instructions and
+provider-signed thinking blocks retain their original contents.

@@ -94,6 +94,10 @@ func TestStructuredPIIInputsAndNativeOutputs(t *testing.T) {
 		`{"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"keep","content":[{"type":"text","text":"SSN 123-45-6789"}]}]}]}`,
 		`{"input":[{"role":"user","content":[{"type":"input_text","text":"SSN 123-45-6789"}]},{"type":"function_call_output","call_id":"keep","output":"SSN 123-45-6789"}]}`,
 		`{"input":["SSN 123-45-6789","another 123-45-6789"]}`,
+		`{"messages":[{"role":"assistant","content":"SSN 123-45-6789"}]}`,
+		`{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"keep","name":"lookup","input":{"ssn":"123-45-6789"}}]}]}`,
+		`{"messages":[{"role":"assistant","tool_calls":[{"id":"keep","type":"function","function":{"name":"lookup","arguments":"{\"ssn\":\"123-45-6789\"}"}}]}]}`,
+		`{"input":[{"type":"function_call","call_id":"keep","name":"lookup","arguments":"{\"ssn\":\"123-45-6789\"}"}]}`,
 		`{"requests":[{"custom_id":"keep","params":{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"SSN 123-45-6789"}]}}]}`,
 	} {
 		tm := security.NewTokenMap(security.TokenStyleAngle)

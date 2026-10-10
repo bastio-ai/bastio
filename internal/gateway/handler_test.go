@@ -372,23 +372,10 @@ func TestSanitizeOutboundBody_MaskRewritesUserMessages(t *testing.T) {
 		t.Fatal("expected rewrite to occur")
 	}
 	if strings.Contains(string(out), "123-45-6789") {
-		// The assistant message should still contain the raw SSN because
-		// we only sanitize user-role messages. Tighten the check:
-		// the user-content must not contain it.
-		var env struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.Unmarshal(out, &env); err != nil {
-			t.Fatalf("output not valid JSON: %v", err)
-		}
-		for _, m := range env.Messages {
-			if m.Role == "user" && strings.Contains(m.Content, "123-45-6789") {
-				t.Errorf("raw SSN leaked into user content: %q", m.Content)
-			}
-		}
+		t.Fatalf("PII leaked through conversation history: %s", out)
+	}
+	if !strings.Contains(string(out), "you are helpful") || !json.Valid(out) {
+		t.Fatalf("instruction or JSON changed: %s", out)
 	}
 }
 
