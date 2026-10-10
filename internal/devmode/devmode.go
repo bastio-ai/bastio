@@ -505,9 +505,10 @@ func (s *DevServer) handleChatCompletions(w http.ResponseWriter, r *http.Request
 
 		if chatReq.Stream {
 			pReq := &providers.ChatRequest{
-				Model:  m,
-				Stream: true,
-				Raw:    body,
+				Model:   m,
+				Stream:  true,
+				Raw:     body,
+				Headers: r.Header,
 			}
 			stream, err := client.ChatStream(r.Context(), pReq, apiKey)
 			if err != nil {
@@ -526,9 +527,10 @@ func (s *DevServer) handleChatCompletions(w http.ResponseWriter, r *http.Request
 			break
 		} else {
 			pReq := &providers.ChatRequest{
-				Model:  m,
-				Stream: false,
-				Raw:    body,
+				Model:   m,
+				Stream:  false,
+				Raw:     body,
+				Headers: r.Header,
 			}
 			resp, err := client.Chat(r.Context(), pReq, apiKey)
 			if err != nil {

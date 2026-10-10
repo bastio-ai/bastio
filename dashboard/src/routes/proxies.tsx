@@ -149,7 +149,7 @@ function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: 
               <dl className="mt-4 space-y-3 text-[11px]">
                 <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Provider</dt><dd>{providerLabels[proxy.target_provider] ?? proxy.target_provider}</dd></div>
                 <div className="flex items-start justify-between gap-4"><dt className="text-muted-foreground">Default model</dt><dd className="text-right font-mono">{proxy.target_model || "Not set"}</dd></div>
-                <div className="flex items-center justify-between gap-2"><dt className="text-muted-foreground">Endpoint</dt><dd className="flex items-center gap-1"><code className="font-mono">{nativeBasePath}</code><Button size="icon-xs" variant="ghost" onClick={() => copyValue(nativeBasePath, "endpoint")} aria-label="Copy endpoint">{copied === "endpoint" ? <Check /> : <Copy />}</Button></dd></div>
+                <div className="flex items-center justify-between gap-2"><dt className="text-muted-foreground">Endpoint</dt><dd className="flex min-w-0 items-center gap-1"><code className="break-all text-right font-mono">{nativeBasePath}</code><Button size="icon-xs" variant="ghost" onClick={() => copyValue(nativeBasePath, "endpoint")} aria-label="Copy endpoint">{copied === "endpoint" ? <Check /> : <Copy />}</Button></dd></div>
               </dl>
               <div className="mt-4 border-t border-border/60 pt-3">
                 {editingModel ? (
