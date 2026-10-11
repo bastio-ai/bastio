@@ -5,7 +5,7 @@ description: What Bastio Cloud adds on top of the open-source gateway, and why s
 
 The OSS gateway in this repo is the foundation. **Bastio Cloud** is
 the hosted, multi-tenant version that wraps it with everything a
-team needs to run Bastio as a managed product: auth, billing, SSO,
+team needs to run Bastio as a managed product: auth, billing, employee access,
 the higher-precision detector suite, the employee chat product, and
 operational features like response caching.
 
@@ -18,8 +18,8 @@ fork.
 
 | Surface | Cloud feature | OSS equivalent |
 |---|---|---|
-| Auth | Email + password, Google OAuth, SAML, OIDC, RBAC | None — network-level access only |
-| Tenancy | Multi-workspace, invitations, SSO group sync | Single-tenant |
+| Auth | Email + password, Google OAuth, RBAC | None — network-level access only |
+| Tenancy | Multi-workspace, invitations, workspace roles | Single-tenant |
 | Billing | Per-seat Stripe subscription + customer portal | N/A |
 | Detection | **Bastio AI Security Suite** — Privacy Filter (Presidio), Prompt Guard (DeBERTa-v3), Threat Vector (pgvector similarity), Injection Semantic, Session Risk Score | Regex + entropy detectors (~95% of everyday cases) |
 | Performance | **Bastio Response Cache** — identical-prompt dedup, per-tenant TTL, streaming-safe, tool-call aware | None |
@@ -43,7 +43,7 @@ without changing what OSS is:
   per-tenant USD savings math against a per-model price table.
   Single-tenant OSS doesn't have the namespacing layer this
   assumes.
-- **Auth / SSO / RBAC** — OSS deliberately ships with no dashboard
+- **Auth / RBAC** — OSS deliberately ships with no dashboard
   auth so self-hosters control access at the network layer. Adding
   auth to OSS would force every self-host install to configure it.
 - **Billing** — Stripe wiring only makes sense for a managed
@@ -66,7 +66,7 @@ OSS covers the common case:
 - Full trace + threat-event capture in PostgreSQL + ClickHouse, with
   the same dashboard the Cloud product uses.
 
-If you don't need SSO, multi-tenancy, seat-based billing, or
+If you don't need employee access, multi-tenancy, seat-based billing, or
 transformer-grade detection, OSS is the shorter path.
 
 ## Upgrading

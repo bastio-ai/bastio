@@ -2485,8 +2485,249 @@ paths:
             application/json:
               schema:
                 type: object
+  /v1/mcp/servers:
+    get:
+      operationId: "listMCPServers"
+      summary: "List real enrolled MCP firewalls"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPServerList"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+    post:
+      operationId: "createMCPServer"
+      summary: "Enroll a server (admin)"
+      tags: ["MCP"]
+      responses:
+        201:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPEnrollment"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPCreateServer"
+  /v1/mcp/servers/{id}/policy:
+    put:
+      operationId: "updateMCPPolicy"
+      summary: "Update tool allow/block policy (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  policy:
+                    $ref: "#/components/schemas/MCPPolicy"
+                required: ["policy"]
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPPolicy"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/servers/{id}/rotate-token:
+    post:
+      operationId: "rotateMCPToken"
+      summary: "Replace a server enrollment token (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPToken"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/servers/{id}:
+    delete:
+      operationId: "revokeMCPServer"
+      summary: "Revoke a firewall enrollment (admin)"
+      tags: ["MCP"]
+      responses:
+        204:
+          description: "Success"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/events:
+    get:
+      operationId: "listMCPEvents"
+      summary: "List 30-day metadata-only MCP events"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPEventList"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      parameters:
+        - name: "server_id"
+          in: "query"
+          schema:
+            type: "string"
+            format: "uuid"
+        - name: "limit"
+          in: "query"
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 200
+  /v1/mcp/inspect:
+    post:
+      operationId: "inspectMCPTool"
+      summary: "Inspect tool arguments using the real local firewall engine; does not execute or persist input (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPDecision"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPInspectRequest"
+  /v1/mcp/runtime:
+    post:
+      operationId: "ingestMCPRuntime"
+      summary: "Refresh enrollment policy and ingest metadata; enrollment token authorizes only its server"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPRuntimeResponse"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+        429:
+          description: "Reporting limit exceeded; retry after 30 seconds"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPRuntimeBatch"
+      security:
+        - MCPEnrollment: []
+
 components:
   securitySchemes:
+    MCPEnrollment:
+      type: http
+      scheme: bearer
+      description: A one-time server-scoped MCP enrollment credential; not a gateway API key.
     ApiKeyAuth:
       type: apiKey
       in: header
@@ -2494,6 +2735,171 @@ components:
       description: "Bearer sk-bastio-..."
 
   schemas:
+    MCPPolicy:
+      type: "object"
+      properties:
+        allowed_tools:
+          type: "array"
+          maxItems: 100
+          items:
+            type: "string"
+            pattern: "^[A-Za-z0-9_.:/-]{1,128}$"
+        blocked_tools:
+          type: "array"
+          maxItems: 100
+          items:
+            type: "string"
+            pattern: "^[A-Za-z0-9_.:/-]{1,128}$"
+      required: ["allowed_tools", "blocked_tools"]
+    MCPServer:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+        client:
+          type: "string"
+          enum: ["claude", "cursor", "cline", "terminal", "other"]
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+        created_at:
+          type: "string"
+          format: "date-time"
+        last_seen_at:
+          type: ["string", "null"]
+          format: "date-time"
+        revoked_at:
+          type: ["string", "null"]
+          format: "date-time"
+        calls:
+          type: "integer"
+        blocked:
+          type: "integer"
+        dropped_events:
+          type: "integer"
+      required: ["id", "name", "client", "policy", "created_at", "last_seen_at", "revoked_at", "calls", "blocked", "dropped_events"]
+    MCPEvent:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        server_id:
+          type: "string"
+          format: "uuid"
+        server_name:
+          type: "string"
+        client:
+          type: "string"
+        tool_name:
+          type: "string"
+        direction:
+          type: "string"
+          enum: ["request", "response", "tool_description"]
+        action:
+          type: "string"
+          enum: ["allowed", "blocked", "sanitized", "warned"]
+        categories:
+          type: "array"
+          items:
+            type: "string"
+        duration_ms:
+          type: "number"
+        occurred_at:
+          type: "string"
+          format: "date-time"
+      required: ["id", "server_id", "tool_name", "direction", "action", "categories", "duration_ms", "occurred_at"]
+    MCPServerList:
+      type: "object"
+      properties:
+        servers:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/MCPServer"
+      required: ["servers"]
+    MCPEventList:
+      type: "object"
+      properties:
+        events:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/MCPEvent"
+      required: ["events"]
+    MCPCreateServer:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        client:
+          type: "string"
+          enum: ["claude", "cursor", "cline", "terminal", "other"]
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+      required: ["name", "client", "policy"]
+    MCPEnrollment:
+      type: "object"
+      properties:
+        server:
+          $ref: "#/components/schemas/MCPServer"
+        enrollment_token:
+          type: "string"
+      required: ["server", "enrollment_token"]
+    MCPToken:
+      type: "object"
+      properties:
+        enrollment_token:
+          type: "string"
+      required: ["enrollment_token"]
+    MCPInspectRequest:
+      type: "object"
+      properties:
+        tool_name:
+          type: "string"
+        arguments:
+          type: "object"
+          additionalProperties: true
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+      required: ["tool_name", "arguments", "policy"]
+    MCPDecision:
+      type: "object"
+      properties:
+        action:
+          type: "string"
+          enum: ["allowed", "blocked", "sanitized", "warned"]
+        categories:
+          type: "array"
+          items:
+            type: "string"
+        arguments:
+          type: ["object", "null"]
+          additionalProperties: true
+        duration_ms:
+          type: "number"
+      required: ["action", "categories", "arguments", "duration_ms"]
+    MCPRuntimeBatch:
+      type: "object"
+      properties:
+        events:
+          type: "array"
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/MCPEvent"
+        dropped_events:
+          type: "integer"
+          minimum: 0
+      required: ["events", "dropped_events"]
+    MCPRuntimeResponse:
+      type: "object"
+      properties:
+        server_id:
+          type: "string"
+          format: "uuid"
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+      required: ["server_id", "policy"]
     HealthResponse:
       type: object
       properties:

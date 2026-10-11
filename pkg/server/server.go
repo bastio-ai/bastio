@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -50,6 +51,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/auth"
 	semcache "github.com/bastio-ai/bastio/internal/cache"
 	"github.com/bastio-ai/bastio/internal/gateway"
+	"github.com/bastio-ai/bastio/internal/mcp"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/prompts"
 	"github.com/bastio-ai/bastio/internal/providers"
@@ -504,6 +506,11 @@ func (s *Server) Close() error {
 // Start builds the router, begins listening, and blocks until ctx is
 // cancelled or SIGINT/SIGTERM is received.
 func (s *Server) Start(ctx context.Context) error {
+	maintenance, stopMaintenance := context.WithCancel(ctx)
+	maintenanceDone := make(chan struct{})
+	go func() { defer close(maintenanceDone); mcp.NewStore(s.db.Pool).RunMaintenance(maintenance) }()
+	defer func() { stopMaintenance(); <-maintenanceDone }()
+
 	handler := s.Handler()
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
@@ -654,6 +661,8 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	// so every Bastio surface (gateway, workspace, worker, detect
 	// SDK) runs the same detector list. See BuildSecurityEngine.
 	secEngine, profileLookup, topicPolicy := BuildSecurityEngine(context.Background(), s.db.Pool, s.redis)
+
+	mcpHandler := mcp.NewHandler(mcp.NewStore(s.db.Pool), secEngine)
 
 	providerRegistry := providers.NewRegistry()
 	providerRegistry.Register(providers.NewOpenAIClient())
@@ -847,6 +856,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.Mount("/overlays", overlayHandler.Routes())
 			r.Mount("/overlay-templates", overlayHandler.TemplatesRoutes())
 			r.Mount("/detect", detectHandler.Routes())
+			r.Mount("/mcp", mcpHandler.Routes(workspace.RequireRole(workspace.RoleAdmin)))
 			r.Mount("/playground", playgroundHandler.Routes())
 			r.Mount("/proxies", proxySvc.Routes(providerKeyHandler))
 			r.Mount("/provider-keys", providerKeyHandler.Routes())
@@ -907,6 +917,8 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			otlp := observability.NewOTLPHandler(s.recorder)
 			r.Post("/traces", otlp.ServeHTTP)
 		})
+
+		r.Post("/mcp/runtime", mcpHandler.Runtime)
 
 		// Caller extensions (e.g. cloud billing, cloud analytics).
 		for _, fn := range s.opts.apiExtenders {
@@ -989,7 +1001,10 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 // SetupLogger configures the default slog handler for JSON output at the
 // requested level. Provided as a package helper so both OSS and cloud binaries
 // can share the same logger setup.
-func SetupLogger(level string) {
+func SetupLogger(level string) { SetupLoggerWriter(level, os.Stdout) }
+
+// SetupLoggerWriter lets stdio integrations keep protocol stdout free of logs.
+func SetupLoggerWriter(level string, output io.Writer) {
 	var logLevel slog.Level
 	switch level {
 	case "debug":
@@ -1001,7 +1016,7 @@ func SetupLogger(level string) {
 	default:
 		logLevel = slog.LevelInfo
 	}
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
+	handler := slog.NewJSONHandler(output, &slog.HandlerOptions{Level: logLevel})
 	slog.SetDefault(slog.New(handler))
 }
 

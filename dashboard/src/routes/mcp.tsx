@@ -1,534 +1,542 @@
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, RefreshCw, Server, Shield } from "lucide-react";
+import { mcpApi, mcpKeys, type McpPolicy, type McpServer } from "@/api/mcp";
 import {
-  Database,
-  FileCode,
-  FolderTree,
-  Play,
-  Plus,
-  Search,
-  Server,
-  Shield,
-  ShieldAlert,
-  Terminal,
-} from "lucide-react";
-
-import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
-import { ConnectMcpDialog } from "@/components/connect-mcp-dialog";
+  AdminPageHeader,
+  AdminSummaryStrip,
+  FieldLabel,
+} from "@/components/admin/admin-primitives";
+import {
+  ConnectMcpDialog,
+  McpEnrollment,
+} from "@/components/connect-mcp-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/card";
 
-interface ToolCallEvent {
-  id: string;
-  tool_name: string;
-  server: string;
-  action: "BLOCKED" | "MASKED" | "ALLOWED";
-  client: string;
-  arguments_preview: string;
-  threat_type?: string;
-  duration_ms: number;
-  timestamp: string;
+const tools = (value: string) => [
+  ...new Set(
+    value
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+  ),
+];
+function status(s: McpServer) {
+  if (s.revoked_at) return "Revoked";
+  if (!s.last_seen_at) return "Awaiting connection";
+  return Date.now() - Date.parse(s.last_seen_at) < 30_000
+    ? "Connected"
+    : "Offline";
 }
-
-const mockToolCalls: ToolCallEvent[] = [
-  {
-    id: "call-001",
-    tool_name: "bash.run_command",
-    server: "local-bash",
-    action: "BLOCKED",
-    client: "Claude Desktop",
-    arguments_preview: '{"command": "rm -rf /var/data && cat /etc/shadow"}',
-    threat_type: "destructive_command / prompt_injection",
-    duration_ms: 1.4,
-    timestamp: "2 mins ago",
-  },
-  {
-    id: "call-002",
-    tool_name: "postgres.execute_query",
-    server: "prod-postgres-readonly",
-    action: "BLOCKED",
-    client: "Cursor AI Agent",
-    arguments_preview: '{"query": "DROP TABLE customers CASCADE;"}',
-    threat_type: "destructive_sql",
-    duration_ms: 1.8,
-    timestamp: "14 mins ago",
-  },
-  {
-    id: "call-003",
-    tool_name: "crm.lookup_customer",
-    server: "salesforce-mcp",
-    action: "MASKED",
-    client: "Claude Desktop",
-    arguments_preview: '{"ssn": "[SSN-MASKED-8472]", "email": "john.doe@example.com"}',
-    threat_type: "pii_sanitized",
-    duration_ms: 2.1,
-    timestamp: "32 mins ago",
-  },
-  {
-    id: "call-004",
-    tool_name: "filesystem.read_file",
-    server: "workspace-fs",
-    action: "ALLOWED",
-    client: "Windsurf",
-    arguments_preview: '{"path": "src/components/button.tsx"}',
-    duration_ms: 0.9,
-    timestamp: "1 hour ago",
-  },
-  {
-    id: "call-005",
-    tool_name: "github.create_pull_request",
-    server: "github-mcp",
-    action: "ALLOWED",
-    client: "Claude Desktop",
-    arguments_preview: '{"title": "feat: add semantic caching", "base": "main"}',
-    duration_ms: 1.2,
-    timestamp: "2 hours ago",
-  },
-];
-
-const mockServers = [
-  {
-    id: "srv-1",
-    name: "postgres-mcp",
-    command: "npx @modelcontextprotocol/server-postgres",
-    type: "Database",
-    status: "active",
-    interceptions_today: 142,
-    blocked: 3,
-    icon: Database,
-  },
-  {
-    id: "srv-2",
-    name: "bash-mcp",
-    command: "bastio mcp-proxy -- npx @modelcontextprotocol/server-bash",
-    type: "Terminal / Execution",
-    status: "active",
-    interceptions_today: 89,
-    blocked: 12,
-    icon: Terminal,
-  },
-  {
-    id: "srv-3",
-    name: "filesystem-mcp",
-    command: "npx @modelcontextprotocol/server-filesystem /workspace",
-    type: "Filesystem",
-    status: "active",
-    interceptions_today: 412,
-    blocked: 0,
-    icon: FolderTree,
-  },
-  {
-    id: "srv-4",
-    name: "github-tools",
-    command: "npx @modelcontextprotocol/server-github",
-    type: "API Tool",
-    status: "active",
-    interceptions_today: 64,
-    blocked: 1,
-    icon: FileCode,
-  },
-];
-
-export function McpPage() {
-  const [activeTab, setActiveTab] = useState<"live" | "servers" | "sandbox">("live");
-  const [connectOpen, setConnectOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Sandbox state
-  const [sandboxTool, setSandboxTool] = useState("bash.run_command");
-  const [sandboxPayload, setSandboxPayload] = useState('{\n  "command": "rm -rf / --no-preserve-root"\n}');
-  const [simulating, setSimulating] = useState(false);
-  const [simulationResult, setSimulationResult] = useState<{
-    action: "BLOCKED" | "MASKED" | "ALLOWED";
-    reason: string;
-    jsonrpc_response: string;
-  } | null>(null);
-
-  const runSimulation = () => {
-    setSimulating(true);
-    setTimeout(() => {
-      setSimulating(false);
-      const isDestructive =
-        sandboxPayload.includes("rm -rf") ||
-        sandboxPayload.includes("DROP TABLE") ||
-        sandboxPayload.includes("DELETE FROM");
-      const hasPII =
-        sandboxPayload.includes("ssn") ||
-        sandboxPayload.includes("credit_card") ||
-        sandboxPayload.includes("password");
-
-      if (isDestructive) {
-        setSimulationResult({
-          action: "BLOCKED",
-          reason: "Destructive shell command or unconstrained mutation detected by Security Engine",
-          jsonrpc_response: JSON.stringify(
-            {
-              jsonrpc: "2.0",
-              id: 1,
-              error: {
-                code: -32600,
-                message: "Blocked by Bastio Security Firewall: destructive action violation",
-              },
-            },
-            null,
-            2
-          ),
-        });
-      } else if (hasPII) {
-        setSimulationResult({
-          action: "MASKED",
-          reason: "Reversible PII surrogate generated before forwarding to tool process",
-          jsonrpc_response: JSON.stringify(
-            {
-              jsonrpc: "2.0",
-              id: 1,
-              result: {
-                content: [{ type: "text", text: "Successfully sanitized and executed with tokenized parameters" }],
-              },
-            },
-            null,
-            2
-          ),
-        });
-      } else {
-        setSimulationResult({
-          action: "ALLOWED",
-          reason: "No threat heuristics triggered. Tool call forwarded directly to child process stdin.",
-          jsonrpc_response: JSON.stringify(
-            {
-              jsonrpc: "2.0",
-              id: 1,
-              result: { content: [{ type: "text", text: "Command executed cleanly" }] },
-            },
-            null,
-            2
-          ),
-        });
-      }
-    }, 400);
+function ServerControls({ server }: { server: McpServer }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [allowed, setAllowed] = useState("");
+  const [blocked, setBlocked] = useState("");
+  const changed = () => {
+    void qc.invalidateQueries({ queryKey: mcpKeys });
   };
-
-  const filteredCalls = mockToolCalls.filter(
-    (c) =>
-      c.tool_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.arguments_preview.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
+  const save = useMutation({
+    mutationFn: (p: McpPolicy) => mcpApi.policy(server.id, p),
+    onSuccess: () => {
+      changed();
+      setOpen(false);
+    },
+  });
+  const rotate = useMutation({
+    mutationFn: () => mcpApi.rotate(server.id),
+    onSuccess: changed,
+  });
+  const revoke = useMutation({
+    mutationFn: () => mcpApi.revoke(server.id),
+    onSuccess: changed,
+  });
+  if (server.revoked_at) return null;
   return (
-    <div className="space-y-6 pb-12">
+    <>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setAllowed(server.policy.allowed_tools.join(", "));
+            setBlocked(server.policy.blocked_tools.join(", "));
+            save.reset();
+            rotate.reset();
+            setOpen(true);
+          }}
+        >
+          Tool policy &amp; credentials
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={revoke.isPending}
+          onClick={() => {
+            if (
+              window.confirm(
+                "Revoke this enrollment? Its firewall will reject calls after receiving the revocation or when its cached policy expires.",
+              )
+            )
+              revoke.mutate();
+          }}
+        >
+          Revoke enrollment
+        </Button>
+      </div>
+      {revoke.error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {revoke.error.message}
+        </p>
+      ) : null}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{server.name}</DialogTitle>
+          </DialogHeader>
+          {rotate.data ? (
+            <McpEnrollment
+              token={rotate.data.enrollment_token}
+              name={server.name}
+              client={server.client}
+            />
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <FieldLabel>
+                  Allowed tools (optional, comma-separated)
+                </FieldLabel>
+                <Input
+                  value={allowed}
+                  onChange={(e) => setAllowed(e.target.value)}
+                  placeholder="Empty means all tools are inspected"
+                />
+              </div>
+              <div>
+                <FieldLabel>Blocked tools (comma-separated)</FieldLabel>
+                <Input
+                  value={blocked}
+                  onChange={(e) => setBlocked(e.target.value)}
+                  placeholder="execute_sql, delete_file"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Names match exactly; blocks take precedence. Allowed tools still
+                pass through security scanning. Changes refresh every five
+                seconds.
+              </p>
+              {save.error || rotate.error ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {save.error?.message ?? rotate.error?.message}
+                </p>
+              ) : null}
+              <div className="flex gap-2">
+                <Button
+                  disabled={save.isPending}
+                  onClick={() =>
+                    save.mutate({
+                      allowed_tools: tools(allowed),
+                      blocked_tools: tools(blocked),
+                    })
+                  }
+                >
+                  Save policy
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={rotate.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Replace this token? Update the client configuration to reconnect.",
+                      )
+                    )
+                      rotate.mutate();
+                  }}
+                >
+                  Replace token
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+export function McpPage() {
+  const [tab, setTab] = useState<"events" | "servers" | "sandbox">("events");
+  const [connect, setConnect] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState("");
+  const [tool, setTool] = useState("filesystem.read_file");
+  const [args, setArgs] = useState(
+    '{"path":"/path/to/your/project/README.md"}',
+  );
+  const [formError, setFormError] = useState("");
+  const qc = useQueryClient();
+  const servers = useQuery({
+    queryKey: [...mcpKeys, "servers"],
+    queryFn: mcpApi.servers,
+    refetchInterval: 5000,
+  });
+  const events = useQuery({
+    queryKey: [...mcpKeys, "events", selected],
+    queryFn: () => mcpApi.events(selected || undefined),
+    refetchInterval: 5000,
+  });
+  const inspect = useMutation({ mutationFn: mcpApi.inspect });
+  const list = servers.data ?? [];
+  const policy = list.find((s) => s.id === selected)?.policy ?? {
+    allowed_tools: [],
+    blocked_tools: [],
+  };
+  const rows = (events.data ?? []).filter((e) =>
+    `${e.tool_name} ${e.server_name} ${e.client} ${e.action} ${e.categories.join(" ")}`
+      .toLowerCase()
+      .includes(filter.toLowerCase()),
+  );
+  const error = servers.error ?? events.error;
+  const selector = (
+    <select
+      aria-label="MCP server policy"
+      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+      value={selected}
+      onChange={(e) => {
+        setSelected(e.target.value);
+        inspect.reset();
+      }}
+    >
+      <option value="">
+        {tab === "sandbox" ? "Security baseline" : "All servers"}
+      </option>
+      {list.map((s) => (
+        <option value={s.id} key={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </select>
+  );
+  return (
+    <div className="space-y-5 pb-10">
       <AdminPageHeader
-        eyebrow="Agentic security"
-        title="Agent & MCP Tool Firewalls"
-        description="Inspect, sanitize, and firewall Model Context Protocol (MCP) tool execution streams for Claude Desktop, Cursor, and autonomous agents."
+        eyebrow="MCP security"
+        title="MCP firewalls"
+        description="Protect local tool servers and review real security outcomes. Events refresh every five seconds. Proxy telemetry excludes arguments and results."
         actions={
-          <Button onClick={() => setConnectOpen(true)} className="gap-1.5 text-xs font-medium">
-            <Plus className="size-3.5" />
-            Connect Tool Server
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void qc.invalidateQueries({ queryKey: mcpKeys });
+              }}
+            >
+              <RefreshCw />
+              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setConnect(true)}>
+              <Plus />
+              Connect server
+            </Button>
+          </div>
         }
       />
-
-      {/* Summary KPI Cards */}
       <AdminSummaryStrip
         items={[
           {
-            label: "Protected Tool Servers",
-            value: "4 Active",
-            detail: "Postgres, Bash, FS, GitHub",
+            label: "Connected",
+            value: servers.isPending
+              ? "—"
+              : list
+                  .filter((s) => status(s) === "Connected")
+                  .length.toLocaleString(),
+            detail: "Heartbeat within 30 seconds",
           },
           {
-            label: "Tool Calls Inspected",
-            value: "1,842",
-            detail: "Last 24 hours",
+            label: "Enrolled",
+            value: servers.isPending
+              ? "—"
+              : list.filter((s) => !s.revoked_at).length.toLocaleString(),
+            detail: "Current workspace",
           },
           {
-            label: "Destructive Calls Blocked",
-            value: "16 Blocked",
-            detail: "RCE, SQL drops, file overwrites",
+            label: "Calls inspected",
+            value: servers.isPending
+              ? "—"
+              : list.reduce((n, s) => n + s.calls, 0).toLocaleString(),
+            detail: "Reported requests · last 30 days",
           },
           {
-            label: "PII Sanitized",
-            value: "94 Masked",
-            detail: "Reversible surrogate vault",
+            label: "Calls blocked",
+            value: servers.isPending
+              ? "—"
+              : list.reduce((n, s) => n + s.blocked, 0).toLocaleString(),
+            detail: "Policy or security decision",
           },
         ]}
       />
-
-      {/* Navigation Tabs */}
-      <div className="flex gap-2 border-b border-border pb-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab("live")}
-          className={cn(
-            "flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-            activeTab === "live"
-              ? "bg-accent/10 text-accent border border-accent/20 font-semibold"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <ShieldAlert className="size-3.5" />
-          Tool Interception Log ({mockToolCalls.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("servers")}
-          className={cn(
-            "flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-            activeTab === "servers"
-              ? "bg-accent/10 text-accent border border-accent/20 font-semibold"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Server className="size-3.5" />
-          Configured MCP Servers ({mockServers.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("sandbox")}
-          className={cn(
-            "flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-            activeTab === "sandbox"
-              ? "bg-accent/10 text-accent border border-accent/20 font-semibold"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Play className="size-3.5" />
-          Tool Call Simulator Sandbox
-        </button>
+      <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+        {(
+          [
+            ["events", "Security events"],
+            ["servers", "Servers & policies"],
+            ["sandbox", "Inspect a tool call"],
+          ] as const
+        ).map(([id, label]) => (
+          <Button
+            key={id}
+            size="sm"
+            variant={tab === id ? "secondary" : "ghost"}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </Button>
+        ))}
       </div>
-
-      {/* TAB 1: Live Interception Feed */}
-      {activeTab === "live" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Filter tool calls by name, arguments, or client..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-8 text-xs bg-muted/20"
-              />
-            </div>
-            <span className="text-xs text-muted-foreground">
-              Inline latency: <strong className="text-foreground font-mono">&lt;2ms</strong> average
-            </span>
-          </div>
-
-          <div className="border border-border rounded-lg overflow-hidden bg-card">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40 text-muted-foreground font-medium">
-                    <th className="py-2.5 px-3">Verdict</th>
-                    <th className="py-2.5 px-3">Tool Name</th>
-                    <th className="py-2.5 px-3">Client</th>
-                    <th className="py-2.5 px-3">Arguments Preview</th>
-                    <th className="py-2.5 px-3">Latency</th>
-                    <th className="py-2.5 px-3">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredCalls.map((call) => (
-                    <tr key={call.id} className="hover:bg-muted/20 transition-colors">
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        <Badge
-                          variant={
-                            call.action === "BLOCKED"
-                              ? "destructive"
-                              : call.action === "MASKED"
-                              ? "outline"
-                              : "secondary"
-                          }
-                          className={cn(
-                            "h-5 text-[10px] uppercase font-mono tracking-wider font-semibold",
-                            call.action === "MASKED" && "text-accent border-accent/30 bg-accent/10"
-                          )}
-                        >
-                          {call.action}
-                        </Badge>
-                      </td>
-                      <td className="py-2.5 px-3 font-mono font-medium text-foreground">
-                        {call.tool_name}
-                      </td>
-                      <td className="py-2.5 px-3 text-muted-foreground">{call.client}</td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-muted-foreground max-w-md truncate">
-                        {call.arguments_preview}
-                      </td>
-                      <td className="py-2.5 px-3 font-mono text-muted-foreground">{call.duration_ms}ms</td>
-                      <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
-                        {call.timestamp}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-border p-4 text-sm text-destructive"
+        >
+          Unable to load MCP data: {error.message}
         </div>
-      )}
-
-      {/* TAB 2: Protected MCP Servers */}
-      {activeTab === "servers" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {mockServers.map((srv) => {
-            const Icon = srv.icon;
-            return (
-              <Card key={srv.id} className="border-border bg-card">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="size-8 rounded-lg bg-muted/60 border border-border flex items-center justify-center text-foreground">
-                        <Icon className="size-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold text-foreground">{srv.name}</h4>
-                        <span className="text-[11px] text-muted-foreground">{srv.type}</span>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-success border-success/30 bg-success/10 text-[10px]">
-                      Protected (bastio mcp-proxy)
-                    </Badge>
-                  </div>
-
-                  <div className="p-2.5 rounded bg-muted/40 border border-border font-mono text-[11px] text-muted-foreground truncate">
-                    {srv.command}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs text-muted-foreground">
-                    <span>
-                      Interceptions today: <strong className="text-foreground">{srv.interceptions_today}</strong>
-                    </span>
-                    <span>
-                      Blocked exploits: <strong className="text-danger">{srv.blocked}</strong>
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* TAB 3: Interactive Sandbox */}
-      {activeTab === "sandbox" && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="border-border bg-card">
-            <CardContent className="p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Simulate Inbound Tool Call (JSON-RPC)
-                </h4>
-                <Badge variant="secondary" className="text-[10px]">
-                  Local Security Engine
-                </Badge>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-foreground block mb-1">Tool Identifier</label>
-                <Input
-                  value={sandboxTool}
-                  onChange={(e) => setSandboxTool(e.target.value)}
-                  className="font-mono text-xs h-8 bg-muted/20"
+      ) : null}
+      {tab === "events" ? (
+        <>
+          <div className="flex flex-wrap gap-3">
+            <Input
+              className="max-w-sm"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter tools, servers, outcomes…"
+            />
+            {selector}
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              {events.isPending ? (
+                <p className="p-5 text-sm text-muted-foreground">
+                  Loading events…
+                </p>
+              ) : !rows.length ? (
+                <EmptyState
+                  icon={<Shield />}
+                  title={
+                    filter
+                      ? "No matching events"
+                      : "No tool events reported yet"
+                  }
+                  description="Connect a server and run a tool through its Bastio configuration. Its real inspection result will appear here."
                 />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
-                  Tool Arguments (JSON Payload)
-                </label>
-                <textarea
-                  value={sandboxPayload}
-                  onChange={(e) => setSandboxPayload(e.target.value)}
-                  rows={6}
-                  className="w-full p-2.5 rounded-md bg-muted/30 border border-border font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  onClick={runSimulation}
-                  disabled={simulating}
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                >
-                  <Play className="size-3" />
-                  {simulating ? "Scanning..." : "Simulate Firewall Verdict"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSandboxPayload('{\n  "query": "SELECT * FROM customers WHERE id = 123;"\n}')}
-                  className="text-xs"
-                >
-                  Load Clean SQL
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSandboxPayload('{\n  "command": "rm -rf /"\n}')}
-                  className="text-xs text-danger"
-                >
-                  Load Destructive Attack
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card">
-            <CardContent className="p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Firewall Inspection Result
-                </h4>
-                {simulationResult && (
-                  <Badge
-                    variant={
-                      simulationResult.action === "BLOCKED"
-                        ? "destructive"
-                        : simulationResult.action === "MASKED"
-                        ? "outline"
-                        : "secondary"
-                    }
-                    className="text-[10px] font-mono"
-                  >
-                    {simulationResult.action}
-                  </Badge>
-                )}
-              </div>
-
-              {simulationResult ? (
-                <div className="space-y-3">
-                  <div className="p-3 rounded-lg bg-muted/40 border border-border text-xs">
-                    <span className="text-muted-foreground font-medium">Policy Rationale: </span>
-                    <span className="text-foreground">{simulationResult.reason}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-[11px] font-mono text-muted-foreground uppercase block mb-1">
-                      JSON-RPC Client Output:
-                    </span>
-                    <pre className="p-3 rounded-lg bg-muted/60 border border-border font-mono text-xs text-foreground overflow-x-auto">
-                      {simulationResult.jsonrpc_response}
-                    </pre>
-                  </div>
-                </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-                  <Shield className="size-8 mb-2 opacity-40" />
-                  <p className="text-xs">Click "Simulate Firewall Verdict" to test payload inspection.</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-border text-muted-foreground">
+                      <tr>
+                        {[
+                          "Time",
+                          "Tool / server",
+                          "Direction",
+                          "Outcome",
+                          "Categories",
+                          "Duration",
+                        ].map((t) => (
+                          <th className="p-3 font-medium" key={t}>
+                            {t}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((e) => (
+                        <tr className="border-b border-border/60" key={e.id}>
+                          <td className="whitespace-nowrap p-3">
+                            {e.occurred_at
+                              ? new Date(e.occurred_at).toLocaleString()
+                              : "—"}
+                          </td>
+                          <td className="p-3">
+                            <p className="font-mono">{e.tool_name}</p>
+                            <p className="mt-1 text-muted-foreground">
+                              {e.server_name} · {e.client}
+                            </p>
+                          </td>
+                          <td className="p-3">
+                            {e.direction.replaceAll("_", " ")}
+                          </td>
+                          <td className="p-3">
+                            <Badge
+                              variant={
+                                e.action === "blocked"
+                                  ? "destructive"
+                                  : "outline"
+                              }
+                            >
+                              {e.action}
+                            </Badge>
+                          </td>
+                          <td className="p-3">
+                            {e.categories.join(", ") || "—"}
+                          </td>
+                          <td className="p-3">{e.duration_ms.toFixed(2)} ms</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </CardContent>
           </Card>
+          <p className="text-xs text-muted-foreground">
+            Up to 100 recent events. Request duration measures inspection;
+            response duration includes the tool round trip. Reporting is
+            bounded; dropped events and connection gaps appear per server.
+          </p>
+        </>
+      ) : tab === "servers" ? (
+        <div className="space-y-3">
+          {servers.isPending ? (
+            <p className="text-sm text-muted-foreground">Loading servers…</p>
+          ) : !list.length ? (
+            <EmptyState
+              icon={<Server />}
+              title="Connect your first MCP server"
+              description="Enroll a server and install its configuration in Claude Desktop, Cursor, Cline, or your agent."
+            />
+          ) : (
+            list.map((s) => (
+              <Card key={s.id}>
+                <CardContent className="space-y-3 p-4">
+                  <div className="flex flex-wrap justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-semibold">{s.name}</h2>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {s.client} ·{" "}
+                        {s.last_seen_at
+                          ? `Last seen ${new Date(s.last_seen_at).toLocaleString()}`
+                          : "No heartbeat received"}
+                      </p>
+                    </div>
+                    <Badge variant="outline">{status(s)}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {s.policy.allowed_tools.length
+                      ? `Allowed: ${s.policy.allowed_tools.join(", ")}`
+                      : "All tools inspected"}{" "}
+                    ·{" "}
+                    {s.policy.blocked_tools.length
+                      ? `Blocked: ${s.policy.blocked_tools.join(", ")}`
+                      : "No explicit tool blocks"}{" "}
+                    · {s.calls} reported calls · {s.blocked} blocked
+                  </p>
+                  {s.dropped_events > 0 ? (
+                    <p className="text-xs text-destructive">
+                      {s.dropped_events} events dropped by the client reporting
+                      queue.
+                    </p>
+                  ) : null}
+                  <ServerControls server={s} />
+                </CardContent>
+              </Card>
+            ))
+          )}
         </div>
+      ) : (
+        <Card>
+          <CardContent className="space-y-4 p-5">
+            <div>
+              <h2 className="text-sm font-semibold">
+                Inspect without executing
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Uses the CLI's real inspection code. Input is processed for this
+                request and not added to the event store.
+              </p>
+            </div>
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setFormError("");
+                try {
+                  const value: unknown = JSON.parse(args);
+                  if (
+                    !value ||
+                    typeof value !== "object" ||
+                    Array.isArray(value)
+                  )
+                    throw new Error("Tool arguments must be a JSON object.");
+                  inspect.mutate({
+                    tool_name: tool,
+                    arguments: value as Record<string, unknown>,
+                    policy,
+                  });
+                } catch (e) {
+                  setFormError(e instanceof Error ? e.message : "Invalid JSON");
+                }
+              }}
+            >
+              {selector}
+              <div>
+                <FieldLabel>Tool name</FieldLabel>
+                <Input
+                  required
+                  value={tool}
+                  onChange={(e) => {
+                    setTool(e.target.value);
+                    inspect.reset();
+                  }}
+                />
+              </div>
+              <div>
+                <FieldLabel>Arguments (JSON object)</FieldLabel>
+                <textarea
+                  className="min-h-36 w-full rounded-md border border-input bg-background p-3 font-mono text-xs"
+                  value={args}
+                  onChange={(e) => {
+                    setArgs(e.target.value);
+                    inspect.reset();
+                  }}
+                />
+              </div>
+              <Button disabled={inspect.isPending}>
+                {inspect.isPending ? "Inspecting…" : "Inspect tool call"}
+              </Button>
+            </form>
+            {formError || inspect.error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {formError || inspect.error?.message}
+              </p>
+            ) : null}
+            {inspect.data ? (
+              <div className="space-y-2 rounded-lg border border-border p-4">
+                <Badge variant="outline">{inspect.data.action}</Badge>
+                <p className="text-xs">
+                  {inspect.data.categories.join(", ") || "No security findings"}{" "}
+                  · {inspect.data.duration_ms.toFixed(2)} ms
+                </p>
+                {inspect.data.arguments ? (
+                  <pre className="overflow-auto text-xs">
+                    {JSON.stringify(inspect.data.arguments, null, 2)}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
       )}
-
-      {/* Connect Dialog */}
-      <ConnectMcpDialog open={connectOpen} onOpenChange={setConnectOpen} />
+      <ConnectMcpDialog open={connect} onOpenChange={setConnect} />
     </div>
   );
 }
