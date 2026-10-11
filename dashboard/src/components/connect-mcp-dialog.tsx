@@ -217,7 +217,7 @@ export function ConnectMcpDialog({
                 {create.error.message}
               </p>
             ) : null}
-            <Button disabled={!name.trim() || create.isPending}>
+            <Button type="submit" disabled={!name.trim() || create.isPending}>
               {create.isPending ? "Enrolling…" : "Enroll server"}
             </Button>
           </form>

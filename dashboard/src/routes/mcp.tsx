@@ -515,7 +515,7 @@ export function McpPage() {
                   }}
                 />
               </div>
-              <Button disabled={inspect.isPending}>
+              <Button type="submit" disabled={inspect.isPending}>
                 {inspect.isPending ? "Inspecting…" : "Inspect tool call"}
               </Button>
             </form>
