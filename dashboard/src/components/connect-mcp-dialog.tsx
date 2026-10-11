@@ -76,6 +76,7 @@ export function McpEnrollment({
       <div>
         <FieldLabel>Local server executable</FieldLabel>
         <Input
+          aria-label="Local MCP server executable"
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           placeholder="npx, python3, or a local executable"
@@ -84,6 +85,7 @@ export function McpEnrollment({
       <div>
         <FieldLabel>Local arguments (JSON array)</FieldLabel>
         <Input
+          aria-label="Local MCP server arguments"
           value={args}
           onChange={(e) => setArgs(e.target.value)}
           className="font-mono text-xs"
@@ -180,6 +182,7 @@ export function ConnectMcpDialog({
             <div>
               <FieldLabel>Server name</FieldLabel>
               <Input
+                aria-label="MCP server name"
                 required
                 maxLength={100}
                 value={name}
@@ -190,6 +193,7 @@ export function ConnectMcpDialog({
             <div>
               <FieldLabel>Client</FieldLabel>
               <select
+                aria-label="MCP client"
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={client}
                 onChange={(e) =>

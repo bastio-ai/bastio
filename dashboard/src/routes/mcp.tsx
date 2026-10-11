@@ -117,6 +117,7 @@ function ServerControls({ server }: { server: McpServer }) {
                   Allowed tools (optional, comma-separated)
                 </FieldLabel>
                 <Input
+                  aria-label="Allowed tools"
                   value={allowed}
                   onChange={(e) => setAllowed(e.target.value)}
                   placeholder="Empty means all tools are inspected"
@@ -125,6 +126,7 @@ function ServerControls({ server }: { server: McpServer }) {
               <div>
                 <FieldLabel>Blocked tools (comma-separated)</FieldLabel>
                 <Input
+                  aria-label="Blocked tools"
                   value={blocked}
                   onChange={(e) => setBlocked(e.target.value)}
                   placeholder="execute_sql, delete_file"
@@ -316,6 +318,7 @@ export function McpPage() {
         <>
           <div className="flex flex-wrap gap-3">
             <Input
+              aria-label="Filter MCP events"
               className="max-w-sm"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -491,6 +494,7 @@ export function McpPage() {
               <div>
                 <FieldLabel>Tool name</FieldLabel>
                 <Input
+                  aria-label="MCP tool name"
                   required
                   value={tool}
                   onChange={(e) => {
@@ -502,6 +506,7 @@ export function McpPage() {
               <div>
                 <FieldLabel>Arguments (JSON object)</FieldLabel>
                 <textarea
+                  aria-label="Tool arguments JSON"
                   className="min-h-36 w-full rounded-md border border-input bg-background p-3 font-mono text-xs"
                   value={args}
                   onChange={(e) => {
