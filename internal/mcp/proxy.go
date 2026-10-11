@@ -7,10 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
+	"slices"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/bastio-ai/bastio/internal/security"
 )
@@ -72,7 +77,9 @@ type StdioProxy struct {
 	errOut      io.Writer
 
 	pendingMu sync.Mutex
-	pending   map[string]string // reqID string -> method
+	pending   map[string]pendingCall
+	runtime   *RuntimeClient
+	tokenEnv  string
 
 	outMu sync.Mutex // guards writes to out
 }
@@ -95,7 +102,7 @@ func NewStdioProxy(
 		in:          in,
 		out:         out,
 		errOut:      errOut,
-		pending:     make(map[string]string),
+		pending:     make(map[string]pendingCall),
 	}
 }
 
@@ -107,6 +114,17 @@ func (p *StdioProxy) Run(ctx context.Context) error {
 	}
 
 	cmd := exec.CommandContext(ctx, p.command, p.args...)
+	// A third-party tool server must never inherit its enrollment credential.
+	secretEnv := p.tokenEnv
+	if secretEnv == "" {
+		secretEnv = "BASTIO_MCP_TOKEN"
+	}
+	cmd.Env = make([]string, 0, len(os.Environ()))
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, secretEnv+"=") && !strings.HasPrefix(entry, "BASTIO_MCP_TOKEN=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
 
 	childIn, err := cmd.StdinPipe()
 	if err != nil {
@@ -130,7 +148,7 @@ func (p *StdioProxy) Run(ctx context.Context) error {
 		return fmt.Errorf("mcp: start child process %q: %w", p.command, err)
 	}
 
-	slog.Info("mcp proxy started child process", "command", p.command, "args", p.args)
+	slog.Info("mcp proxy started child process", "command", p.command)
 
 	serveErr := p.Serve(ctx, p.in, p.out, childIn, childOut, childErr, p.errOut)
 
@@ -155,6 +173,26 @@ func (p *StdioProxy) Serve(
 	childErr io.Reader,
 	errOut io.Writer,
 ) error {
+	streamCtx, cancelStreams := context.WithCancel(ctx)
+	defer cancelStreams()
+	interruptsDone := make(chan struct{})
+	defer close(interruptsDone)
+	// Context checks alone cannot interrupt a blocking stdin read. Close pipe
+	// readers on shutdown so a terminated child or client cannot strand Run.
+	go func() {
+		select {
+		case <-streamCtx.Done():
+			for _, stream := range []io.Reader{clientIn, childOut, childErr} {
+				if closer, ok := stream.(io.Closer); ok {
+					_ = closer.Close()
+				}
+			}
+			if closer, ok := childIn.(io.Closer); ok {
+				_ = closer.Close()
+			}
+		case <-interruptsDone:
+		}
+	}()
 	var wg sync.WaitGroup
 	errCh := make(chan error, 3)
 
@@ -171,7 +209,7 @@ func (p *StdioProxy) Serve(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := p.processClientStream(ctx, clientIn, clientOut, childIn); err != nil && !errors.Is(err, io.EOF) {
+		if err := p.processClientStream(streamCtx, clientIn, clientOut, childIn); err != nil && !errors.Is(err, io.EOF) && streamCtx.Err() == nil {
 			errCh <- err
 		}
 		// Close child stdin if closer
@@ -184,8 +222,13 @@ func (p *StdioProxy) Serve(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := p.processServerStream(ctx, childOut, clientOut); err != nil && !errors.Is(err, io.EOF) {
+		if err := p.processServerStream(streamCtx, childOut, clientOut); err != nil && !errors.Is(err, io.EOF) && streamCtx.Err() == nil {
 			errCh <- err
+		}
+		// Only real streams need EOF cancellation. Buffer fixtures are already
+		// finite and can finish their independent reads without interruption.
+		if _, ok := childOut.(io.Closer); ok {
+			cancelStreams()
 		}
 	}()
 
@@ -210,7 +253,7 @@ func (p *StdioProxy) processClientStream(ctx context.Context, clientIn io.Reader
 		default:
 		}
 
-		line, err := reader.ReadBytes('\n')
+		line, err := readBoundedLine(reader)
 		if len(line) > 0 {
 			trimmed := bytes.TrimRight(line, "\r\n")
 			if len(trimmed) > 0 {
@@ -236,64 +279,63 @@ func (p *StdioProxy) handleClientMessage(ctx context.Context, raw []byte, client
 
 	reqIDStr := string(msg.ID)
 	if msg.Method != "" && len(msg.ID) > 0 {
-		p.trackRequest(reqIDStr, msg.Method)
+		if !p.trackRequest(reqIDStr, msg.Method) {
+			p.reject(clientOut, msg.ID, "Too many pending MCP requests")
+			return
+		}
 	}
 
 	if msg.Method == "tools/call" {
 		var params toolCallParams
-		if err := json.Unmarshal(msg.Params, &params); err == nil {
-			argContent := string(params.Arguments)
-			scanReq := &security.ScanRequest{
-				Content: argContent,
-			}
-
-			var scanRes *security.ScanResult
-			if p.engine != nil && argContent != "" {
-				scanRes = p.engine.Scan(ctx, scanReq)
-			}
-
-			if scanRes != nil && scanRes.ShouldBlock {
-				slog.Warn("mcp: blocked tool call due to security policy violation",
-					"tool", params.Name,
-					"threat_types", scanRes.ThreatTypes,
-					"threat_score", scanRes.ThreatScore,
-				)
-
-				idVal := msg.ID
-				if len(idVal) == 0 {
-					idVal = json.RawMessage("null")
-				}
-
-				errResp := fmt.Sprintf(
-					`{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"Blocked by Bastio Security: destructive action or policy violation detected"}}`+"\n",
-					string(idVal),
-				)
-				p.writeToClient(clientOut, []byte(errResp))
+		err := json.Unmarshal(msg.Params, &params)
+		if len(params.Arguments) == 0 {
+			params.Arguments = json.RawMessage(`{}`)
+		}
+		params.Arguments = bytes.TrimSpace(params.Arguments)
+		if err != nil || !toolNameRE.MatchString(params.Name) || !json.Valid(params.Arguments) || params.Arguments[0] != '{' {
+			p.reject(clientOut, msg.ID, "Invalid MCP tool call")
+			p.popRequest(reqIDStr)
+			return
+		}
+		policy := Policy{}
+		if p.runtime != nil {
+			var fresh bool
+			policy, fresh = p.runtime.Policy()
+			if !fresh {
+				p.record(params.Name, "request", "blocked", []string{"control_unavailable"}, 0)
+				p.reject(clientOut, msg.ID, "MCP enrollment unavailable, stale or revoked")
+				p.popRequest(reqIDStr)
 				return
 			}
-
-			if scanRes != nil && (scanRes.Action == security.ActionMask || scanRes.Action == security.ActionTokenize) {
-				sanitized := scanRes.SanitizedContent
-				if sanitized != "" && sanitized != argContent {
-					var newArgs json.RawMessage
-					if json.Valid([]byte(sanitized)) {
-						newArgs = json.RawMessage(sanitized)
-					} else {
-						quoted, _ := json.Marshal(sanitized)
-						newArgs = json.RawMessage(quoted)
-					}
-					params.Arguments = newArgs
-					newParamsBytes, err := json.Marshal(params)
-					if err == nil {
-						msg.Params = newParamsBytes
-						rewritten, err := json.Marshal(msg)
-						if err == nil {
-							p.writeToChild(childIn, rewritten)
-							return
-						}
-					}
+		}
+		decision := Inspect(ctx, p.engine, InspectRequest{ToolName: params.Name, Arguments: params.Arguments, Policy: policy})
+		p.record(params.Name, "request", decision.Action, decision.Categories, decision.DurationMS)
+		if decision.Action == "blocked" {
+			p.reject(clientOut, msg.ID, "Blocked by Bastio Security: tool policy or unsafe action")
+			p.popRequest(reqIDStr)
+			return
+		}
+		if len(msg.ID) > 0 {
+			p.pendingMu.Lock()
+			call := p.pending[reqIDStr]
+			call.tool = params.Name
+			p.pending[reqIDStr] = call
+			p.pendingMu.Unlock()
+		}
+		if decision.Action == "sanitized" {
+			params.Arguments = decision.Arguments
+			body, err := replaceJSONField(msg.Params, "arguments", decision.Arguments)
+			if err == nil {
+				msg.Params = body
+				rewritten, err := replaceJSONField(raw, "params", body)
+				if err == nil {
+					p.writeToChild(childIn, rewritten)
+					return
 				}
 			}
+			p.reject(clientOut, msg.ID, "Unable to sanitize MCP arguments safely")
+			p.popRequest(reqIDStr)
+			return
 		}
 	}
 
@@ -311,7 +353,7 @@ func (p *StdioProxy) processServerStream(ctx context.Context, childOut io.Reader
 		default:
 		}
 
-		line, err := reader.ReadBytes('\n')
+		line, err := readBoundedLine(reader)
 		if len(line) > 0 {
 			trimmed := bytes.TrimRight(line, "\r\n")
 			if len(trimmed) > 0 {
@@ -334,10 +376,11 @@ func (p *StdioProxy) handleServerMessage(ctx context.Context, raw []byte, client
 		return
 	}
 
-	var method string
+	var call pendingCall
 	if len(msg.ID) > 0 {
-		method = p.popRequest(string(msg.ID))
+		call = p.popRequest(string(msg.ID))
 	}
+	method := call.method
 
 	// 1. Inspect tools/list responses for prompt injection in descriptions
 	if (method == "tools/list" || bytes.Contains(msg.Result, []byte(`"tools"`))) && len(msg.Result) > 0 {
@@ -356,15 +399,16 @@ func (p *StdioProxy) handleServerMessage(ctx context.Context, raw []byte, client
 						"tool", listRes.Tools[i].Name,
 						"threat_types", scanRes.ThreatTypes,
 					)
+					p.record(listRes.Tools[i].Name, "tool_description", "sanitized", categoriesFromScan(scanRes), float64(scanRes.ScanDuration.Microseconds())/1000)
 					listRes.Tools[i].Description = "[BLOCKED BY BASTIO: Malicious tool description detected]"
 					modified = true
 				}
 			}
 
 			if modified {
-				if newResultBytes, err := json.Marshal(listRes); err == nil {
+				if newResultBytes, err := rewriteToolDescriptions(msg.Result, listRes.Tools); err == nil {
 					msg.Result = newResultBytes
-					if rewritten, err := json.Marshal(msg); err == nil {
+					if rewritten, err := replaceJSONField(raw, "result", newResultBytes); err == nil {
 						p.writeToClient(clientOut, rewritten)
 						return
 					}
@@ -376,8 +420,10 @@ func (p *StdioProxy) handleServerMessage(ctx context.Context, raw []byte, client
 	// 2. Inspect tools/call responses for leaked secrets or PII
 	if (method == "tools/call" || bytes.Contains(msg.Result, []byte(`"content"`))) && len(msg.Result) > 0 {
 		var callRes toolCallResult
-		if err := json.Unmarshal(msg.Result, &callRes); err == nil && len(callRes.Content) > 0 {
+		if err := json.Unmarshal(msg.Result, &callRes); err == nil {
 			modified := false
+			action := "allowed"
+			categories := []string{}
 			for i := range callRes.Content {
 				if callRes.Content[i].Type == "text" && callRes.Content[i].Text != "" && p.engine != nil {
 					text := callRes.Content[i].Text
@@ -387,21 +433,56 @@ func (p *StdioProxy) handleServerMessage(ctx context.Context, raw []byte, client
 					})
 
 					if scanRes != nil {
+						categories = append(categories, categoriesFromScan(scanRes)...)
+						if scanRes.ShouldBlock {
+							callRes.Content[i].Text = "[BLOCKED BY BASTIO: Unsafe tool result]"
+							modified = true
+							action = "blocked"
+							continue
+						}
 						if scanRes.SanitizedContent != "" && scanRes.SanitizedContent != text {
 							callRes.Content[i].Text = scanRes.SanitizedContent
-							modified = true
-						} else if scanRes.ShouldBlock {
-							callRes.Content[i].Text = "[BLOCKED BY BASTIO: Sensitive data or security policy violation in tool result]"
+							if action != "blocked" {
+								action = "sanitized"
+							}
 							modified = true
 						}
 					}
 				}
 			}
 
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(msg.Result, &fields) == nil && len(fields["structuredContent"]) > 0 && p.engine != nil {
+				structured := fields["structuredContent"]
+				scan := p.engine.Scan(ctx, &security.ScanRequest{Content: string(structured), PIIAction: security.ActionMask})
+				if scan != nil {
+					categories = append(categories, categoriesFromScan(scan)...)
+					if scan.ShouldBlock {
+						delete(fields, "structuredContent")
+						modified = true
+						action = "blocked"
+					} else if scan.SanitizedContent != "" && scan.SanitizedContent != string(structured) {
+						if json.Valid([]byte(scan.SanitizedContent)) {
+							fields["structuredContent"] = json.RawMessage(scan.SanitizedContent)
+						} else {
+							delete(fields, "structuredContent")
+						}
+						modified = true
+						if action != "blocked" {
+							action = "sanitized"
+						}
+					}
+				}
+				// Keep the validated structure for the protocol-preserving rewrite.
+				msg.Result, _ = json.Marshal(fields)
+			}
+			if call.tool != "" {
+				p.record(call.tool, "response", action, categories, float64(time.Since(call.started).Microseconds())/1000)
+			}
 			if modified {
-				if newResultBytes, err := json.Marshal(callRes); err == nil {
+				if newResultBytes, err := rewriteToolContent(msg.Result, callRes.Content); err == nil {
 					msg.Result = newResultBytes
-					if rewritten, err := json.Marshal(msg); err == nil {
+					if rewritten, err := replaceJSONField(raw, "result", newResultBytes); err == nil {
 						p.writeToClient(clientOut, rewritten)
 						return
 					}
@@ -413,13 +494,25 @@ func (p *StdioProxy) handleServerMessage(ctx context.Context, raw []byte, client
 	p.writeToClient(clientOut, raw)
 }
 
-func (p *StdioProxy) trackRequest(reqID, method string) {
+func (p *StdioProxy) trackRequest(reqID, method string) bool {
 	p.pendingMu.Lock()
 	defer p.pendingMu.Unlock()
-	p.pending[reqID] = method
+	for id, call := range p.pending {
+		if time.Since(call.started) > 10*time.Minute {
+			delete(p.pending, id)
+		}
+	}
+	if len(p.pending) >= 1024 {
+		return false
+	}
+	if _, exists := p.pending[reqID]; exists {
+		return false
+	}
+	p.pending[reqID] = pendingCall{method: method, started: time.Now()}
+	return true
 }
 
-func (p *StdioProxy) popRequest(reqID string) string {
+func (p *StdioProxy) popRequest(reqID string) pendingCall {
 	p.pendingMu.Lock()
 	defer p.pendingMu.Unlock()
 	method := p.pending[reqID]
@@ -441,4 +534,125 @@ func (p *StdioProxy) writeToClient(clientOut io.Writer, b []byte) {
 	p.outMu.Lock()
 	defer p.outMu.Unlock()
 	_, _ = clientOut.Write(append(bytes.TrimRight(b, "\r\n"), '\n'))
+}
+
+type pendingCall struct {
+	method  string
+	tool    string
+	started time.Time
+}
+
+func (p *StdioProxy) SetRuntime(c *RuntimeClient) { p.runtime = c }
+func (p *StdioProxy) record(tool, direction, action string, categories []string, ms float64) {
+	if p.runtime == nil {
+		return
+	}
+	if !toolNameRE.MatchString(tool) {
+		tool = "unknown_tool"
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return
+	}
+	unique := []string{}
+	for _, cat := range categories {
+		if toolNameRE.MatchString(cat) && !slices.Contains(unique, cat) && len(unique) < 16 {
+			unique = append(unique, cat)
+		}
+	}
+	categories = unique
+	ms = min(max(ms, 0), 600000)
+	p.runtime.Record(Event{ID: id, ToolName: tool, Direction: direction, Action: action, Categories: categories, DurationMS: ms, OccurredAt: time.Now().UTC()})
+}
+func categoriesFromScan(result *security.ScanResult) []string {
+	out := []string{}
+	for _, v := range result.ThreatTypes {
+		out = append(out, string(v))
+	}
+	return out
+}
+func (p *StdioProxy) reject(out io.Writer, id json.RawMessage, message string) {
+	if len(id) == 0 {
+		return
+	}
+	body, _ := json.Marshal(jsonrpcMessage{JSONRPC: "2.0", ID: id, Error: &jsonrpcError{Code: -32600, Message: message}})
+	p.writeToClient(out, body)
+}
+
+func (p *StdioProxy) SetTokenEnv(name string) { p.tokenEnv = name }
+
+// Bound wire messages without truncating or forwarding a partial JSON value.
+func readBoundedLine(r *bufio.Reader) ([]byte, error) {
+	var line []byte
+	for {
+		part, err := r.ReadSlice('\n')
+		if len(line)+len(part) > 4<<20 {
+			return nil, errors.New("mcp: message exceeds 4 MiB limit")
+		}
+		line = append(line, part...)
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return line, err
+		}
+	}
+}
+
+// Preserve JSON-RPC extensions and tool annotations when rewriting inspected fields.
+func replaceJSONField(raw []byte, key string, value json.RawMessage) ([]byte, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	fields[key] = value
+	return json.Marshal(fields)
+}
+func rewriteToolDescriptions(raw json.RawMessage, tools []toolDefinition) ([]byte, error) {
+	var result struct {
+		Tools []json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	for i, tool := range tools {
+		encoded, _ := json.Marshal(tool.Description)
+		var err error
+		result.Tools[i], err = replaceJSONField(result.Tools[i], "description", encoded)
+		if err != nil {
+			return nil, err
+		}
+	}
+	encoded, err := json.Marshal(result.Tools)
+	if err != nil {
+		return nil, err
+	}
+	return replaceJSONField(raw, "tools", encoded)
+}
+func rewriteToolContent(raw json.RawMessage, content []toolContentBlock) ([]byte, error) {
+	var result struct {
+		Content []json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	for i, block := range content {
+		if block.Type != "text" {
+			continue
+		}
+		encoded, _ := json.Marshal(block.Text)
+		var err error
+		result.Content[i], err = replaceJSONField(result.Content[i], "text", encoded)
+		if err != nil {
+			return nil, err
+		}
+	}
+	encoded, err := json.Marshal(result.Content)
+	if err != nil {
+		return nil, err
+	}
+	// Preserve separately inspected structured content and protocol extensions.
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	fields["content"] = encoded
+	return json.Marshal(fields)
 }

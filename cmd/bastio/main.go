@@ -80,7 +80,7 @@ Examples:
   bastio eval --path internal/evaluation/fixtures
   bastio eval --json
   bastio mcp-proxy -- npx -y @modelcontextprotocol/server-postgres postgres://...
-  bastio mcp-proxy --profile strict -- python server.py
+  bastio mcp-proxy --control-url https://cloud.bastio.com -- python server.py
 `)
 }
 
@@ -277,28 +277,30 @@ func runMcpProxy(args []string) {
 		flagArgs = args[:dashIdx]
 		cmdArgs = args[dashIdx+1:]
 	} else {
-		fs := flag.NewFlagSet("mcp-proxy", flag.ContinueOnError)
-		profile := fs.String("profile", "default", "security profile to enforce")
-		logLevel := fs.String("log-level", "info", "log level (debug, info, warn, error)")
-		_ = fs.Parse(args)
 		flagArgs = args
-		cmdArgs = fs.Args()
-		_ = profile
-		_ = logLevel
 	}
 
 	fs := flag.NewFlagSet("mcp-proxy", flag.ExitOnError)
-	profile := fs.String("profile", "default", "security profile to enforce")
+	profile := fs.String("profile", "default", "reserved for compatibility; only default is supported")
 	logLevel := fs.String("log-level", "info", "log level (debug, info, warn, error)")
+	controlURL := fs.String("control-url", "", "Bastio URL for server policy and metadata reporting")
+	tokenEnv := fs.String("token-env", "BASTIO_MCP_TOKEN", "environment variable holding the enrollment token")
 	_ = fs.Parse(flagArgs)
+	if dashIdx == -1 {
+		cmdArgs = fs.Args()
+	}
 
 	if len(cmdArgs) == 0 {
 		fmt.Fprintln(os.Stderr, "error: child command is required")
-		fmt.Fprintln(os.Stderr, "usage: bastio mcp-proxy [--profile <name>] -- <command> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: bastio mcp-proxy [--control-url <Bastio URL>] -- <command> [args...]")
 		os.Exit(1)
 	}
 
-	server.SetupLogger(*logLevel)
+	server.SetupLoggerWriter(*logLevel, os.Stderr)
+	if *profile != "default" {
+		slog.Error("MCP local scanner currently supports only the default profile")
+		os.Exit(1)
+	}
 
 	command := cmdArgs[0]
 	commandArgs := cmdArgs[1:]
@@ -308,6 +310,22 @@ func runMcpProxy(args []string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	var enrollment *mcp.RuntimeClient
+	if *controlURL != "" {
+		runtime, err := mcp.NewRuntimeClient(*controlURL, os.Getenv(*tokenEnv))
+		if err != nil {
+			slog.Error("MCP setup failed", "error", err)
+			os.Exit(1)
+		}
+		if err = runtime.Start(ctx); err != nil {
+			slog.Error("MCP enrollment failed", "error", err)
+			os.Exit(1)
+		}
+		enrollment = runtime
+		defer runtime.Close()
+		proxy.SetTokenEnv(*tokenEnv)
+		proxy.SetRuntime(runtime)
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -319,7 +337,9 @@ func runMcpProxy(args []string) {
 
 	if err := proxy.Run(ctx); err != nil && !errorsIsServerClosed(err) {
 		slog.Error("mcp proxy error", "error", err)
+		if enrollment != nil {
+			enrollment.Close()
+		}
 		os.Exit(1)
 	}
 }
-

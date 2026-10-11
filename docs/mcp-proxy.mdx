@@ -1,81 +1,67 @@
 ---
 title: MCP Security Proxy
-description: Protect Claude Desktop, Cursor, and agentic workflows from destructive tool calls and prompt injection poisoning with bastio mcp-proxy.
+description: Enroll local MCP tool servers, enforce tool policy, and inspect real security outcomes.
 ---
 
-Anthropic's **Model Context Protocol (MCP)** connects LLM clients (Claude Desktop, Cursor, Cline, Windsurf) to local and remote tool servers. However, MCP tool servers execute arbitrary SQL queries, shell commands, and file operations with the privileges of the local user.
+`bastio mcp-proxy` wraps a local MCP server over **stdio JSON-RPC 2.0**. It inspects tool arguments before execution, scans text and structured tool results, and checks tool descriptions for known prompt-injection patterns. It is an inspection firewall; it does not sandbox the child process or provide a remote HTTP/SSE MCP gateway.
 
-`bastio mcp-proxy` is a transparent security firewall that sits between the AI client and any MCP server over standard I/O (`stdio` JSON-RPC 2.0).
+## Install the CLI
 
-```
-┌─────────────────┐        ┌──────────────────┐        ┌─────────────────┐
-│ Claude / Cursor │ ────▶  │ bastio mcp-proxy │ ────▶  │ MCP Tool Server │
-│   (AI Client)   │ ◀────  │  (Security FW)   │ ◀────  │ (Postgres/Bash) │
-└─────────────────┘        └──────────────────┘        └─────────────────┘
-                                   │
-                         • Blocks rm -rf / DROP
-                         • Masks PII in tool args
-                         • Redacts leaked secrets
-                         • Sanitizes tool poisoning
-```
-
-## Quickstart
-
-Wrap any existing MCP server command with `bastio mcp-proxy --`:
+Build the current CLI from source with Go 1.25 or later:
 
 ```bash
-bastio mcp-proxy -- npx -y @modelcontextprotocol/server-postgres postgres://user:pass@localhost:5432/mydb
+go install github.com/bastio-ai/bastio/cmd/bastio@main
 ```
 
-## Claude Desktop Configuration
+Ensure the installed `bastio` executable is on the MCP client's PATH (or use its absolute path in the configuration). Run `bastio mcp-proxy -h` and confirm it exposes `--control-url`; upgrade older binaries before enrollment.
 
-Add `bastio mcp-proxy` into your `claude_desktop_config.json`:
+## Connect to the dashboard
+
+1. Open **MCP → Connect server** in the Bastio dashboard. Workspace owners and administrators can enroll servers and edit their policies.
+2. Name the server and select Claude Desktop, Cursor, Cline, or a terminal/custom agent.
+3. Save the one-time enrollment credential and generated configuration. Enter the local server executable and its argument array.
+4. Restart the MCP client. A heartbeat and actual tool events appear in the dashboard.
+
+For Claude Desktop, put the generated `mcpServers` entry in `claude_desktop_config.json`. Cursor uses `.cursor/mcp.json`; Cline's MCP configuration also accepts an `mcpServers` entry. The enrollment credential belongs in the environment, not command-line arguments:
 
 ```json
 {
   "mcpServers": {
-    "postgres-secured": {
+    "protected-filesystem": {
       "command": "bastio",
       "args": [
-        "mcp-proxy",
-        "--profile", "strict-guard",
-        "--",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-postgres",
-        "postgres://user:pass@localhost:5432/production"
-      ]
-    },
-    "filesystem-secured": {
-      "command": "bastio",
-      "args": [
-        "mcp-proxy",
-        "--",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/Users/username/Desktop"
-      ]
+        "mcp-proxy", "--control-url", "https://cloud.bastio.com",
+        "--token-env", "BASTIO_MCP_TOKEN", "--",
+        "npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/project"
+      ],
+      "env": { "BASTIO_MCP_TOKEN": "<one-time enrollment token>" }
     }
   }
 }
 ```
 
-## Cursor / Cline Configuration
+The child server does not receive the enrollment credential. Bastio's protocol stdout contains JSON-RPC only; its diagnostics use stderr. The tool server still runs with local OS permissions, so restrict its filesystem/database access independently.
 
-In Cursor's MCP Settings (`Settings > MCP > Add New MCP Server`):
-- **Type**: `command`
-- **Command**: `bastio mcp-proxy -- npx -y @modelcontextprotocol/server-brave-search`
+## Tool policy and protection
 
-## Security Enforcement
+Each enrollment has exact-name allow and block lists. Empty allowlists mean all tools are inspected; a matching block always wins. Allowed tools still receive content inspection. Common destructive command and SQL patterns are rejected before forwarding. Detected PII can be masked while preserving valid JSON. Unsafe text or structured results are blocked or sanitized before returning to the client. Images and arbitrary third-party extensions are not comprehensively inspected.
 
-### 1. Inbound Tool Call Inspection (`tools/call`)
-- **Destructive Action Prevention**: Inspects SQL parameters and shell command strings. Intercepts dangerous operations like `DROP TABLE`, `rm -rf`, or permission escalation attempts, returning a clean JSON-RPC error (`-32600`) without forwarding to the tool server.
-- **PII & Credential Masking**: Automatically tokenizes or masks sensitive data in tool arguments before the tool executes.
+The dashboard sandbox runs the same inspection implementation without executing a tool. It uses the server's security engine; the local CLI uses its built-in baseline detectors. It is a useful policy check, not a guarantee against every encoded or obfuscated attack. Named local security profiles are not supported; only the default baseline is currently available.
 
-### 2. Outbound Tool Response Sanitization
-- **Secret Redaction**: Prevents database queries or log extractors from leaking API keys or credentials back to the LLM context.
-- **Indirect Injection Defense**: Scans tool execution results for hidden instructions (e.g. malicious markdown in fetched web pages).
+## Credential lifecycle and control outages
 
-### 3. Tool Poisoning Defense (`tools/list`)
-- Inspects tool descriptions in `tools/list` responses to ensure third-party MCP servers cannot hijack system prompts.
+Replace or revoke an enrollment in **Servers & policies**. Replacement immediately invalidates the old credential; update the client's configuration to reconnect. The proxy authenticates before starting its child server and refreshes policy every five seconds. A confirmed invalid/revoked credential blocks subsequent tool calls. During network outages, cached policy remains usable for at most two minutes, then tool calls fail closed.
+
+## Metadata and retention
+
+The dashboard receives tool names, direction, outcome, detector categories, timing, heartbeats, and queue-drop counts. Tool arguments, results, RPC request IDs, and MCP connection secrets are not uploaded. The inspector sandbox processes the input for its request and does not insert it into the event store.
+
+Activity views cover the last 30 days. Older event metadata is deleted on ingestion and by an hourly server maintenance sweep. Enrollment names, policies, and revocation records remain so administrators can manage them. A bounded local reporting queue can drop events during long outages or extreme load; this is reported per server. Delivery is asynchronous and is not a complete execution audit. Local third-party stderr logging is controlled by the tool server.
+
+## Local-only mode
+
+Without `--control-url`, the baseline scanner operates locally with no enrollment, central tool policy, heartbeat, or dashboard reporting:
+
+```bash
+bastio mcp-proxy -- npx -y @modelcontextprotocol/server-filesystem /path/to/project
+```
