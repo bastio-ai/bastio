@@ -14,7 +14,7 @@ func ProviderEndpoint(path string) string {
 		return ""
 	}
 	path = strings.TrimPrefix(path, "/v1")
-	for _, prefix := range []string{"/openrouter/", "/openai/", "/anthropic/"} {
+	for _, prefix := range []string{"/openrouter/", "/xai/", "/openai/", "/anthropic/"} {
 		if strings.HasPrefix(path, prefix) {
 			return "/" + strings.TrimPrefix(path, prefix)
 		}

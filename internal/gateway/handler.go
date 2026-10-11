@@ -1330,6 +1330,8 @@ func inferProvider(model string) providers.Provider {
 		return providers.ProviderGemini
 	case strings.HasPrefix(m, "deepseek") || strings.HasPrefix(m, "deepseek/"):
 		return providers.ProviderDeepSeek
+	case strings.HasPrefix(m, "grok-") || strings.HasPrefix(m, "xai/") || strings.HasPrefix(m, "x-ai/"):
+		return providers.ProviderXAI
 	case strings.HasPrefix(m, "groq/") || strings.Contains(m, "groq"):
 		return providers.ProviderGroq
 	case strings.HasPrefix(m, "ollama/") || strings.HasPrefix(m, "local/"):

@@ -36,8 +36,9 @@ import { cn } from "@/lib/utils";
 const providerLabels: Record<string, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
+  xai: "Grok (xAI)",
   anthropic: "Anthropic",
-  deepseek: "DeepSeek (V3 & R1)",
+  deepseek: "DeepSeek",
   groq: "Groq LPU (Ultra-low latency)",
   gemini: "Google Gemini",
   ollama: "Ollama (Self-hosted / Local)",
@@ -102,7 +103,7 @@ function GatewayRecord({ proxy, onDelete, onToggle }: { proxy: Proxy; onDelete: 
     return key.is_active && scopes.includes(`proxy:${proxy.id}`);
   });
   const hasProviderKey = Boolean(providerKeys?.length);
-  const nativeBasePath = ["openai", "openrouter", "anthropic"].includes(proxy.target_provider) ? `/v1/guard/${proxy.id}/v1` : "/v1";
+  const nativeBasePath = ["openai", "openrouter", "xai", "anthropic"].includes(proxy.target_provider) ? `/v1/guard/${proxy.id}/v1` : "/v1";
 
   const copyValue = async (value: string, name: string) => {
     await navigator.clipboard.writeText(value);

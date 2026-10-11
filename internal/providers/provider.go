@@ -20,6 +20,7 @@ const (
 	ProviderGemini     Provider = "gemini"
 	ProviderDeepSeek   Provider = "deepseek"
 	ProviderGroq       Provider = "groq"
+	ProviderXAI        Provider = "xai"
 	ProviderOpenRouter Provider = "openrouter"
 )
 

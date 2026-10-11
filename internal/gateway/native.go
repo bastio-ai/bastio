@@ -105,6 +105,8 @@ func (h *Handler) nativeRoute(r *http.Request, info *auth.APIKeyInfo, requested 
 	}
 	if route.key == "" {
 		switch selected {
+		case providers.ProviderXAI:
+			route.key = os.Getenv("XAI_API_KEY")
 		case providers.ProviderOpenRouter:
 			route.key = os.Getenv("OPENROUTER_API_KEY")
 		case providers.ProviderOpenAI:
@@ -548,6 +550,7 @@ func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte
 func (h *Handler) RegisterNativeRoutes(r chi.Router) {
 	r.Handle("/guard/{proxyId}/v1/*", h.NativeAPI("", ""))
 	r.Handle("/openrouter/*", h.NativeAPI(providers.ProviderOpenRouter, ""))
+	r.Handle("/xai/*", h.NativeAPI(providers.ProviderXAI, ""))
 	r.Handle("/openai/*", h.NativeAPI(providers.ProviderOpenAI, ""))
 	r.Handle("/anthropic/*", h.NativeAPI(providers.ProviderAnthropic, ""))
 	r.Handle("/responses", h.NativeAPI("", "/responses"))

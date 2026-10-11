@@ -435,7 +435,7 @@ func (h *Handler) streamProvider(
 // format. Add providers here as their decoders land in decodeChunk.
 func supportsStreaming(p providers.Provider) bool {
 	switch p {
-	case providers.ProviderOpenAI, providers.ProviderAnthropic:
+	case providers.ProviderOpenAI, providers.ProviderAnthropic, providers.ProviderOpenRouter, providers.ProviderXAI, providers.ProviderDeepSeek, providers.ProviderGroq:
 		return true
 	}
 	return false
@@ -456,7 +456,7 @@ func decodeChunk(prov providers.Provider, data []byte) (delta string, finish str
 		return
 	}
 	switch prov {
-	case providers.ProviderOpenAI:
+	case providers.ProviderOpenAI, providers.ProviderOpenRouter, providers.ProviderXAI, providers.ProviderDeepSeek, providers.ProviderGroq:
 		return decodeOpenAIChunk(data)
 	case providers.ProviderAnthropic:
 		return decodeAnthropicChunk(data)
@@ -563,8 +563,11 @@ func (h *Handler) resolveAssistantConfig(
 	if provName == "" {
 		provName = "openai"
 	}
+	if provName == "google" {
+		provName = "gemini"
+	}
 	if model == "" {
-		model = "gpt-5.6-terra"
+		model = defaultWorkspaceModel(provName)
 	}
 
 	// Persona instruction goes first — it's the highest-level

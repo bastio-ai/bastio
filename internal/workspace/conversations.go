@@ -694,6 +694,10 @@ func (h *Handler) resolveAPIKeyCtx(ctx context.Context, customerID uuid.UUID, pr
 		}
 	}
 	switch prov {
+	case providers.ProviderOpenRouter:
+		return os.Getenv("OPENROUTER_API_KEY")
+	case providers.ProviderXAI:
+		return os.Getenv("XAI_API_KEY")
 	case providers.ProviderOpenAI:
 		return os.Getenv("OPENAI_API_KEY")
 	case providers.ProviderAnthropic:

@@ -129,6 +129,45 @@ export interface paths {
         patch: operations["openRouterNativePatch"];
         trace?: never;
     };
+    "/v1/xai/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["xaiNativeGet"];
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["xaiNativePut"];
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["xaiNativePost"];
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["xaiNativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["xaiNativePatch"];
+        trace?: never;
+    };
     "/v1/openai/{endpoint}": {
         parameters: {
             query?: never;
@@ -1570,7 +1609,7 @@ export interface components {
         CreateProxyRequest: {
             name: string;
             /** @enum {string} */
-            target_provider: "openai" | "openrouter" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
+            target_provider: "openai" | "openrouter" | "xai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             target_model?: string;
             settings?: Record<string, never>;
         };
@@ -1726,7 +1765,7 @@ export interface components {
         };
         CreateProviderKeyRequest: {
             /** @enum {string} */
-            provider: "openai" | "openrouter" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
+            provider: "openai" | "openrouter" | "xai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             /** @description Plaintext key. Stored encrypted at rest. */
             key: string;
             /**
@@ -1739,7 +1778,7 @@ export interface components {
         UpdateProxyRequest: {
             name: string;
             /** @enum {string} */
-            target_provider: "openai" | "openrouter" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
+            target_provider: "openai" | "openrouter" | "xai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             target_model: string;
             is_active?: boolean;
         };
@@ -2776,8 +2815,11 @@ export interface components {
             name: string;
             description?: string;
             system_prompt?: string;
-            /** @enum {string} */
-            default_provider: "openai" | "anthropic" | "bedrock" | "ollama" | "google";
+            /**
+             * @description google is a legacy alias for gemini
+             * @enum {string}
+             */
+            default_provider: "openai" | "openrouter" | "xai" | "anthropic" | "gemini" | "deepseek" | "groq" | "bedrock" | "ollama" | "google";
             default_model: string;
             language: string;
             suggested_prompts: string[];
@@ -3286,6 +3328,138 @@ export interface operations {
             };
         };
     };
+    xaiNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     openAINativeGet: {
         parameters: {
             query?: never;
@@ -3555,7 +3729,7 @@ export interface operations {
             query?: never;
             header?: {
                 /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
-                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
             };
             path?: never;
             cookie?: never;
@@ -3582,7 +3756,7 @@ export interface operations {
             query?: never;
             header?: {
                 /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
-                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
             };
             path?: never;
             cookie?: never;
@@ -3609,7 +3783,7 @@ export interface operations {
             query?: never;
             header?: {
                 /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
-                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
             };
             path?: never;
             cookie?: never;
@@ -3630,7 +3804,7 @@ export interface operations {
             query?: never;
             header?: {
                 /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
-                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
             };
             path?: never;
             cookie?: never;
@@ -3657,7 +3831,7 @@ export interface operations {
             query?: never;
             header?: {
                 /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
-                "X-Bastio-Provider"?: "openai" | "openrouter" | "anthropic";
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
             };
             path?: never;
             cookie?: never;

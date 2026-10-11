@@ -115,6 +115,8 @@ func TestInferProvider(t *testing.T) {
 		{"deepseek-chat", providers.ProviderDeepSeek},
 		{"deepseek-reasoner", providers.ProviderDeepSeek},
 		{"groq/llama-3.3-70b-versatile", providers.ProviderGroq},
+		{"grok-4.7", providers.ProviderXAI},
+		{"xai/grok-4.7", providers.ProviderXAI},
 		{"ollama/llama3", providers.ProviderOllama},
 		{"bedrock/anthropic.claude-3", providers.ProviderBedrock},
 		{"mysterymodel", providers.ProviderOpenAI}, // default fallback
