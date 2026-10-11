@@ -206,6 +206,77 @@ paths:
         default:
           description: Native provider status and response, or a Bastio security block.
 
+  /v1/xai/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native xAI endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: xaiNativeGet
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: xaiNativePost
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: xaiNativePut
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: xaiNativePatch
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: xaiNativeDelete
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
   /v1/openai/{endpoint}:
     parameters:
       - name: endpoint
@@ -358,7 +429,7 @@ paths:
         - name: X-Bastio-Provider
           in: header
           description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
-          schema: { type: string, enum: [openai, openrouter, anthropic] }
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
       requestBody:
         required: true
         content:
@@ -378,7 +449,7 @@ paths:
         - name: X-Bastio-Provider
           in: header
           description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
-          schema: { type: string, enum: [openai, openrouter, anthropic] }
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
       requestBody:
         required: true
         content:
@@ -398,7 +469,7 @@ paths:
         - name: X-Bastio-Provider
           in: header
           description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
-          schema: { type: string, enum: [openai, openrouter, anthropic] }
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
       responses:
         default:
           description: Native provider response or security-policy block.
@@ -413,7 +484,7 @@ paths:
         - name: X-Bastio-Provider
           in: header
           description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
-          schema: { type: string, enum: [openai, openrouter, anthropic] }
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
       requestBody:
         required: true
         content:
@@ -433,7 +504,7 @@ paths:
         - name: X-Bastio-Provider
           in: header
           description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
-          schema: { type: string, enum: [openai, openrouter, anthropic] }
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
       requestBody:
         required: true
         content:
@@ -2510,7 +2581,7 @@ components:
           type: string
         target_provider:
           type: string
-          enum: [openai, openrouter, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
+          enum: [openai, openrouter, xai, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         target_model:
           type: string
         settings:
@@ -2853,7 +2924,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [openai, openrouter, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
+          enum: [openai, openrouter, xai, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         key:
           type: string
           description: Plaintext key. Stored encrypted at rest.
@@ -2873,7 +2944,7 @@ components:
           type: string
         target_provider:
           type: string
-          enum: [openai, openrouter, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
+          enum: [openai, openrouter, xai, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         target_model:
           type: string
         is_active:
@@ -4902,7 +4973,7 @@ components:
         name: { type: string }
         description: { type: string }
         system_prompt: { type: string }
-        default_provider: { type: string, enum: [openai, anthropic, bedrock, ollama, google] }
+        default_provider: { type: string, enum: [openai, openrouter, xai, anthropic, gemini, deepseek, groq, bedrock, ollama, google], description: "google is a legacy alias for gemini" }
         default_model: { type: string }
         language: { type: string }
         suggested_prompts:

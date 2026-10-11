@@ -42,6 +42,9 @@ func (c *OpenAIClient) outboundModel(model string) string {
 	if c.Name() == ProviderOpenRouter {
 		return strings.TrimPrefix(model, "openrouter/")
 	}
+	if c.Name() == ProviderXAI {
+		return strings.TrimPrefix(strings.TrimPrefix(model, "xai/"), "x-ai/")
+	}
 	return strings.TrimPrefix(model, "openai/")
 }
 

@@ -50,8 +50,11 @@ func (h *Handler) createAssistant(w http.ResponseWriter, r *http.Request) {
 	if body.DefaultProvider == "" {
 		body.DefaultProvider = "openai"
 	}
+	if body.DefaultProvider == "google" {
+		body.DefaultProvider = "gemini"
+	}
 	if body.DefaultModel == "" {
-		body.DefaultModel = "gpt-5.6-terra"
+		body.DefaultModel = defaultWorkspaceModel(body.DefaultProvider)
 	}
 	// Security gate — the assistant's system prompt is replayed
 	// at the head of every chat with this assistant. A malicious

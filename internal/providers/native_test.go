@@ -12,7 +12,7 @@ import (
 )
 
 func TestNativeProviderContracts(t *testing.T) {
-	for _, provider := range []Provider{ProviderOpenAI, ProviderAnthropic, ProviderOpenRouter} {
+	for _, provider := range []Provider{ProviderOpenAI, ProviderAnthropic, ProviderOpenRouter, ProviderXAI} {
 		t.Run(string(provider), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/responses/rsp_123/cancel" || r.URL.Query().Get("include") != "usage" {
@@ -48,6 +48,8 @@ func TestNativeProviderContracts(t *testing.T) {
 				client = NewAnthropicClientWithBaseURL(server.URL)
 			case ProviderOpenRouter:
 				client = NewOpenRouterClientWithBaseURL(server.URL)
+			case ProviderXAI:
+				client = NewXAIClientWithBaseURL(server.URL)
 			}
 			resp, err := client.Forward(context.Background(), &NativeRequest{
 				Method: "POST", Path: "/responses/rsp_123/cancel", Query: url.Values{"include": {"usage"}},

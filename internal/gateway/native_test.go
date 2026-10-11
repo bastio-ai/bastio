@@ -167,6 +167,7 @@ func TestNativeProxyScopeAndProviderConflicts(t *testing.T) {
 func TestNativeRegisteredRoutesAndMultipart(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "router-secret")
 	t.Setenv("OPENAI_API_KEY", "openai-secret")
+	t.Setenv("XAI_API_KEY", "xai-secret")
 	var gotPath, gotMethod string
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +180,7 @@ func TestNativeRegisteredRoutesAndMultipart(t *testing.T) {
 	reg := providers.NewRegistry()
 	reg.Register(providers.NewOpenRouterClientWithBaseURL(server.URL))
 	reg.Register(providers.NewOpenAIClientWithBaseURL(server.URL))
+	reg.Register(providers.NewXAIClientWithBaseURL(server.URL))
 	h := NewHandler(reg, nil, nil, nil, nil, "fail-open")
 	router := chi.NewRouter()
 	router.Use(func(next http.Handler) http.Handler {
@@ -189,6 +191,7 @@ func TestNativeRegisteredRoutesAndMultipart(t *testing.T) {
 	router.Route("/v1", h.RegisterNativeRoutes)
 	for _, tt := range []struct{ path, endpoint, method string }{
 		{"/v1/openrouter/chat/completions", "/chat/completions", "POST"},
+		{"/v1/xai/chat/completions", "/chat/completions", "POST"},
 		{"/v1/openrouter/models/anthropic/claude-sonnet-4.5/endpoints", "/models/anthropic/claude-sonnet-4.5/endpoints", "GET"},
 		{"/v1/openrouter/keys/key-hash", "/keys/key-hash", "PATCH"},
 		{"/v1/responses/rsp_123/cancel", "/responses/rsp_123/cancel", "POST"},

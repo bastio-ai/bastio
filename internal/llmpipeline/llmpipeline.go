@@ -244,6 +244,28 @@ func EstimateCostCents(model string, inputTokens, outputTokens int) float64 {
 func pricingPer1MTokens(model string) (inputCents, outputCents float64) {
 	model = strings.ToLower(model)
 	switch {
+	case strings.TrimPrefix(model, "openrouter/") == "mistralai/mistral-large-4-0":
+		return 68, 209
+	case strings.TrimPrefix(model, "openrouter/") == "qwen/qwen3.8-max-prime":
+		return 400, 1200
+	case strings.TrimPrefix(model, "openrouter/") == "moonshotai/kimi-k3":
+		return 80, 1000
+	case strings.TrimPrefix(model, "openrouter/") == "z-ai/glm-5.3-prime":
+		return 280, 880
+	case strings.Contains(model, "gpt-6.1-sol"):
+		return 200, 1000
+	case strings.Contains(model, "gpt-6-astra"):
+		return 1000, 5000
+	case strings.Contains(model, "gpt-6-luna"):
+		return 10, 50
+	case strings.Contains(model, "claude-opus-5-5"), strings.Contains(model, "claude-opus-5.5"):
+		return 400, 2000
+	case strings.Contains(model, "claude-sonnet-5-5"), strings.Contains(model, "claude-sonnet-5.5"):
+		return 200, 1000
+	case strings.Contains(model, "claude-haiku-5-5"), strings.Contains(model, "claude-haiku-5.5"):
+		return 10, 50
+	case strings.Contains(model, "grok-4.7"):
+		return 200, 600
 	case strings.Contains(model, "gpt-5.6-sol"), strings.HasSuffix(model, "gpt-5.6"):
 		return 500, 3000
 	case strings.Contains(model, "gpt-5.6-terra"):
@@ -272,14 +294,16 @@ func pricingPer1MTokens(model string) (inputCents, outputCents float64) {
 		return 200, 1000
 	case strings.Contains(model, "claude-haiku-4-5"):
 		return 100, 500
-	case strings.Contains(model, "gemini-3.7-flash"), strings.Contains(model, "gemini-3.6-flash"):
+	case strings.Contains(model, "gemini-3.8-flash"), strings.Contains(model, "gemini-3.7-flash"), strings.Contains(model, "gemini-3.6-flash"):
 		return 75, 375
 	case strings.Contains(model, "gemini-3.5-flash-lite"):
 		return 30, 250
-	case strings.Contains(model, "deepseek-v4-flash"):
-		return 14, 28
+	case strings.Contains(model, "deepseek-flash"), strings.Contains(model, "deepseek-v4.1-flash"), strings.Contains(model, "deepseek-v4-flash"):
+		return 30, 120
 	case strings.Contains(model, "deepseek-v4-pro"):
-		return 43.5, 87
+		return 66, 198
+	case strings.Contains(model, "gpt-oss-20b"):
+		return 7.5, 30
 	case strings.Contains(model, "gpt-oss-120b"):
 		return 15, 60
 	case strings.Contains(model, "llama-3.3-70b-versatile"):

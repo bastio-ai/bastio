@@ -658,6 +658,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	providerRegistry := providers.NewRegistry()
 	providerRegistry.Register(providers.NewOpenAIClient())
 	providerRegistry.Register(providers.NewOpenRouterClient())
+	providerRegistry.Register(providers.NewXAIClient())
 	providerRegistry.Register(providers.NewAnthropicClient())
 	providerRegistry.Register(providers.NewBedrockClient())
 	providerRegistry.Register(providers.NewOllamaClient())

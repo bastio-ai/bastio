@@ -45,7 +45,7 @@ export function ProxyDetailPage() {
   }
 
   const p = proxy.data;
-  const nativeBasePath = ["openai", "openrouter", "anthropic"].includes(p.target_provider) ? `/v1/guard/${p.id}/v1` : "/v1";
+  const nativeBasePath = ["openai", "openrouter", "xai", "anthropic"].includes(p.target_provider) ? `/v1/guard/${p.id}/v1` : "/v1";
   const rows = traces.data ?? [];
 
   return (

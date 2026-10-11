@@ -203,6 +203,7 @@ func BuildDefaultProviderRegistry() *providers.Registry {
 	reg := providers.NewRegistry()
 	reg.Register(providers.NewOpenAIClient())
 	reg.Register(providers.NewOpenRouterClient())
+	reg.Register(providers.NewXAIClient())
 	reg.Register(providers.NewAnthropicClient())
 	reg.Register(providers.NewBedrockClient())
 	reg.Register(providers.NewOllamaClient())
@@ -355,7 +356,7 @@ func (s *DevServer) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		"security_mode": s.cfg.SecurityMode,
 		"storage":       "in-memory",
 		"detectors":     []string{"injection", "pii", "jailbreak", "secrets", "indirect_injection", "exfil"},
-		"providers":     []string{"openai", "openrouter", "anthropic", "gemini", "deepseek", "groq", "bedrock", "ollama"},
+		"providers":     []string{"openai", "openrouter", "xai", "anthropic", "gemini", "deepseek", "groq", "bedrock", "ollama"},
 	})
 }
 
@@ -857,6 +858,8 @@ func inferDevProvider(model string) providers.Provider {
 		return providers.ProviderGemini
 	case strings.HasPrefix(m, "deepseek") || strings.HasPrefix(m, "deepseek/"):
 		return providers.ProviderDeepSeek
+	case strings.HasPrefix(m, "grok-") || strings.HasPrefix(m, "xai/") || strings.HasPrefix(m, "x-ai/"):
+		return providers.ProviderXAI
 	case strings.HasPrefix(m, "groq/") || strings.Contains(m, "groq"):
 		return providers.ProviderGroq
 	case strings.HasPrefix(m, "ollama/") || strings.HasPrefix(m, "local/"):
@@ -897,6 +900,8 @@ func resolveDevAPIKey(r *http.Request, provider providers.Provider) string {
 		return key
 	case providers.ProviderDeepSeek:
 		return os.Getenv("DEEPSEEK_API_KEY")
+	case providers.ProviderXAI:
+		return os.Getenv("XAI_API_KEY")
 	case providers.ProviderGroq:
 		return os.Getenv("GROQ_API_KEY")
 	}

@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/skeleton";
 import { workspaceApi, type Assistant, type KnowledgeSource } from "./types";
-import { DEFAULT_MODEL, DEFAULT_MODELS, providerLabel, type ModelProvider } from "./model-picker";
+import { DEFAULT_MODEL, DEFAULT_MODELS, MODEL_PROVIDERS, providerLabel, type ModelProvider } from "./model-picker";
 
 export function AssistantsTab() {
   const qc = useQueryClient();
@@ -256,7 +256,7 @@ function AssistantEditor({
               }}
               className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-[12px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              {(["openai", "anthropic", "gemini", "deepseek", "groq", "bedrock", "ollama"] as ModelProvider[]).map((item) => (
+              {MODEL_PROVIDERS.map((item) => (
                 <option key={item} value={item}>{providerLabel(item)}</option>
               ))}
             </select>
