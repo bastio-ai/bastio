@@ -32,6 +32,7 @@ import {
   AttachmentChipStrip,
 } from "./message-bubble";
 import { OnboardingCard } from "./onboarding-card";
+import { MCPIntegrationsButton } from "./mcp-integrations";
 import {
   ModelPicker,
   DEFAULT_MODEL,
@@ -89,6 +90,11 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     () => readConversationIDFromPath() ?? initialConversationID ?? null,
   );
   const [draft, setDraft] = useState("");
+  const composeRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const textarea = composeRef.current;
+    if (textarea) { textarea.style.height = "auto"; textarea.style.height = Math.min(textarea.scrollHeight, 240) + "px"; }
+  }, [draft]);
   const [streamingDraft, setStreamingDraft] = useState<string | null>(null);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
     null,
@@ -944,6 +950,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                 />
 
                 <textarea
+                  ref={composeRef}
                   value={draft}
                   onChange={(e) => {
                     setDraft(e.target.value);
@@ -1047,6 +1054,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     >
                       <Plus className="h-4 w-4" />
                     </button>
+                    <MCPIntegrationsButton disabled={sending} onUseResult={(text) => setDraft((previous) => previous ? `${previous}\n\n${text}` : text)} />
                     <ModelPicker
                       value={model}
                       onChange={setModel}

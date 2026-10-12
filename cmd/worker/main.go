@@ -99,9 +99,12 @@ func main() {
 		db.Pool,
 		workspace.NewLocalBlobStore(cfg.DataDir),
 	)
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		ingestWorker.SetEmbedder(workspace.NewOpenAIEmbeddingClient(key))
+	embedder, err := server.WorkspaceEmbeddingFromEnv(os.Getenv)
+	if err != nil {
+		slog.Error("workspace embedder configuration", "error", err)
+		os.Exit(1)
 	}
+	ingestWorker.SetEmbedder(embedder)
 	// Security gate — same engine the gateway runs on every chat
 	// turn. Without this wiring the standalone worker mode would
 	// fail-open (raw extracted text lands in chunks unscanned),

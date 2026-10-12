@@ -15,7 +15,8 @@ import (
 
 type ingestEmbeddingSpy struct{ inputs []string }
 
-func (e *ingestEmbeddingSpy) Dimension() int { return 1536 }
+func (e *ingestEmbeddingSpy) Dimension() int  { return 1536 }
+func (e *ingestEmbeddingSpy) ModelID() string { return "openai:text-embedding-3-small" }
 func (e *ingestEmbeddingSpy) Embed(_ context.Context, inputs []string) ([][]float32, error) {
 	e.inputs = append(e.inputs, inputs...)
 	vectors := make([][]float32, len(inputs))

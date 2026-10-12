@@ -2137,6 +2137,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/WorkspaceKnowledgeSource"
 
+  /v1/workspace/knowledge/index-status:
+    get:
+      operationId: workspaceKnowledgeIndexStatus
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Administrator-visible embedding model and remaining background indexing work
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, model, dimensions, pending_sources]
+                properties:
+                  enabled: { type: boolean }
+                  model: { type: string }
+                  dimensions: { type: integer }
+                  pending_sources: { type: integer }
   /v1/workspace/knowledge/upload:
     post:
       operationId: workspaceUploadKnowledge
@@ -2841,6 +2858,113 @@ paths:
                         provider: { type: string }
                         configured: { type: boolean }
 
+  /v1/workspace/mcp:
+    get:
+      operationId: workspaceListMCP
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Personal and workspace-shared MCP connections visible to the member
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPList" }
+  /v1/workspace/mcp/policy:
+    put:
+      operationId: workspaceSetMCPPolicy
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMCPPolicy" }
+      responses:
+        "200":
+          description: Administrator updated personal integration policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPPolicy" }
+  /v1/workspace/mcp/connections:
+    post:
+      operationId: workspaceCreateMCPConnection
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMCPInput" }
+      responses:
+        "201":
+          description: Created; credentials are never returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPConnection" }
+  /v1/workspace/mcp/connections/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: workspaceUpdateMCPConnection
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMCPInput" }
+      responses:
+        "200":
+          description: Updated; only owners manage personal integrations and administrators manage shared integrations
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPConnection" }
+    delete:
+      operationId: workspaceRevokeMCPConnection
+      tags: [Workspace]
+      responses:
+        "204": { description: Integration revoked }
+  /v1/workspace/mcp/connections/{id}/tools:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: workspaceListMCPTools
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Discovered tools filtered by allowlist and inspected as untrusted content
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools: { type: array, items: { $ref: "#/components/schemas/WorkspaceMCPTool" } }
+  /v1/workspace/mcp/connections/{id}/call:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: workspaceCallMCPTool
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, arguments]
+              properties:
+                name: { type: string, maxLength: 128 }
+                arguments: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Security-processed textual result; raw arguments and results are not retained in audit records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, is_error, categories]
+                properties:
+                  text: { type: string }
+                  is_error: { type: boolean }
+                  categories: { type: array, items: { type: string } }
+
 components:
   securitySchemes:
     MCPEnrollment:
@@ -2854,6 +2978,46 @@ components:
       description: "Bearer sk-bastio-..."
 
   schemas:
+    WorkspaceMCPPolicy:
+      type: object
+      required: [allow_personal]
+      properties:
+        allow_personal: { type: boolean }
+    WorkspaceMCPList:
+      type: object
+      required: [connections, allow_personal, can_manage]
+      properties:
+        connections: { type: array, items: { $ref: "#/components/schemas/WorkspaceMCPConnection" } }
+        allow_personal: { type: boolean }
+        can_manage: { type: boolean }
+    WorkspaceMCPConnection:
+      type: object
+      required: [id, name, endpoint, scope, owner_user_id, allowed_tools, has_credential, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        endpoint: { type: string, format: uri }
+        scope: { type: string, enum: [personal, workspace] }
+        owner_user_id: { type: string }
+        allowed_tools: { type: array, items: { type: string } }
+        has_credential: { type: boolean }
+        created_at: { type: string, format: date-time }
+    WorkspaceMCPInput:
+      type: object
+      required: [name, endpoint, scope]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        endpoint: { type: string, format: uri, maxLength: 2048 }
+        scope: { type: string, enum: [personal, workspace] }
+        allowed_tools: { type: array, maxItems: 100, items: { type: string } }
+        credential: { type: string, maxLength: 8192, writeOnly: true }
+    WorkspaceMCPTool:
+      type: object
+      required: [name, inputSchema]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        inputSchema: { type: object, additionalProperties: true }
     MCPPolicy:
       type: "object"
       properties:

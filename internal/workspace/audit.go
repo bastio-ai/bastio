@@ -25,19 +25,19 @@ import (
 // record, not a join into the current state. See migration 028 for
 // the rationale.
 type AuditEntry struct {
-	ID           uuid.UUID       `json:"id"`
-	CustomerID   uuid.UUID       `json:"customer_id"`
-	ActorUserID  string          `json:"actor_user_id"`
-	ActorEmail   string          `json:"actor_email"`
-	ActorRole    string          `json:"actor_role"`
-	Action       string          `json:"action"`
-	TargetType   string          `json:"target_type"`
-	TargetID     string          `json:"target_id"`
-	TargetLabel  string          `json:"target_label"`
-	Metadata     json.RawMessage `json:"metadata"`
-	IPAddress    string          `json:"ip_address"`
-	UserAgent    string          `json:"user_agent"`
-	CreatedAt    time.Time       `json:"created_at"`
+	ID          uuid.UUID       `json:"id"`
+	CustomerID  uuid.UUID       `json:"customer_id"`
+	ActorUserID string          `json:"actor_user_id"`
+	ActorEmail  string          `json:"actor_email"`
+	ActorRole   string          `json:"actor_role"`
+	Action      string          `json:"action"`
+	TargetType  string          `json:"target_type"`
+	TargetID    string          `json:"target_id"`
+	TargetLabel string          `json:"target_label"`
+	Metadata    json.RawMessage `json:"metadata"`
+	IPAddress   string          `json:"ip_address"`
+	UserAgent   string          `json:"user_agent"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 // lookupMemberEmail fetches a member's email for an audit snapshot.
@@ -98,11 +98,6 @@ func (h *Handler) audit(r *http.Request, action string, target AuditTarget, meta
 	if h.store == nil {
 		return
 	}
-	cid := customerIDFromCtx(r.Context())
-	actorID := userIDFromCtx(r.Context())
-	actorEmail := userEmailFromCtx(r.Context())
-	actorRole := string(RoleFromCtx(r.Context()))
-
 	var metaJSON json.RawMessage
 	if metadata == nil {
 		metaJSON = json.RawMessage(`{}`)
@@ -114,6 +109,17 @@ func (h *Handler) audit(r *http.Request, action string, target AuditTarget, meta
 		metaJSON = b
 	}
 
+	h.auditJSON(r, action, target, metaJSON)
+}
+
+func (h *Handler) auditJSON(r *http.Request, action string, target AuditTarget, metaJSON json.RawMessage) {
+	if h.store == nil {
+		return
+	}
+	cid := customerIDFromCtx(r.Context())
+	actorID := userIDFromCtx(r.Context())
+	actorEmail := userEmailFromCtx(r.Context())
+	actorRole := string(RoleFromCtx(r.Context()))
 	entry := AuditEntry{
 		CustomerID:  cid,
 		ActorUserID: actorID,
