@@ -16,6 +16,10 @@ func TestNativeRequestLimitsKeepManagementCaps(t *testing.T) {
 		timeout time.Duration
 	}{
 		{"/v1/proxies", 413, time.Minute},
+		{"/v1/workspace/settings", 413, time.Minute},
+		{"/v1/workspace/chat-attachments", 200, 10 * time.Minute},
+		{"/v1/workspace/knowledge/upload", 200, 10 * time.Minute},
+		{"/v1/workspace/conversations/thread/messages/stream", 200, 10 * time.Minute},
 		{"/v1/openrouter/chat/completions", 200, 10 * time.Minute},
 		{"/v1/openai/files", 200, 10 * time.Minute},
 		{"/v1/guard/proxy-id/v1/messages", 200, 10 * time.Minute},

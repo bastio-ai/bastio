@@ -1685,6 +1685,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/provisioning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cloud-only SCIM Workspace provisioning status (administrator required) */
+        get: operations["getWorkspaceProvisioning"];
+        /** Cloud-only opt-in SCIM membership linking (administrator required) */
+        put: operations["setWorkspaceProvisioning"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/spending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWorkspaceSpending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportWorkspaceEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWorkspaceAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/access/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putWorkspaceAccessGroup"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/access/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putWorkspaceResourceAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/me/provider-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWorkspaceProviderReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2957,6 +3071,8 @@ export interface components {
             compliance_map: components["schemas"]["GovernanceArticleMap"][];
         };
         WorkspaceSettings: {
+            /** @description Store content for new chat writes; false retains only operational metadata. */
+            store_conversation_content?: boolean;
             /** Format: uuid */
             customer_id: string;
             branding: {
@@ -2997,6 +3113,8 @@ export interface components {
             model: string;
         };
         WorkspaceSettingsPatch: {
+            /** @description Store content for new chat writes; false retains only operational metadata. */
+            store_conversation_content?: boolean;
             branding?: {
                 [key: string]: unknown;
             };
@@ -3098,6 +3216,7 @@ export interface components {
             updated_at: string;
         };
         WorkspaceConversation: {
+            content_stored?: boolean;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -3120,6 +3239,8 @@ export interface components {
             last_message_peek?: string;
         };
         WorkspaceMessage: {
+            /** @description Content was returned to the caller but suppressed in durable storage */
+            temporary?: boolean;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -3134,6 +3255,8 @@ export interface components {
             prompt_tokens: number;
             completion_tokens: number;
             cost_cents: number;
+            /** @description Estimated fractional cents for this message */
+            cost_cents_exact?: number;
             finish_reason?: string | null;
             error?: string | null;
             metadata: {
@@ -3143,6 +3266,11 @@ export interface components {
             created_at: string;
         };
         WorkspaceSendMessageRequest: {
+            history?: {
+                /** @enum {string} */
+                role: "user" | "assistant";
+                content: string;
+            }[];
             content: string;
             provider?: string;
             model?: string;
@@ -3210,6 +3338,45 @@ export interface components {
         WorkspaceByModelCount: {
             model: string;
             count: number;
+        };
+        WorkspaceAccessGroup: {
+            /** Format: uuid */
+            id?: string;
+            name: string;
+            user_ids: string[];
+        };
+        WorkspaceResourceAccess: {
+            /** @enum {string} */
+            type: "knowledge" | "assistant";
+            /** Format: uuid */
+            id: string;
+            group_ids: string[];
+        };
+        WorkspaceAccess: {
+            groups?: components["schemas"]["WorkspaceAccessGroup"][];
+            resources?: components["schemas"]["WorkspaceResourceAccess"][];
+        };
+        WorkspaceEvidence: {
+            /** Format: date-time */
+            generated_at?: string;
+            /** Format: date-time */
+            period_start?: string;
+            /** Format: date-time */
+            period_end?: string;
+            scope?: string;
+            certification?: string;
+            settings?: components["schemas"]["WorkspaceSettings"];
+            counts?: {
+                messages?: number;
+                model_calls?: number;
+                policy_blocks?: number;
+                output_blocks?: number;
+                tokens?: number;
+                estimated_spend_cents?: number;
+            };
+            events?: Record<string, never>[];
+            events_total?: number;
+            events_truncated?: boolean;
         };
     };
     responses: never;
@@ -6102,6 +6269,7 @@ export interface operations {
     workspaceListConversations: {
         parameters: {
             query?: {
+                q?: string;
                 limit?: number;
             };
             header?: never;
@@ -6921,6 +7089,222 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    getWorkspaceProvisioning: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current directory linking status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        directory_users: number;
+                        linked_members: number;
+                    };
+                };
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cloud feature unavailable in OSS */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setWorkspaceProvisioning: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated provisioning status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cloud feature unavailable in OSS */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getWorkspaceSpending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current calendar month estimated spending, including reservations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        used_cents?: number;
+                        limit_cents?: number | null;
+                        near_limit?: boolean;
+                    };
+                };
+            };
+        };
+    };
+    exportWorkspaceEvidence: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tenant-scoped operational evidence, without compliance certification */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEvidence"];
+                };
+            };
+        };
+    };
+    getWorkspaceAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrative group and resource permissions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAccess"];
+                };
+            };
+        };
+    };
+    putWorkspaceAccessGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceAccessGroup"];
+            };
+        };
+        responses: {
+            /** @description Updated group */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAccessGroup"];
+                };
+            };
+        };
+    };
+    putWorkspaceResourceAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceResourceAccess"];
+            };
+        };
+        responses: {
+            /** @description Updated permissions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResourceAccess"];
+                };
+            };
+        };
+    };
+    getWorkspaceProviderReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configured providers; does not guarantee upstream credential or model access */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        providers?: {
+                            provider?: string;
+                            configured?: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };

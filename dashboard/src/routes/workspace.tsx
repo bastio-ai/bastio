@@ -163,7 +163,7 @@ export function WorkspacePage() {
 
       {tab === "dashboard" ? (
         <>
-          <DashboardTab onOpenChat={() => navigateToChat(openWorkspaceURL)} />
+          <DashboardTab onOpenChat={() => navigateToChat(openWorkspaceURL)} onOpenTab={changeTab} />
           {!hideUpsell ? <CloudUpsellCard /> : null}
         </>
       ) : null}

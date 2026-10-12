@@ -55,6 +55,14 @@ func (h *Handler) patchSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "billing_mode must be platform_keys or byo_keys")
 		return
 	}
+	if patch.RetentionDays != nil && (*patch.RetentionDays < 1 || *patch.RetentionDays > 3650) {
+		writeError(w, 400, "retention_days must be between 1 and 3650")
+		return
+	}
+	if patch.SpendCapCents != nil && *patch.SpendCapCents < 0 {
+		writeError(w, 400, "spend_cap_cents must be nonnegative; zero removes the cap")
+		return
+	}
 	st, err := h.store.UpdateSettings(r.Context(), cid, patch)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -72,6 +80,9 @@ func (h *Handler) patchSettings(w http.ResponseWriter, r *http.Request) {
 // (some fields like AI persona prompt could be long).
 func fieldsFromSettingsPatch(p SettingsPatch) []string {
 	out := []string{}
+	if p.StoreConversationContent != nil {
+		out = append(out, "store_conversation_content")
+	}
 	if p.Branding != nil {
 		out = append(out, "branding")
 	}

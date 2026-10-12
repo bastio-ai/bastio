@@ -90,7 +90,7 @@ func (s *Store) GetSettings(ctx context.Context, customerID uuid.UUID) (*Setting
 	const q = `SELECT customer_id, branding, default_assistant_id, seat_limit,
 retention_days, spend_cap_cents, billing_mode, allowed_models,
 ai_persona_name, ai_persona_personality, ai_persona_tone,
-onboarding_completed_at, disable_image_attachments,
+onboarding_completed_at, disable_image_attachments, store_conversation_content,
 created_at, updated_at
 FROM workspace_settings WHERE customer_id = $1`
 	row := s.pool.QueryRow(ctx, q, customerID)
@@ -100,7 +100,7 @@ FROM workspace_settings WHERE customer_id = $1`
 		&st.SeatLimit, &st.RetentionDays, &st.SpendCapCents,
 		&st.BillingMode, &allowedRaw,
 		&st.AIPersonaName, &st.AIPersonaPersonality, &st.AIPersonaTone,
-		&st.OnboardingCompletedAt, &st.DisableImageAttachments,
+		&st.OnboardingCompletedAt, &st.DisableImageAttachments, &st.StoreConversationContent,
 		&st.CreatedAt, &st.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -144,12 +144,13 @@ allowed_models         = COALESCE($7::jsonb, allowed_models),
 ai_persona_name        = COALESCE($8, ai_persona_name),
 ai_persona_personality = COALESCE($9, ai_persona_personality),
 ai_persona_tone        = COALESCE($10, ai_persona_tone),
-disable_image_attachments = COALESCE($11, disable_image_attachments)
+disable_image_attachments = COALESCE($11, disable_image_attachments),
+store_conversation_content = COALESCE($12, store_conversation_content)
 WHERE customer_id = $1`
 	if _, err := s.pool.Exec(ctx, q, customerID, p.Branding, p.SeatLimit,
 		p.RetentionDays, p.SpendCapCents, p.BillingMode, allowedJSON,
 		p.AIPersonaName, p.AIPersonaPersonality, p.AIPersonaTone,
-		p.DisableImageAttachments); err != nil {
+		p.DisableImageAttachments, p.StoreConversationContent); err != nil {
 		return nil, fmt.Errorf("update settings: %w", err)
 	}
 	return s.GetSettings(ctx, customerID)
@@ -164,15 +165,16 @@ WHERE customer_id = $1`
 // vs NULL semantics (note: an empty string here writes the empty
 // string, NOT NULL — to clear, callers should send a JSON null).
 type SettingsPatch struct {
-	Branding             json.RawMessage `json:"branding"`
-	SeatLimit            *int            `json:"seat_limit"`
-	RetentionDays        *int            `json:"retention_days"`
-	SpendCapCents        *int            `json:"spend_cap_cents"`
-	BillingMode          *string         `json:"billing_mode"`
-	AllowedModels        *[]AllowedModel `json:"allowed_models"`
-	AIPersonaName        *string         `json:"ai_persona_name"`
-	AIPersonaPersonality *string         `json:"ai_persona_personality"`
-	AIPersonaTone        *string         `json:"ai_persona_tone"`
+	StoreConversationContent *bool           `json:"store_conversation_content"`
+	Branding                 json.RawMessage `json:"branding"`
+	SeatLimit                *int            `json:"seat_limit"`
+	RetentionDays            *int            `json:"retention_days"`
+	SpendCapCents            *int            `json:"spend_cap_cents"`
+	BillingMode              *string         `json:"billing_mode"`
+	AllowedModels            *[]AllowedModel `json:"allowed_models"`
+	AIPersonaName            *string         `json:"ai_persona_name"`
+	AIPersonaPersonality     *string         `json:"ai_persona_personality"`
+	AIPersonaTone            *string         `json:"ai_persona_tone"`
 	// DisableImageAttachments — admin toggle to hard-block image
 	// uploads in the chat surface. nil = leave alone; pointer to
 	// true/false replaces. See migration 030 for the rationale.
@@ -182,9 +184,9 @@ type SettingsPatch struct {
 // EffectiveAllowedModels returns the merged allowed-models list a
 // specific user sees, in precedence order:
 //
-//	1. workspace_members.allowed_models (per-user override) — when non-NULL
-//	2. workspace_settings.allowed_models (customer-wide)    — when set
-//	3. nil (caller treats as "open — full catalog visible")
+//  1. workspace_members.allowed_models (per-user override) — when non-NULL
+//  2. workspace_settings.allowed_models (customer-wide)    — when set
+//  3. nil (caller treats as "open — full catalog visible")
 //
 // userID may be empty / "default-user" — that path skips the
 // member-override step and falls straight to customer-wide. The
@@ -651,9 +653,9 @@ WHERE customer_id = $1 AND id = $2 AND status = 'quarantined'`
 // ConversationListItem is a lightweight conversation row for sidebar lists.
 type ConversationListItem struct {
 	Conversation
-	MessageCount     int    `json:"message_count"`
-	LastMessageRole  string `json:"last_message_role,omitempty"`
-	LastMessagePeek  string `json:"last_message_peek,omitempty"`
+	MessageCount    int    `json:"message_count"`
+	LastMessageRole string `json:"last_message_role,omitempty"`
+	LastMessagePeek string `json:"last_message_peek,omitempty"`
 }
 
 // ListConversations returns conversations for the given customer.
@@ -662,24 +664,24 @@ type ConversationListItem struct {
 // restricts to that user's own conversations — the privacy default
 // for members. The handler decides which mode to call based on the
 // caller's role.
-func (s *Store) ListConversations(ctx context.Context, customerID uuid.UUID, userID string, limit int) ([]ConversationListItem, error) {
+func (s *Store) ListConversations(ctx context.Context, customerID uuid.UUID, userID string, limit int, search ...string) ([]ConversationListItem, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	q := `SELECT
   c.id, c.customer_id, c.user_id, c.assistant_id, c.title, c.pinned,
-  c.last_message_at, c.created_at, c.updated_at,
+  c.last_message_at, c.created_at, c.updated_at, c.content_stored,
   COALESCE(m.cnt, 0) AS msg_count,
   COALESCE(lm.role, '') AS last_role,
   COALESCE(SUBSTRING(lm.content FROM 1 FOR 200), '') AS last_peek
 FROM workspace_conversations c
 LEFT JOIN LATERAL (
   SELECT COUNT(*) AS cnt FROM workspace_messages
-  WHERE conversation_id = c.id
+  WHERE customer_id = $1 AND conversation_id = c.id
 ) m ON TRUE
 LEFT JOIN LATERAL (
   SELECT role, content FROM workspace_messages
-  WHERE conversation_id = c.id
+  WHERE customer_id = $1 AND conversation_id = c.id
   ORDER BY created_at DESC LIMIT 1
 ) lm ON TRUE
 WHERE c.customer_id = $1 AND c.archived_at IS NULL`
@@ -687,6 +689,11 @@ WHERE c.customer_id = $1 AND c.archived_at IS NULL`
 	if userID != "" {
 		q += ` AND c.user_id = $2`
 		args = append(args, userID)
+	}
+	if len(search) > 0 && strings.TrimSpace(search[0]) != "" {
+		args = append(args, search[0])
+		n := intToStr(len(args))
+		q += ` AND (c.title ILIKE '%' || $` + n + ` || '%' OR EXISTS (SELECT 1 FROM workspace_messages sm WHERE sm.customer_id=$1 AND sm.conversation_id=c.id AND to_tsvector('simple',sm.content) @@ websearch_to_tsquery('simple',$` + n + `)))`
 	}
 	q += ` ORDER BY c.pinned DESC, c.last_message_at DESC LIMIT $` +
 		intToStr(len(args)+1)
@@ -701,7 +708,7 @@ WHERE c.customer_id = $1 AND c.archived_at IS NULL`
 		var item ConversationListItem
 		if err := rows.Scan(&item.ID, &item.CustomerID, &item.UserID,
 			&item.AssistantID, &item.Title, &item.Pinned,
-			&item.LastMessageAt, &item.CreatedAt, &item.UpdatedAt,
+			&item.LastMessageAt, &item.CreatedAt, &item.UpdatedAt, &item.ContentStored,
 			&item.MessageCount, &item.LastMessageRole, &item.LastMessagePeek); err != nil {
 			return nil, fmt.Errorf("scan conversation: %w", err)
 		}
@@ -712,13 +719,13 @@ WHERE c.customer_id = $1 AND c.archived_at IS NULL`
 
 func (s *Store) GetConversation(ctx context.Context, customerID, id uuid.UUID) (*Conversation, error) {
 	const q = `SELECT id, customer_id, user_id, assistant_id, title, pinned,
-last_message_at, created_at, updated_at
+last_message_at, created_at, updated_at, content_stored
 FROM workspace_conversations
 WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 	var c Conversation
 	err := s.pool.QueryRow(ctx, q, customerID, id).Scan(&c.ID, &c.CustomerID,
 		&c.UserID, &c.AssistantID, &c.Title, &c.Pinned, &c.LastMessageAt,
-		&c.CreatedAt, &c.UpdatedAt)
+		&c.CreatedAt, &c.UpdatedAt, &c.ContentStored)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -730,19 +737,20 @@ WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 
 func (s *Store) CreateConversation(ctx context.Context, c Conversation) (*Conversation, error) {
 	const q = `INSERT INTO workspace_conversations
-(customer_id, user_id, assistant_id, title)
-VALUES ($1,$2,$3,$4)
-RETURNING id, last_message_at, created_at, updated_at`
+(customer_id, user_id, assistant_id, title, content_stored)
+SELECT $1,$2,$3,CASE WHEN store_conversation_content THEN $4 ELSE 'Temporary chat' END, store_conversation_content
+FROM workspace_settings WHERE customer_id = $1
+RETURNING id, last_message_at, created_at, updated_at, content_stored, title`
 	if err := s.pool.QueryRow(ctx, q,
 		c.CustomerID, c.UserID, c.AssistantID, c.Title,
-	).Scan(&c.ID, &c.LastMessageAt, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	).Scan(&c.ID, &c.LastMessageAt, &c.CreatedAt, &c.UpdatedAt, &c.ContentStored, &c.Title); err != nil {
 		return nil, fmt.Errorf("insert conversation: %w", err)
 	}
 	return &c, nil
 }
 
 func (s *Store) RenameConversation(ctx context.Context, customerID, id uuid.UUID, title string) error {
-	const q = `UPDATE workspace_conversations SET title = $3
+	const q = `UPDATE workspace_conversations SET title = CASE WHEN content_stored AND (SELECT store_conversation_content FROM workspace_settings WHERE customer_id = $1) THEN $3 ELSE 'Temporary chat' END
 WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 	tag, err := s.pool.Exec(ctx, q, customerID, id, title)
 	if err != nil {
@@ -760,7 +768,7 @@ WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 // on already-archived rows so the unarchive flow works.
 func (s *Store) UpdateConversation(ctx context.Context, customerID, id uuid.UUID, p UpdateConversationRequest) error {
 	const q = `UPDATE workspace_conversations SET
-title       = COALESCE($3, title),
+title = CASE WHEN content_stored AND (SELECT store_conversation_content FROM workspace_settings WHERE customer_id = $1) THEN COALESCE($3,title) ELSE 'Temporary chat' END,
 pinned      = COALESCE($4, pinned),
 archived_at = CASE
     WHEN $5::bool IS NULL THEN archived_at
@@ -877,26 +885,42 @@ func (s *Store) AppendMessage(ctx context.Context, m Message) (*Message, error) 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	var storeContent bool
+	if err := tx.QueryRow(ctx, `SELECT s.store_conversation_content AND c.content_stored
+FROM workspace_settings s JOIN workspace_conversations c ON c.customer_id=s.customer_id
+WHERE s.customer_id=$1 AND c.id=$2 FOR SHARE OF s FOR UPDATE OF c`, m.CustomerID, m.ConversationID).Scan(&storeContent); err != nil {
+		return nil, fmt.Errorf("storage policy: %w", err)
+	}
+	persisted := m
+	m.Temporary = !storeContent || privateChat(ctx)
+	if !storeContent || privateChat(ctx) {
+		persisted.Content = ""
+		persisted.Metadata = json.RawMessage(`{}`)
+		persisted.Error = nil
+	}
+	if len(persisted.Metadata) == 0 {
+		persisted.Metadata = json.RawMessage(`{}`)
+	}
 	if len(m.Metadata) == 0 {
 		m.Metadata = json.RawMessage(`{}`)
 	}
 
 	const ins = `INSERT INTO workspace_messages
 (conversation_id, customer_id, role, content, provider, model,
-prompt_tokens, completion_tokens, cost_cents, finish_reason, error, metadata)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+prompt_tokens, completion_tokens, cost_cents, finish_reason, error, metadata, cost_cents_exact)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 RETURNING id, created_at`
 	if err := tx.QueryRow(ctx, ins,
-		m.ConversationID, m.CustomerID, m.Role, m.Content,
+		m.ConversationID, m.CustomerID, m.Role, persisted.Content,
 		m.Provider, m.Model, m.PromptTokens, m.CompletionTokens,
-		m.CostCents, m.FinishReason, m.Error, m.Metadata,
+		m.CostCents, m.FinishReason, persisted.Error, persisted.Metadata, m.CostCentsExact,
 	).Scan(&m.ID, &m.CreatedAt); err != nil {
 		return nil, fmt.Errorf("insert message: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx,
-		`UPDATE workspace_conversations SET last_message_at = NOW()
-WHERE customer_id = $1 AND id = $2`, m.CustomerID, m.ConversationID); err != nil {
+		`UPDATE workspace_conversations SET last_message_at = NOW(), content_stored = content_stored AND $3, title=CASE WHEN $3 THEN title ELSE 'Temporary chat' END
+WHERE customer_id = $1 AND id = $2`, m.CustomerID, m.ConversationID, storeContent && !privateChat(ctx)); err != nil {
 		return nil, fmt.Errorf("bump conversation: %w", err)
 	}
 
@@ -1166,11 +1190,11 @@ WHERE customer_id = $1 AND user_id = $2`
 
 // MemberUsage counts a user's tokens spent in two windows:
 //
-//   monthlyTokens — sum of prompt_tokens + completion_tokens in the
-//   current calendar month (UTC). Resets on the 1st.
+//	monthlyTokens — sum of prompt_tokens + completion_tokens in the
+//	current calendar month (UTC). Resets on the 1st.
 //
-//   last24hMessages — count of assistant-role messages in the
-//   rolling last 24 hours. Used as the daily rate-limit signal.
+//	last24hMessages — count of assistant-role messages in the
+//	rolling last 24 hours. Used as the daily rate-limit signal.
 //
 // Both queries hit workspace_messages with the customer + user
 // scope, so per-user usage is real even when budgets are off.
@@ -1277,11 +1301,11 @@ RETURNING id, created_at`
 // to a stable structured-error code so the dashboard can render
 // precise user-facing copy.
 var (
-	ErrInvitationExpired   = errors.New("workspace: invitation expired")
-	ErrInvitationRevoked   = errors.New("workspace: invitation revoked")
-	ErrInvitationConsumed  = errors.New("workspace: invitation already accepted")
+	ErrInvitationExpired       = errors.New("workspace: invitation expired")
+	ErrInvitationRevoked       = errors.New("workspace: invitation revoked")
+	ErrInvitationConsumed      = errors.New("workspace: invitation already accepted")
 	ErrInvitationEmailMismatch = errors.New("workspace: invitation issued to a different email")
-	ErrSeatLimitReached    = errors.New("workspace: seat limit reached")
+	ErrSeatLimitReached        = errors.New("workspace: seat limit reached")
 )
 
 // AcceptResult is what AcceptInvitation returns on success — enough
@@ -1419,16 +1443,24 @@ WHERE customer_id = $1 AND id = $2 AND accepted_at IS NULL AND revoked_at IS NUL
 
 // RemoveMember deletes a member row outright. Owner role cannot be removed.
 func (s *Store) RemoveMember(ctx context.Context, customerID uuid.UUID, userID string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("remove member: %w", err)
+	}
+	defer tx.Rollback(ctx)
 	const q = `DELETE FROM workspace_members
 WHERE customer_id = $1 AND user_id = $2 AND role <> 'owner'`
-	tag, err := s.pool.Exec(ctx, q, customerID, userID)
+	tag, err := tx.Exec(ctx, q, customerID, userID)
 	if err != nil {
 		return fmt.Errorf("remove member: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	if _, err = tx.Exec(ctx, `DELETE FROM workspace_access_group_members WHERE customer_id=$1 AND user_id=$2`, customerID, userID); err != nil {
+		return fmt.Errorf("remove member permissions: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 // =============================================================================
@@ -1437,11 +1469,11 @@ WHERE customer_id = $1 AND user_id = $2 AND role <> 'owner'`
 
 // AnalyticsSummary is the dashboard KPI block.
 type AnalyticsSummary struct {
-	MessagesThisMonth int    `json:"messages_this_month"`
-	TokensThisMonth   int    `json:"tokens_this_month"`
-	CostCentsThisMonth int   `json:"cost_cents_this_month"`
-	ActiveUsers       int    `json:"active_users"`
-	SeatLimit         int    `json:"seat_limit"`
+	MessagesThisMonth  int `json:"messages_this_month"`
+	TokensThisMonth    int `json:"tokens_this_month"`
+	CostCentsThisMonth int `json:"cost_cents_this_month"`
+	ActiveUsers        int `json:"active_users"`
+	SeatLimit          int `json:"seat_limit"`
 }
 
 // ByModelCount is one row in the "Usage by model" chart.
@@ -1603,12 +1635,12 @@ LIMIT $2`
 // ForecastResult is the "current → daily-avg → projected" answer.
 // All cost numbers are in cents.
 type ForecastResult struct {
-	CurrentCents       int     `json:"current_cents"`
-	DaysElapsed        int     `json:"days_elapsed"`
-	DaysInMonth        int     `json:"days_in_month"`
-	DailyAverageCents  float64 `json:"daily_average_cents"`
-	ProjectedCents     int     `json:"projected_cents"`
-	LastMonthCents     int     `json:"last_month_cents"`
+	CurrentCents      int     `json:"current_cents"`
+	DaysElapsed       int     `json:"days_elapsed"`
+	DaysInMonth       int     `json:"days_in_month"`
+	DailyAverageCents float64 `json:"daily_average_cents"`
+	ProjectedCents    int     `json:"projected_cents"`
+	LastMonthCents    int     `json:"last_month_cents"`
 	// DeltaPctVsLastMonth is positive when projected > last-month total.
 	// Useful for "are we on pace?" callouts.
 	DeltaPctVsLastMonth float64 `json:"delta_pct_vs_last_month"`

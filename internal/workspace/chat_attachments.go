@@ -55,11 +55,13 @@ type chatAttachmentResponse struct {
 // image support is gated on the provider clients learning the
 // content-parts shape, which is a separate refactor.
 func (h *Handler) uploadChatAttachment(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(chatAttachmentMaxBytes); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, chatAttachmentMaxBytes+64*1024)
+	if err := r.ParseMultipartForm(chatAttachmentMaxBytes + 64*1024); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return
 	}
 
+	defer r.MultipartForm.RemoveAll()
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "missing 'file' field: "+err.Error())

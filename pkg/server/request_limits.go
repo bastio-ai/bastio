@@ -37,6 +37,16 @@ func isProviderAPIPath(path string) bool {
 	return false
 }
 
+// Employee prompts and multipart documents need the same body allowance as
+// model calls; management's 1 MiB limit would reject ordinary attachments.
+func isWorkspaceContentPath(path string) bool {
+	if path == "/v1/workspace/chat-attachments" || path == "/v1/workspace/knowledge/upload" {
+		return true
+	}
+	return strings.HasPrefix(path, "/v1/workspace/conversations/") &&
+		(strings.HasSuffix(path, "/messages") || strings.HasSuffix(path, "/messages/stream"))
+}
+
 func requestLimitsMiddleware(managementBytes, providerBytes int64, timeout time.Duration) func(http.Handler) http.Handler {
 	if providerBytes <= 0 {
 		providerBytes = 64 << 20
@@ -49,7 +59,7 @@ func requestLimitsMiddleware(managementBytes, providerBytes int64, timeout time.
 		management = middleware.Timeout(time.Minute)(management)
 		provider := middleware.Timeout(gatewayTimeout(timeout))(maxBodyBytesMiddleware(providerBytes)(next))
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isProviderAPIPath(r.URL.Path) {
+			if isProviderAPIPath(r.URL.Path) || isWorkspaceContentPath(r.URL.Path) {
 				provider.ServeHTTP(w, r)
 				return
 			}

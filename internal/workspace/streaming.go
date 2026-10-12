@@ -49,6 +49,11 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r, err = h.prepareChat(r, conv, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Resolve assistant config + RAG context (RAG via knowledge.go).
 	systemPrompt, prov, model := h.resolveAssistantConfig(r.Context(), cid, conv, body)
 
@@ -111,7 +116,7 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 			Provider: strPtr(string(prov)), Model: strPtr(model),
 			FinishReason: &finish, Error: &errStr,
 		})
-		h.recordChatTrace(chatTraceInput{
+		h.recordChatTrace(r.Context(), chatTraceInput{
 			customerID:     cid,
 			conversationID: id,
 			traceID:        traceID,
@@ -157,7 +162,7 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 			Provider: strPtr(string(prov)), Model: strPtr(model),
 			FinishReason: &finish, Error: &errStr,
 		})
-		h.recordChatTrace(chatTraceInput{
+		h.recordChatTrace(r.Context(), chatTraceInput{
 			customerID:     cid,
 			conversationID: id,
 			traceID:        traceID,
@@ -184,6 +189,7 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 		textPart = scan.SanitizedContent
 	}
 	userContent := recomposeWithImages(textPart, scanImages)
+	body.Content = userContent
 
 	systemPrompt, citations := h.augmentWithRAG(r.Context(), cid, conv, userContent, systemPrompt)
 
@@ -201,7 +207,7 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 	// Set up SSE response. Flush headers immediately so the browser sees
 	// the connection open before we have content.
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Cache-Control", "no-store, no-transform")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering.
 	w.WriteHeader(http.StatusOK)
@@ -211,7 +217,7 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build LLM message history.
-	priorMsgs, err := h.store.ListMessages(r.Context(), cid, id)
+	priorMsgs, err := h.chatHistory(r.Context(), cid, id, body)
 	if err != nil {
 		sseEmit(w, flusher, "error", map[string]string{"error": err.Error()})
 		return
@@ -263,25 +269,6 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 	// chat shows up in /traces alongside gateway traffic.
 	finishReason := final.finishReason
 	costCents := estimateCostCentsFloat(string(prov), model, final.promptTokens, final.completionTokens)
-	h.recordChatTrace(chatTraceInput{
-		customerID:     cid,
-		conversationID: id,
-		traceID:        traceID,
-		userID:         userID,
-		ipHash:         ipHash,
-		userAgent:      userAgent,
-		provider:       string(prov),
-		model:          model,
-		startedAt:      startedAt,
-		completedAt:    time.Now().UTC(),
-		inputTokens:    final.promptTokens,
-		outputTokens:   final.completionTokens,
-		costCents:      costCents,
-		finishReason:   finishReason,
-		requestBody:    userContent,
-		responseBody:   final.content,
-		scanResult:     scan,
-	})
 
 	// =========================================================
 	// POST-FLIGHT OUTPUT SCAN — the user has already seen the
@@ -323,6 +310,26 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	h.recordChatTrace(r.Context(), chatTraceInput{
+		customerID:     cid,
+		conversationID: id,
+		traceID:        traceID,
+		userID:         userID,
+		ipHash:         ipHash,
+		userAgent:      userAgent,
+		provider:       string(prov),
+		model:          model,
+		startedAt:      startedAt,
+		completedAt:    time.Now().UTC(),
+		inputTokens:    final.promptTokens,
+		outputTokens:   final.completionTokens,
+		costCents:      costCents,
+		finishReason:   persistFinish,
+		requestBody:    userContent,
+		responseBody:   finalContent,
+		scanResult:     scan,
+	})
+
 	asstMsg, err := h.store.AppendMessage(r.Context(), Message{
 		ConversationID:   id,
 		CustomerID:       cid,
@@ -333,6 +340,7 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 		PromptTokens:     final.promptTokens,
 		CompletionTokens: final.completionTokens,
 		CostCents:        estimateCostCents(string(prov), model, final.promptTokens, final.completionTokens),
+		CostCentsExact:   costCents,
 		FinishReason:     &persistFinish,
 		Error:            persistError,
 		Metadata:         encodeCitationsMetadata(citations),
@@ -374,12 +382,21 @@ func (h *Handler) streamProvider(
 	}
 	apiKey := h.resolveAPIKeyCtx(ctx, customerID, prov)
 
+	reservation, err := h.reserveSpend(ctx, customerID, model, msgs, prov)
+	if err != nil {
+		return streamResult{}, err
+	}
+	maxOutput := workspaceMaxOutputTokens
 	if !supportsStreaming(prov) {
 		// Non-streaming fallback: full response → emit as one delta.
 		resp, err := client.Chat(ctx, &providers.ChatRequest{
-			Provider: prov, Model: model, Messages: msgs,
+			Provider: prov, Model: model, Messages: msgs, MaxTokens: &maxOutput,
 		}, apiKey)
 		if err != nil {
+			return streamResult{}, err
+		}
+		accountMissingUsage(msgs, &resp.InputTokens, &resp.OutputTokens)
+		if err := h.settleSpend(customerID, reservation, estimateCostCentsFloat(string(prov), model, resp.InputTokens, resp.OutputTokens)); err != nil {
 			return streamResult{}, err
 		}
 		sseEmit(w, flusher, "token", map[string]string{"delta": resp.Content})
@@ -392,7 +409,7 @@ func (h *Handler) streamProvider(
 	}
 
 	chunks, err := client.ChatStream(ctx, &providers.ChatRequest{
-		Provider: prov, Model: model, Messages: msgs, Stream: true,
+		Provider: prov, Model: model, Messages: msgs, Stream: true, MaxTokens: &maxOutput,
 	}, apiKey)
 	if err != nil {
 		return streamResult{}, err
@@ -422,11 +439,9 @@ func (h *Handler) streamProvider(
 		}
 	}
 
-	// Some providers (Anthropic) report usage via a final message_stop
-	// event, others (OpenAI) only when stream_options.include_usage is
-	// set. Token-count fallbacks: estimate from content if we got nothing.
-	if out.completionTokens == 0 && out.content != "" {
-		out.completionTokens = len(out.content) / 4 // rough heuristic
+	accountMissingUsage(msgs, &out.promptTokens, &out.completionTokens)
+	if err := h.settleSpend(customerID, reservation, estimateCostCentsFloat(string(prov), model, out.promptTokens, out.completionTokens)); err != nil {
+		return out, fmt.Errorf("spending settlement unavailable: %w", err)
 	}
 	return out, nil
 }
@@ -642,15 +657,11 @@ func strDeref(p *string) string {
 // Empty effective list = "open" — every (provider, model) is allowed.
 // Non-empty = strict whitelist; the pair must match exactly.
 //
-// Lookup errors fail open (return nil) — the rest of the chat path
-// has its own error handling, and a transient settings-fetch failure
-// shouldn't lock the user out of their own workspace.
+// An unavailable policy blocks sending until access can be checked.
 func (h *Handler) assertModelAllowed(ctx context.Context, customerID uuid.UUID, userID, provider, model string) error {
 	allowed, err := h.store.EffectiveAllowedModels(ctx, customerID, userID)
 	if err != nil {
-		// Fail open — log the lookup failure if we ever wire structured
-		// errors here, but don't let a Postgres blip lock chat.
-		return nil
+		return fmt.Errorf("model policy unavailable; retry when Workspace settings are available")
 	}
 	if len(allowed) == 0 {
 		return nil
