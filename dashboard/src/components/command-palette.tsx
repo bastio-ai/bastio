@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Search, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DOCS_URL } from "@/lib/external-links";
+import { useWorkspaceExtension } from "@/components/workspace/extension-context";
 
 type Command = {
   id: string;
@@ -99,6 +100,8 @@ type Props = {
 
 export function CommandPalette({ open, onOpenChange }: Props) {
   const navigate = useNavigate();
+  const { extraTabs } = useWorkspaceExtension();
+  const hasMembers = extraTabs.some((tab) => tab.id === "team");
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -113,7 +116,10 @@ export function CommandPalette({ open, onOpenChange }: Props) {
       { id: "nav-sessions",   group: "Navigation", label: "Go to Sessions",          shortcut: "G S", onSelect: () => navigate({ to: "/sessions" }) },
       { id: "nav-users",      group: "Navigation", label: "Go to Users",             shortcut: "G U", onSelect: () => navigate({ to: "/users" }) },
       { id: "nav-analytics",  group: "Navigation", label: "Go to Analytics",         shortcut: "G A", onSelect: () => navigate({ to: "/analytics" }) },
-      { id: "nav-workspace",  group: "Workforce",  label: "Go to Private AI Portal",                  onSelect: () => navigate({ to: "/workspace" }) },
+      { id: "nav-workspace",  group: "Workforce",  label: "Go to Workspace",                  onSelect: () => navigate({ to: "/workspace" }) },
+      { id: "nav-workspace-settings", group: "Workforce", label: "Workspace settings", hint: "Team settings, models, privacy, spending", onSelect: () => navigate({ to: "/workspace", search: { view: "settings" } }) },
+      { id: "nav-workspace-groups", group: "Workforce", label: "Workspace groups & sharing", hint: "Teams and resource permissions", onSelect: () => navigate({ to: "/workspace", search: { view: "groups" } }) },
+      ...(hasMembers ? [{ id: "nav-workspace-members", group: "Workforce", label: "Workspace members", hint: "Invite employees and manage roles", onSelect: () => navigate({ to: "/workspace", search: { view: "team" } }) }] : []),
       { id: "nav-threats",    group: "Security",   label: "Go to Threats",           shortcut: "G H", onSelect: () => navigate({ to: "/threats" }) },
       { id: "nav-security",   group: "Security",   label: "Go to Security Policies",                 onSelect: () => navigate({ to: "/security-settings" }) },
       { id: "nav-compliance", group: "Security",   label: "Go to Compliance & Audits",                onSelect: () => navigate({ to: "/compliance" }) },
@@ -123,7 +129,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
       { id: "nav-settings",   group: "Platform",   label: "Go to Settings",          shortcut: "G ,", onSelect: () => navigate({ to: "/settings" }) },
       { id: "nav-docs",       group: "Resources",  label: "Open documentation",      hint: "↗ bastio.com/docs", onSelect: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
     ],
-    [navigate],
+    [hasMembers, navigate],
   );
 
   // Dynamic commands — e.g. trace ID jump when the query looks like an id.
@@ -145,7 +151,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
     const qt = query.trim().toLowerCase();
     const base = qt
       ? baseCommands.filter(
-          (c) => c.label.toLowerCase().includes(qt) || c.group.toLowerCase().includes(qt),
+          (c) => c.label.toLowerCase().includes(qt) || c.group.toLowerCase().includes(qt) || c.hint?.toLowerCase().includes(qt),
         )
       : baseCommands;
     return [...dynamicCommands, ...base];

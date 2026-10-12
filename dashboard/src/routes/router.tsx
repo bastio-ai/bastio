@@ -31,6 +31,7 @@ import { ChatsPage } from "./chats";
 import { CompliancePage } from "./compliance";
 import { WorkspacesPage } from "./workspaces";
 import { McpPage } from "./mcp";
+import { validateWorkspaceSearch } from "@/components/workspace/navigation";
 
 // Workspace admin console — configure assistants, knowledge, settings.
 // The chat surface is also reachable in-app at /workspace/chat for OSS
@@ -280,6 +281,7 @@ const overlayTemplatesRoute = createRoute({
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workspace",
+  validateSearch: validateWorkspaceSearch,
   component: WorkspaceLazyRoute,
 });
 

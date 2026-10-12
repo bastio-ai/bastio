@@ -78,13 +78,15 @@ export function SecurityNotice({
 export function FieldLabel({
   children,
   optional,
+  htmlFor,
 }: {
   children: ReactNode;
   optional?: boolean;
+  htmlFor?: string;
 }) {
   return (
     <div className="mb-1.5 flex items-center justify-between gap-3">
-      <label className="text-xs font-medium text-foreground">{children}</label>
+      <label htmlFor={htmlFor} className="text-xs font-medium text-foreground">{children}</label>
       {optional ? <span className="text-[11px] text-muted-foreground">Optional</span> : null}
     </div>
   );

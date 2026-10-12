@@ -14,6 +14,7 @@
 // a tab, OSS doesn't have it to render.
 
 import { createContext, useContext, type ReactNode } from "react";
+import type { SettingsSection } from "./navigation";
 
 export type WorkspaceExtraTab = {
   id: string;
@@ -49,6 +50,8 @@ export type WorkspaceExtension = {
   // the Stripe webhook, retention policy, branded-chat feature). OSS
   // leaves this null.
   settingsExtra: ReactNode;
+  // Render Cloud settings inside the relevant section, rather than one long form.
+  settingsSection?: (section: SettingsSection, onDirtyChange: (dirty: boolean) => void) => ReactNode;
 };
 
 const defaultValue: WorkspaceExtension = {

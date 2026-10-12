@@ -45,7 +45,7 @@ export function SharingPicker({ value, onChange, disabled = false }: { value: Re
         <div className="grid gap-3 sm:grid-cols-2">
           <div><p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Groups</p><div className="max-h-36 space-y-1 overflow-y-auto">
             {access.data?.groups?.filter((group) => group.name.toLowerCase().includes(term)).map((group) => <label key={group.id} className="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-muted/40"><input type="checkbox" checked={value.group_ids.includes(group.id!)} onChange={(event) => toggle("group_ids", group.id!, event.target.checked)} />{group.name}<span className="ml-auto font-mono text-[10px] text-muted-foreground">{group.user_ids.length}</span></label>)}
-            {!access.isPending && !access.data?.groups?.length && <p className="text-[11px] text-muted-foreground">Create groups under AI controls → Teams and sharing.</p>}
+            {!access.isPending && !access.data?.groups?.length && <p className="text-[11px] text-muted-foreground">Create groups under Workspace → Groups & sharing.</p>}
           </div></div>
           <div><p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">People</p><div className="max-h-36 space-y-1 overflow-y-auto">
             {members.data === null && <p className="text-[11px] text-muted-foreground">Selected people are available in Cloud workspaces with employee accounts.</p>}
