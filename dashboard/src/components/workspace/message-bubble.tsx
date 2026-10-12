@@ -5,6 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import { BookOpen, Check, Copy, Paperclip, Pencil, RotateCcw } from "lucide-react";
 
 import type { Message } from "./types";
+import { ArtifactPreview } from "./artifact-preview";
 
 // github-dark is the base. Light-mode overrides live in index.css
 // under `:root:not(.dark) .hljs-*` so code blocks match the page
@@ -162,7 +163,10 @@ export function MessageBubble({
           <AttachmentChipStrip attachments={attachments} />
         )}
         {isAssistant ? (
-          <MarkdownBody content={body} />
+          <>
+            <MarkdownBody content={body} />
+            {!m.error && <ArtifactPreview content={body} />}
+          </>
         ) : body.trim() ? (
           <pre className="whitespace-pre-wrap font-sans">{body}</pre>
         ) : null}

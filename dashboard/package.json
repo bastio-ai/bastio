@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:artifacts": "node --experimental-strip-types --test src/components/workspace/artifact-document.test.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "generate:api": "openapi-typescript ../cmd/server/openapi.yaml -o src/api/schema.ts"
