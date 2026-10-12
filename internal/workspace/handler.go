@@ -73,21 +73,21 @@ type KeyResolver interface {
 
 // Handler exposes all workspace HTTP routes.
 type Handler struct {
-	store         *Store
-	registry      *providers.Registry
-	keys          KeyResolver
-	blobs         BlobStore
-	river         *river.Client[pgx.Tx]
-	txtResolver   TXTResolver     // nil → defaultTXTResolver
-	embedder      EmbeddingClient // nil → keyword-only RAG
+	store       *Store
+	registry    *providers.Registry
+	keys        KeyResolver
+	blobs       BlobStore
+	river       *river.Client[pgx.Tx]
+	txtResolver TXTResolver     // nil → defaultTXTResolver
+	embedder    EmbeddingClient // nil → keyword-only RAG
 	// Security pipeline — same engine/profile/recorder the gateway uses.
 	// All optional: when nil the workspace falls back to its pre-pipeline
 	// behavior (direct provider call, no policy enforcement, no
 	// observability writes to ClickHouse). The OSS server wires all
 	// three at startup via the existing setters.
-	secEngine     *security.Engine
-	secProfiles   security.ProfileLookup
-	obsRecorder   *observability.Recorder
+	secEngine   *security.Engine
+	secProfiles security.ProfileLookup
+	obsRecorder *observability.Recorder
 	// billingGate, if set, is a middleware applied to the workspace
 	// router root. Cloud uses it to gate paid-tier surfaces behind an
 	// active subscription (the gate itself decides which methods or
@@ -192,6 +192,12 @@ func (h *Handler) Pool() *pgxpool.Pool {
 // Routes returns the chi router mounted at /v1/workspace.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			next.ServeHTTP(w, r)
+		})
+	})
 
 	// Optional billing gate. Cloud installs one; OSS leaves it nil.
 	// The gate decides itself which methods or paths to refuse — the
@@ -221,11 +227,17 @@ func (h *Handler) Routes() chi.Router {
 	r.With(RequireRole(RoleViewer)).Get("/status", h.status)
 
 	r.With(RequireRole(RoleViewer)).Get("/settings", h.getSettings)
+	r.With(RequireRole(RoleViewer)).Get("/spending", h.spendStatus)
 	r.With(RequireRole(RoleAdmin)).Patch("/settings", h.patchSettings)
+	r.With(RequireRole(RoleAdmin)).Get("/access", h.getAccess)
+	r.With(RequireRole(RoleAdmin)).Get("/evidence", h.exportEvidence)
+	r.With(RequireRole(RoleAdmin)).Put("/access/groups", h.putAccessGroup)
+	r.With(RequireRole(RoleAdmin)).Put("/access/resources", h.putResourceAccess)
 	// Per-user effective allowed-models — every member has their
 	// own effective list; viewers can see what they'd be allowed
 	// even though they can't send.
 	r.With(RequireRole(RoleViewer)).Get("/me/effective-models", h.getEffectiveModels)
+	r.With(RequireRole(RoleViewer)).Get("/me/provider-readiness", h.providerReadiness)
 
 	r.Route("/assistants", func(r chi.Router) {
 		r.With(RequireRole(RoleViewer)).Get("/", h.listAssistants)

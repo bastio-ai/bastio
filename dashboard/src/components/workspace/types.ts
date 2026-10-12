@@ -226,9 +226,10 @@ export const workspaceApi = {
     unwrap(http.POST("/v1/workspace/knowledge/{id}/release", { params: { path: { id } } })),
 
   // conversations
-  listConversations: (limit = 50) =>
+  getEffectiveModels: () => unwrap(http.GET("/v1/workspace/me/effective-models")),
+  listConversations: (limit = 50, q = "") =>
     unwrap(
-      http.GET("/v1/workspace/conversations", { params: { query: { limit } } }),
+      http.GET("/v1/workspace/conversations", { params: { query: { limit, q } } }),
     ),
   getConversation: (id: string) =>
     unwrap(
@@ -285,7 +286,7 @@ export const workspaceApi = {
     ),
   sendMessage: (
     id: string,
-    body: { content: string; provider?: string; model?: string },
+    body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
   ) =>
     unwrap(
       http.POST("/v1/workspace/conversations/{id}/messages", {
@@ -297,7 +298,7 @@ export const workspaceApi = {
   // event-stream. Use the existing fetch-based reader.
   streamSendMessage: (
     id: string,
-    body: { content: string; provider?: string; model?: string },
+    body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
     onToken: (delta: string) => void,
     signal?: AbortSignal,
   ): Promise<Message> => streamSSE(id, body, onToken, signal),
@@ -459,7 +460,7 @@ async function rawJSON<T>(
 
 async function streamSSE(
   conversationID: string,
-  body: { content: string; provider?: string; model?: string },
+  body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
   onToken: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<Message> {

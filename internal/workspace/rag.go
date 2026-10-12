@@ -189,6 +189,7 @@ func (s *Store) VectorSearchPG(ctx context.Context, customerID, assistantID uuid
   WHERE assistant_id = $4 AND customer_id = $1
 )`
 	}
+	scopeSQL += accessSQL(ctx, &args, "knowledge", "s.id")
 	q := fmt.Sprintf(`SELECT k.id, k.knowledge_source_id, s.name, k.ordinal, k.content,
 1 - (k.embedding_vec <=> $2::vector) AS similarity
 FROM workspace_knowledge_chunks k
@@ -230,6 +231,7 @@ func (s *Store) LoadChunksForAssistant(ctx context.Context, customerID, assistan
   WHERE assistant_id = $2 AND customer_id = $1
 )`
 	}
+	scopeSQL += accessSQL(ctx, &args, "knowledge", "s.id")
 	q := fmt.Sprintf(`SELECT k.id, k.knowledge_source_id, s.name, k.ordinal, k.content, k.embedding
 FROM workspace_knowledge_chunks k
 JOIN workspace_knowledge_sources s ON s.id = k.knowledge_source_id AND s.archived_at IS NULL
@@ -295,6 +297,7 @@ AND k.knowledge_source_id IN (
 		args = append(args, assistantID)
 	}
 
+	scopeSQL += accessSQL(ctx, &args, "knowledge", "s.id")
 	// Build (score, content) pair; score is the count of token matches.
 	// Order by score desc, then chunk ordinal for stable retrieval.
 	scoreParts := make([]string, 0, len(tokens))

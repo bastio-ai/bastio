@@ -18,6 +18,18 @@ func (h *Handler) listKnowledge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	visible := rows[:0]
+	for _, item := range rows {
+		ok, e := h.store.canAccess(r.Context(), customerIDFromCtx(r.Context()), item.ID, "knowledge")
+		if e != nil {
+			writeError(w, 500, "permissions unavailable")
+			return
+		}
+		if ok {
+			visible = append(visible, item)
+		}
+	}
+	rows = visible
 	writeJSON(w, http.StatusOK, map[string]any{"sources": rows})
 }
 
@@ -25,6 +37,11 @@ func (h *Handler) getKnowledge(w http.ResponseWriter, r *http.Request) {
 	id, err := uuidParam(r, "id")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	ok, e := h.store.canAccess(r.Context(), customerIDFromCtx(r.Context()), id, "knowledge")
+	if e != nil || !ok {
+		writeError(w, 404, "resource not found")
 		return
 	}
 	k, err := h.store.GetKnowledgeSource(r.Context(), customerIDFromCtx(r.Context()), id)

@@ -18,9 +18,9 @@ import (
 type brandedCtxKey int
 
 const (
-	brandedSlugKey      brandedCtxKey = iota + 1
-	brandedSessionIDKey               // uuid.UUID — owning session row
-	brandedSessionTokenKey            // string — raw cookie value (set on first request)
+	brandedSlugKey         brandedCtxKey = iota + 1
+	brandedSessionIDKey                  // uuid.UUID — owning session row
+	brandedSessionTokenKey               // string — raw cookie value (set on first request)
 )
 
 // brandedSessionCookie is the cookie name used for the anonymous chat
@@ -211,8 +211,9 @@ func decodeBranding(raw json.RawMessage) brandedBranding {
 // =============================================================================
 
 type brandedSendRequest struct {
-	ConversationID *uuid.UUID `json:"conversation_id,omitempty"`
-	Content        string     `json:"content"`
+	ConversationID *uuid.UUID       `json:"conversation_id,omitempty"`
+	Content        string           `json:"content"`
+	History        []HistoryMessage `json:"history,omitempty"`
 }
 
 // brandedSend creates or reuses a conversation owned by the visitor's
@@ -229,7 +230,7 @@ func (h *Handler) brandedSend(w http.ResponseWriter, r *http.Request) {
 	rctx.URLParams.Add("id", convID.String())
 
 	// Re-encode body the existing handler expects.
-	r = withReplacedBody(r, SendMessageRequest{Content: body})
+	r = withReplacedBody(r, body)
 	h.sendMessage(w, r)
 }
 
@@ -242,7 +243,7 @@ func (h *Handler) brandedStream(w http.ResponseWriter, r *http.Request) {
 	rctx := chi.RouteContext(r.Context())
 	rctx.URLParams.Add("id", convID.String())
 
-	r = withReplacedBody(r, SendMessageRequest{Content: body})
+	r = withReplacedBody(r, body)
 	h.streamSendMessage(w, r)
 }
 
@@ -250,22 +251,22 @@ func (h *Handler) brandedStream(w http.ResponseWriter, r *http.Request) {
 // conversation row exists for this visitor session. Returns the
 // conversation id + the user-supplied content, or false on error
 // (response already written).
-func (h *Handler) brandedPrepareConversation(w http.ResponseWriter, r *http.Request) (uuid.UUID, string, bool) {
+func (h *Handler) brandedPrepareConversation(w http.ResponseWriter, r *http.Request) (uuid.UUID, SendMessageRequest, bool) {
 	cid, _ := r.Context().Value(CustomerIDKey).(uuid.UUID)
 	sessID, ok := brandedSessionFromCtx(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "no session")
-		return uuid.Nil, "", false
+		return uuid.Nil, SendMessageRequest{}, false
 	}
 
 	var body brandedSendRequest
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
-		return uuid.Nil, "", false
+		return uuid.Nil, SendMessageRequest{}, false
 	}
 	if strings.TrimSpace(body.Content) == "" {
 		writeError(w, http.StatusBadRequest, "content is required")
-		return uuid.Nil, "", false
+		return uuid.Nil, SendMessageRequest{}, false
 	}
 
 	// Bind the conversation to the visitor's user_id (synthesized from
@@ -277,13 +278,13 @@ func (h *Handler) brandedPrepareConversation(w http.ResponseWriter, r *http.Requ
 		conv, err := h.store.GetConversation(r.Context(), cid, *body.ConversationID)
 		if err != nil {
 			writeError(w, http.StatusNotFound, "conversation not found")
-			return uuid.Nil, "", false
+			return uuid.Nil, SendMessageRequest{}, false
 		}
 		if conv.UserID != userID {
 			writeError(w, http.StatusForbidden, "not your conversation")
-			return uuid.Nil, "", false
+			return uuid.Nil, SendMessageRequest{}, false
 		}
-		return *body.ConversationID, body.Content, true
+		return *body.ConversationID, SendMessageRequest{Content: body.Content, History: body.History}, true
 	}
 
 	// First message in a brand-new conversation.
@@ -300,9 +301,9 @@ func (h *Handler) brandedPrepareConversation(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
-		return uuid.Nil, "", false
+		return uuid.Nil, SendMessageRequest{}, false
 	}
-	return c.ID, body.Content, true
+	return c.ID, SendMessageRequest{Content: body.Content, History: body.History}, true
 }
 
 // brandedSetLabel lets the visitor set a display name (optional). UI
@@ -480,6 +481,7 @@ func renderBrandedHTML(b brandedBranding, apiBase string) string {
       .join('\n');
   }
 
+  var browserHistory = [];
   async function streamSend(content) {
     if (welcome) { welcome.remove(); welcome = null; }
     bubble("user", content);
@@ -493,7 +495,7 @@ func renderBrandedHTML(b brandedBranding, apiBase string) string {
       resp = await fetch(apiBase + "/messages/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-        body: JSON.stringify({ conversation_id: conversationID, content: content }),
+        body: JSON.stringify({ conversation_id: conversationID, content: content, history: browserHistory }),
       });
     } catch (e) {
       assistant.classList.add("error"); assistant.textContent = "Network error: " + e.message;
@@ -530,6 +532,7 @@ func renderBrandedHTML(b brandedBranding, apiBase string) string {
           assistant.appendChild(cursor);
         } else if (ev === "done" && data.message) {
           conversationID = data.message.conversation_id;
+          browserHistory.push({role:"user",content:content},{role:"assistant",content:data.message.content});
           if (cursor.parentNode) cursor.remove();
           if (data.message.error) {
             assistant.classList.add("error");

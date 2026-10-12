@@ -26,10 +26,7 @@ export function OnboardingCard({
           Welcome to your AI workspace.
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
-          Multi-model chat with your company's knowledge inline. Zero
-          retention by default. Audited and policy-enforced, with the same speed
-          as the public chatbots, but the data stays inside your
-          tenant's perimeter.
+          Use approved models, work with your company's permitted documents, and get help with everyday tasks. Your workspace's storage policy is shown in each conversation.
         </p>
       </div>
 
@@ -53,7 +50,7 @@ export function OnboardingCard({
       </div>
 
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-        EU-resident · zero retention default · audit log on by default
+        Approved models · workspace policies · source citations
       </p>
     </div>
   );

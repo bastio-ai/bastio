@@ -68,6 +68,10 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest, apiKey string
 	}
 	if body == nil {
 		openaiReq := toOpenAIRequest(req)
+		if c.Name() == ProviderOpenAI && req.MaxTokens != nil {
+			openaiReq.MaxTokens = nil
+			openaiReq.MaxCompletionTokens = req.MaxTokens
+		}
 		openaiReq.Stream = false
 		var err error
 		body, err = json.Marshal(openaiReq)
@@ -151,6 +155,10 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey 
 	}
 	if body == nil {
 		openaiReq := toOpenAIRequest(req)
+		if c.Name() == ProviderOpenAI && req.MaxTokens != nil {
+			openaiReq.MaxTokens = nil
+			openaiReq.MaxCompletionTokens = req.MaxTokens
+		}
 		openaiReq.Stream = true
 		openaiReq.StreamOptions = &openAIStreamOptions{IncludeUsage: true}
 		var err error
@@ -186,13 +194,14 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey 
 // OpenAI-specific types
 
 type openAIChatRequest struct {
-	Model         string               `json:"model"`
-	Messages      []openAIMessage      `json:"messages"`
-	MaxTokens     *int                 `json:"max_tokens,omitempty"`
-	Temperature   *float64             `json:"temperature,omitempty"`
-	TopP          *float64             `json:"top_p,omitempty"`
-	Stream        bool                 `json:"stream"`
-	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
+	Model               string               `json:"model"`
+	Messages            []openAIMessage      `json:"messages"`
+	MaxCompletionTokens *int                 `json:"max_completion_tokens,omitempty"`
+	MaxTokens           *int                 `json:"max_tokens,omitempty"`
+	Temperature         *float64             `json:"temperature,omitempty"`
+	TopP                *float64             `json:"top_p,omitempty"`
+	Stream              bool                 `json:"stream"`
+	StreamOptions       *openAIStreamOptions `json:"stream_options,omitempty"`
 }
 
 // openAIMessage carries either a plain-string content (when no
