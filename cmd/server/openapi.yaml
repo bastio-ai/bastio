@@ -2177,6 +2177,7 @@ paths:
                   format: binary
                 name:
                   type: string
+                sharing: { type: string, description: JSON-encoded WorkspaceResourceSharing applied atomically with source creation }
       responses:
         "201":
           description: Created (ingestion in progress)
@@ -2994,6 +2995,7 @@ components:
       type: object
       required: [id, name, endpoint, scope, owner_user_id, allowed_tools, has_credential, created_at]
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }
         name: { type: string }
         endpoint: { type: string, format: uri }
@@ -3006,6 +3008,7 @@ components:
       type: object
       required: [name, endpoint, scope]
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         name: { type: string, minLength: 1, maxLength: 100 }
         endpoint: { type: string, format: uri, maxLength: 2048 }
         scope: { type: string, enum: [personal, workspace] }
@@ -5663,6 +5666,7 @@ components:
       type: object
       required: [id, customer_id, name, default_provider, default_model, language, suggested_prompts, is_default, created_at, updated_at]
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }
         customer_id: { type: string, format: uuid }
         name: { type: string }
@@ -5684,6 +5688,7 @@ components:
     WorkspaceAssistantPatch:
       type: object
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         name: { type: string }
         description: { type: string }
         system_prompt: { type: string }
@@ -5712,6 +5717,7 @@ components:
       type: object
       required: [id, customer_id, name, type, source_ref, size_bytes, status, metadata, created_at, updated_at]
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }
         customer_id: { type: string, format: uuid }
         name: { type: string }
@@ -5883,13 +5889,26 @@ components:
         id: { type: string, format: uuid }
         name: { type: string, maxLength: 80 }
         user_ids: { type: array, items: { type: string } }
+    WorkspaceResourceSharing:
+      type: object
+      required: [restricted, group_ids, user_ids]
+      description: Restricted access permits members of any selected group or individually selected people. Empty restricted recipients permit only owners/admins. Omission preserves existing sharing on updates; new resources default to everyone.
+      properties:
+        restricted: { type: boolean }
+        group_ids: { type: array, maxItems: 100, items: { type: string, format: uuid } }
+        user_ids: { type: array, maxItems: 1000, items: { type: string } }
+
     WorkspaceResourceAccess:
       type: object
       required: [type, id, group_ids]
       properties:
-        type: { type: string, enum: [knowledge, assistant] }
+        type: { type: string, enum: [knowledge, assistant, mcp] }
         id: { type: string, format: uuid }
         group_ids: { type: array, items: { type: string, format: uuid } }
+        user_ids: { type: array, maxItems: 1000, items: { type: string } }
+        restricted:
+          type: boolean
+          description: Explicit restriction; true with no recipients remains admin-only. Omission preserves legacy inference from recipient arrays.
     WorkspaceAccess:
       type: object
       properties:

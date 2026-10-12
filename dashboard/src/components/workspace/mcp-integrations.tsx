@@ -1,3 +1,4 @@
+import { ResourceSharingButton, SharingPicker, sharingLabel, everyoneSharing, type ResourceSharing } from "./sharing-controls";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plug, ShieldCheck, Loader2, Pencil, Trash2 } from "lucide-react";
@@ -178,7 +179,7 @@ export function MCPIntegrations({
                   {c.name}{" "}
                   <span className="ml-1 text-[10px] font-normal text-muted-foreground">
                     {c.scope === "workspace"
-                      ? "Shared with workspace"
+                      ? (c.sharing ? sharingLabel(c.sharing) : "Shared with you")
                       : "Personal · only you"}
                   </span>
                 </p>
@@ -197,6 +198,7 @@ export function MCPIntegrations({
               >
                 Tools
               </Button>
+              {data.can_manage && c.scope === "workspace" && <ResourceSharingButton type="mcp" id={c.id} name={c.name} sharing={c.sharing} />}
               {canEdit && (
                 <>
                   <Button
@@ -269,6 +271,7 @@ function ConnectionForm({
   const [scope, setScope] = useState<"personal" | "workspace">(
     connection?.scope ?? (allowPersonal ? "personal" : "workspace"),
   );
+  const [sharing, setSharing] = useState<ResourceSharing>(connection?.sharing ?? everyoneSharing());
   const [token, setToken] = useState("");
   const [clearToken, setClearToken] = useState(false);
   const [allowed, setAllowed] = useState(
@@ -280,6 +283,7 @@ function ConnectionForm({
         name,
         endpoint,
         scope,
+        ...(scope === "workspace" ? { sharing } : {}),
         allowed_tools: allowed
           .split(",")
           .map((s) => s.trim())
@@ -343,14 +347,15 @@ function ConnectionForm({
           )}
           {canShare && (
             <option value="workspace">
-              Shared — everyone in this workspace
+              Shared — choose workspace recipients
             </option>
           )}
         </select>
       </label>
+      {scope === "workspace" && <SharingPicker value={sharing} onChange={setSharing} disabled={save.isPending} />}
       {scope === "workspace" && (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Members can run the allowed tools using this connection’s credential.
+          Selected members can run the allowed tools using this connection’s credential.
           The credential stays encrypted on the server and is never shown to
           members.
         </p>

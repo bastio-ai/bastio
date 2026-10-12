@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { http, unwrap } from "@/api/typed";
+import { ResourceSharingButton, sharingLabel, sharingMembers } from "./sharing-controls";
 import { workspaceApi } from "./types";
 
 type Group = { id: string; name: string; user_ids: string[] };
 type Access = {
   groups: Group[];
-  resources: { type: string; id: string; group_ids: string[] }[];
+  resources: { type: string; id: string; group_ids: string[]; user_ids?: string[]; restricted?: boolean }[];
 };
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(`/v1/workspace/access${path}`, {
@@ -31,7 +33,7 @@ export function AccessControls() {
   });
   const members = useQuery({
     queryKey: ["workspace", "members"],
-    queryFn: workspaceApi.listMembers,
+    queryFn: sharingMembers,
   });
   const sources = useQuery({
     queryKey: ["workspace", "knowledge"],
@@ -51,11 +53,7 @@ export function AccessControls() {
       qc.invalidateQueries({ queryKey: ["workspace", "access"] });
     },
   });
-  const permissions = useMutation({
-    mutationFn: (b: { type: string; id: string; group_ids: string[] }) =>
-      request("/resources", b),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }),
-  });
+  const integrations = useQuery({ queryKey: ["workspace-mcp-integrations"], queryFn: () => unwrap(http.GET("/v1/workspace/mcp")), gcTime: 0 });
   const provisioning = useQuery({
     queryKey: ["workspace", "provisioning"],
     queryFn: async () => {
@@ -84,11 +82,12 @@ export function AccessControls() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace"] }),
   });
   const resources = [
-    ...(sources.data?.sources ?? []).map((s) => ({ ...s, type: "knowledge" })),
+    ...(sources.data?.sources ?? []).map((s) => ({ ...s, type: "knowledge" as const })),
     ...(assistants.data?.assistants ?? []).map((s) => ({
       ...s,
-      type: "assistant",
+      type: "assistant" as const,
     })),
+    ...(integrations.data?.connections ?? []).filter((item) => item.scope === "workspace").map((item) => ({ ...item, type: "mcp" as const })),
   ];
   return (
     <section className="mt-5 rounded-xl border border-border bg-card p-4">
@@ -105,7 +104,7 @@ export function AccessControls() {
           </label>
           <p className="mt-2 text-xs text-muted-foreground">
             Links verified Bastio identities to active directory users within
-            the seat limit. SCIM groups control knowledge access. Deactivation
+            the seat limit. SCIM groups can receive access to knowledge, assistants and integrations. Deactivation
             removes managed employee memberships; owners and admins remain under
             manual control. Disabling sync retains existing memberships.
           </p>
@@ -122,11 +121,10 @@ export function AccessControls() {
         </div>
       )}
       <h2 className="text-[13px] font-bold tracking-tight">
-        Teams and knowledge access
+        Teams and sharing
       </h2>
       <p className="mt-2 text-xs text-muted-foreground">
-        Assign documents and assistants to groups. Unassigned resources are
-        shared with the workspace. Owners and admins can manage all resources.
+        Share knowledge, assistants and integrations with groups, selected people, or everyone. Restricted resources with no recipients remain available only to owners and admins.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         {access.data?.groups.map((g) => (
@@ -190,48 +188,17 @@ export function AccessControls() {
           Cancel
         </Button>
       )}
-      {(save.error || permissions.error || access.error) && (
+      {(save.error || access.error || members.error) && (
         <p role="alert" className="mt-2 text-xs text-destructive">
-          {(save.error ?? permissions.error ?? access.error)?.message}
+          {(save.error ?? access.error ?? members.error)?.message}
         </p>
       )}
       <div className="mt-4 divide-y divide-border">
         {resources.map((resource) => {
-          const ids =
-            access.data?.resources.find(
-              (r) => r.id === resource.id && r.type === resource.type,
-            )?.group_ids ?? [];
-          return (
-            <div key={resource.id} className="py-3">
-              <p className="text-xs font-medium">
-                {resource.name}{" "}
-                <span className="text-muted-foreground">
-                  · {resource.type} · {ids.length ? "Restricted" : "Everyone"}
-                </span>
-              </p>
-              <div className="mt-2 flex flex-wrap gap-3">
-                {access.data?.groups.map((g) => (
-                  <label key={g.id} className="flex items-center gap-1 text-xs">
-                    <input
-                      disabled={permissions.isPending}
-                      type="checkbox"
-                      checked={ids.includes(g.id)}
-                      onChange={(e) =>
-                        permissions.mutate({
-                          type: resource.type,
-                          id: resource.id,
-                          group_ids: e.target.checked
-                            ? [...ids, g.id]
-                            : ids.filter((id) => id !== g.id),
-                        })
-                      }
-                    />
-                    {g.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-          );
+          const policy = access.data?.resources.find((item) => item.id === resource.id && item.type === resource.type);
+          const sharing = resource.sharing ?? { restricted: policy?.restricted ?? Boolean(policy?.group_ids.length), group_ids: policy?.group_ids ?? [], user_ids: policy?.user_ids ?? [] };
+          return <div key={`${resource.type}:${resource.id}`} className="flex items-center justify-between gap-3 py-3"><div><p className="text-xs font-medium">{resource.name} <span className="text-muted-foreground">· {resource.type}</span></p><p className="mt-1 text-[11px] text-muted-foreground">{sharingLabel(sharing)}</p></div><ResourceSharingButton type={resource.type} id={resource.id} name={resource.name} sharing={sharing} /></div>;
+
         })}
       </div>
     </section>

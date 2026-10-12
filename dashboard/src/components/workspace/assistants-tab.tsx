@@ -1,3 +1,4 @@
+import { ResourceSharingButton, SharingPicker, sharingLabel, everyoneSharing, type ResourceSharing } from "./sharing-controls";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Bot, BookOpen, CheckCircle2, Plus, ShieldCheck } from "lucide-react";
@@ -78,14 +79,14 @@ export function AssistantsTab() {
           />
         ) : (
           <>
-            <div className="hidden grid-cols-[minmax(220px,1.4fr)_minmax(180px,0.8fr)_140px_100px] gap-4 border-b border-border/60 px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[minmax(220px,1.4fr)_minmax(180px,0.8fr)_140px_170px] gap-4 border-b border-border/60 px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
               <span>Assistant</span><span>Model</span><span>Knowledge</span><span className="text-right">Actions</span>
             </div>
             <div className="divide-y divide-border/50">
               {assistants.map((assistant) => (
                 <div
                   key={assistant.id}
-                  className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-muted/20 md:grid-cols-[minmax(220px,1.4fr)_minmax(180px,0.8fr)_140px_100px] md:items-center md:gap-4"
+                  className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-muted/20 md:grid-cols-[minmax(220px,1.4fr)_minmax(180px,0.8fr)_140px_170px] md:items-center md:gap-4"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -93,7 +94,7 @@ export function AssistantsTab() {
                       {assistant.is_default ? <Badge variant="success">Default</Badge> : null}
                     </div>
                     <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">
-                      {assistant.description || "No description provided"}
+                      {assistant.description || "No description provided"} · {sharingLabel(assistant.sharing)}
                     </p>
                   </div>
                   <div className="min-w-0">
@@ -105,6 +106,7 @@ export function AssistantsTab() {
                     {assistant.knowledge_source_ids?.length ?? 0} sources
                   </div>
                   <div className="flex justify-start gap-1 md:justify-end">
+                    <ResourceSharingButton type="assistant" id={assistant.id} name={assistant.name} sharing={assistant.sharing} />
                     <Button size="xs" variant="ghost" onClick={() => setEditing(assistant)}>Edit</Button>
                     <Button size="icon-xs" variant="ghost" aria-label={`Archive ${assistant.name}`} onClick={() => setArchiveTarget(assistant)}>
                       <Archive />
@@ -182,6 +184,7 @@ function AssistantEditor({
   const [isDefault, setIsDefault] = useState(initial?.is_default ?? false);
   const [language, setLanguage] = useState(initial?.language ?? "");
   const [suggestedPrompts, setSuggestedPrompts] = useState((initial?.suggested_prompts ?? []).join("\n"));
+  const [sharing, setSharing] = useState<ResourceSharing>(initial?.sharing ?? everyoneSharing());
   const [selectedKB, setSelectedKB] = useState<string[]>(initial?.knowledge_source_ids ?? []);
   const knowledge = useQuery({
     queryKey: ["workspace", "knowledge"],
@@ -204,6 +207,7 @@ function AssistantEditor({
         language: language.trim() || null,
         suggested_prompts: suggestedPrompts.split("\n").map((item) => item.trim()).filter(Boolean),
         knowledge_source_ids: selectedKB,
+        sharing,
       };
       return initial
         ? workspaceApi.updateAssistant(initial.id, body)
@@ -336,6 +340,8 @@ function AssistantEditor({
           </div>
         </div>
 
+        <SharingPicker value={sharing} onChange={setSharing} disabled={save.isPending} />
+        <p className="text-xs text-muted-foreground">Attached knowledge keeps its own sharing rules. Employees need access to both the assistant and a source before that source can be retrieved.</p>
         <SecurityNotice title="System prompts may contain sensitive operating instructions" tone="warning">
           Avoid secrets and credentials. Selected knowledge excerpts are added only when relevant, but the assistant prompt is applied to every message.
         </SecurityNotice>

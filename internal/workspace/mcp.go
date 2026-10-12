@@ -19,22 +19,24 @@ import (
 )
 
 type MCPConnection struct {
-	ID            uuid.UUID `json:"id"`
-	Name          string    `json:"name"`
-	Endpoint      string    `json:"endpoint"`
-	Scope         string    `json:"scope"`
-	OwnerUserID   string    `json:"owner_user_id"`
-	AllowedTools  []string  `json:"allowed_tools"`
-	HasCredential bool      `json:"has_credential"`
-	CreatedAt     time.Time `json:"created_at"`
+	Sharing       *ResourceSharing `json:"sharing,omitempty"`
+	ID            uuid.UUID        `json:"id"`
+	Name          string           `json:"name"`
+	Endpoint      string           `json:"endpoint"`
+	Scope         string           `json:"scope"`
+	OwnerUserID   string           `json:"owner_user_id"`
+	AllowedTools  []string         `json:"allowed_tools"`
+	HasCredential bool             `json:"has_credential"`
+	CreatedAt     time.Time        `json:"created_at"`
 	credential    []byte
 }
 type mcpConnectionInput struct {
-	Name         string   `json:"name"`
-	Endpoint     string   `json:"endpoint"`
-	Scope        string   `json:"scope"`
-	AllowedTools []string `json:"allowed_tools"`
-	Credential   *string  `json:"credential,omitempty"`
+	Sharing      *ResourceSharing `json:"sharing,omitempty"`
+	Name         string           `json:"name"`
+	Endpoint     string           `json:"endpoint"`
+	Scope        string           `json:"scope"`
+	AllowedTools []string         `json:"allowed_tools"`
+	Credential   *string          `json:"credential,omitempty"`
 }
 type mcpPolicyResponse struct {
 	Connections   []MCPConnection `json:"connections"`
@@ -55,8 +57,10 @@ func (h *Handler) listMCPConnections(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "integration policy unavailable")
 		return
 	}
+	args := []any{cid, uid}
+	filter := accessSQL(r.Context(), &args, "mcp", "c.id")
 	rows, err := h.store.pool.Query(r.Context(), `SELECT id,name,endpoint,scope,owner_user_id,allowed_tools,encrypted_credential IS NOT NULL,created_at
-FROM workspace_mcp_connections WHERE customer_id=$1 AND revoked_at IS NULL AND (scope='workspace' OR owner_user_id=$2) ORDER BY scope,name`, cid, uid)
+FROM workspace_mcp_connections c WHERE customer_id=$1 AND revoked_at IS NULL AND ((scope='workspace'`+filter+`) OR (scope='personal' AND owner_user_id=$2)) ORDER BY scope,name`, args...)
 	if err != nil {
 		writeError(w, 500, "integrations unavailable")
 		return
@@ -74,6 +78,18 @@ FROM workspace_mcp_connections WHERE customer_id=$1 AND revoked_at IS NULL AND (
 	if rows.Err() != nil {
 		writeError(w, 500, "integrations unavailable")
 		return
+	}
+	rows.Close()
+	if RoleFromCtx(r.Context()).AtLeast(RoleAdmin) {
+		for i := range items {
+			if items[i].Scope == "workspace" {
+				items[i].Sharing, err = h.store.resourceSharing(r.Context(), cid, items[i].ID, "mcp")
+				if err != nil {
+					writeError(w, 500, "permissions unavailable")
+					return
+				}
+			}
+		}
 	}
 	writeJSON(w, 200, mcpPolicyResponse{items, allowed, RoleFromCtx(r.Context()).AtLeast(RoleAdmin)})
 }
@@ -100,8 +116,13 @@ ON CONFLICT(customer_id) DO UPDATE SET allow_personal=excluded.allow_personal WH
 }
 func (h *Handler) loadMCPConnection(ctx context.Context, cid, id uuid.UUID, uid string) (MCPConnection, error) {
 	var c MCPConnection
+	args := []any{cid, id, uid}
+	filter := accessSQL(ctx, &args, "mcp", "c.id")
 	err := h.store.pool.QueryRow(ctx, `SELECT id,name,endpoint,scope,owner_user_id,allowed_tools,encrypted_credential,encrypted_credential IS NOT NULL,created_at
-FROM workspace_mcp_connections WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND (scope='workspace' OR owner_user_id=$3)`, cid, id, uid).Scan(&c.ID, &c.Name, &c.Endpoint, &c.Scope, &c.OwnerUserID, &c.AllowedTools, &c.credential, &c.HasCredential, &c.CreatedAt)
+FROM workspace_mcp_connections c WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND ((scope='workspace'`+filter+`) OR (scope='personal' AND owner_user_id=$3))`, args...).Scan(&c.ID, &c.Name, &c.Endpoint, &c.Scope, &c.OwnerUserID, &c.AllowedTools, &c.credential, &c.HasCredential, &c.CreatedAt)
+	if err == nil && c.Scope == "workspace" && RoleFromCtx(ctx).AtLeast(RoleAdmin) {
+		c.Sharing, err = h.store.resourceSharing(ctx, cid, id, "mcp")
+	}
 	return c, err
 }
 func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +153,16 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "personal integrations are disabled by your workspace")
 		return
 	}
+	if b.Scope == "personal" && b.Sharing != nil {
+		writeError(w, 400, "personal connections cannot have shared recipients")
+		return
+	}
+	tx, err := h.store.pool.Begin(r.Context())
+	if err != nil {
+		writeError(w, 500, "integration save failed")
+		return
+	}
+	defer tx.Rollback(r.Context())
 	id := uuid.New()
 	var cipher []byte
 	if r.Method == http.MethodPut {
@@ -140,8 +171,13 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "invalid integration ID")
 			return
 		}
-		previous, e := h.loadMCPConnection(r.Context(), cid, id, uid)
-		if e != nil {
+		var locked uuid.UUID
+		if e := tx.QueryRow(r.Context(), `SELECT id FROM workspace_mcp_connections WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND (scope='workspace' OR owner_user_id=$3) FOR UPDATE`, cid, id, uid).Scan(&locked); e != nil {
+			writeError(w, 404, "integration not found")
+			return
+		}
+		var previous MCPConnection
+		if e := tx.QueryRow(r.Context(), `SELECT scope,endpoint,encrypted_credential FROM workspace_mcp_connections WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL`, cid, id).Scan(&previous.Scope, &previous.Endpoint, &previous.credential); e != nil {
 			writeError(w, 404, "integration not found")
 			return
 		}
@@ -179,14 +215,31 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 		b.AllowedTools = []string{}
 	}
 	if r.Method == http.MethodPost {
-		_, err = h.store.pool.Exec(r.Context(), `INSERT INTO workspace_mcp_connections(id,customer_id,owner_user_id,name,endpoint,scope,allowed_tools,encrypted_credential) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, cid, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher)
+		_, err = tx.Exec(r.Context(), `INSERT INTO workspace_mcp_connections(id,customer_id,owner_user_id,name,endpoint,scope,allowed_tools,encrypted_credential) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, cid, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher)
 	} else {
-		_, err = h.store.pool.Exec(r.Context(), `UPDATE workspace_mcp_connections SET name=$4,endpoint=$5,scope=$6,allowed_tools=$7,encrypted_credential=$8,owner_user_id=$3,updated_at=now() WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND (scope='workspace' OR owner_user_id=$3)`, cid, id, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher)
+		_, err = tx.Exec(r.Context(), `UPDATE workspace_mcp_connections SET name=$4,endpoint=$5,scope=$6,allowed_tools=$7,encrypted_credential=$8,owner_user_id=$3,updated_at=now() WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND (scope='workspace' OR owner_user_id=$3)`, cid, id, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher)
 	}
 	if err != nil {
 		writeError(w, 500, "integration save failed")
 		return
 	}
+	if b.Scope == "workspace" && b.Sharing != nil {
+		err = setResourceSharing(r.Context(), tx, cid, id, "mcp", *b.Sharing)
+	}
+	if b.Scope == "personal" {
+		err = setResourceSharing(r.Context(), tx, cid, id, "mcp", ResourceSharing{})
+	}
+	if err != nil {
+		if !sharingError(w, err) {
+			writeError(w, 500, "integration save failed")
+		}
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		writeError(w, 500, "integration save failed")
+		return
+	}
+
 	h.audit(r, "mcp.connection_saved", AuditTarget{Type: "mcp_connection", ID: id.String()}, nil)
 	c, err := h.loadMCPConnection(r.Context(), cid, id, uid)
 	if err != nil {

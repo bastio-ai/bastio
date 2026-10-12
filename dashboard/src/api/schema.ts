@@ -1930,6 +1930,7 @@ export interface components {
             can_manage: boolean;
         };
         WorkspaceMCPConnection: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             /** Format: uuid */
             id: string;
             name: string;
@@ -1944,6 +1945,7 @@ export interface components {
             created_at: string;
         };
         WorkspaceMCPInput: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             name: string;
             /** Format: uri */
             endpoint: string;
@@ -3284,6 +3286,7 @@ export interface components {
             allowed_models?: components["schemas"]["WorkspaceAllowedModel"][] | null;
         };
         WorkspaceAssistant: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -3307,6 +3310,7 @@ export interface components {
             updated_at: string;
         };
         WorkspaceAssistantPatch: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             name?: string;
             description?: string;
             system_prompt?: string;
@@ -3329,6 +3333,7 @@ export interface components {
             knowledge_source_ids?: string[];
         };
         WorkspaceKnowledgeSource: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -3501,12 +3506,21 @@ export interface components {
             name: string;
             user_ids: string[];
         };
+        /** @description Restricted access permits members of any selected group or individually selected people. Empty restricted recipients permit only owners/admins. Omission preserves existing sharing on updates; new resources default to everyone. */
+        WorkspaceResourceSharing: {
+            restricted: boolean;
+            group_ids: string[];
+            user_ids: string[];
+        };
         WorkspaceResourceAccess: {
             /** @enum {string} */
-            type: "knowledge" | "assistant";
+            type: "knowledge" | "assistant" | "mcp";
             /** Format: uuid */
             id: string;
             group_ids: string[];
+            user_ids?: string[];
+            /** @description Explicit restriction; true with no recipients remains admin-only. Omission preserves legacy inference from recipient arrays. */
+            restricted?: boolean;
         };
         WorkspaceAccess: {
             groups?: components["schemas"]["WorkspaceAccessGroup"][];
@@ -6349,6 +6363,8 @@ export interface operations {
                     /** Format: binary */
                     file: string;
                     name?: string;
+                    /** @description JSON-encoded WorkspaceResourceSharing applied atomically with source creation */
+                    sharing?: string;
                 };
             };
         };

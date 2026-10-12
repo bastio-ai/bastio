@@ -111,6 +111,13 @@ func (h *Handler) createConversation(w http.ResponseWriter, r *http.Request) {
 		AssistantID: body.AssistantID,
 		Title:       body.Title,
 	}
+	if c.AssistantID != nil {
+		ok, err := h.store.canAccess(r.Context(), c.CustomerID, *c.AssistantID, "assistant")
+		if err != nil || !ok {
+			writeError(w, 404, "assistant unavailable to your account")
+			return
+		}
+	}
 	if _, err := h.store.EnsureSettings(r.Context(), c.CustomerID); err != nil {
 		writeError(w, 500, "workspace settings unavailable")
 		return

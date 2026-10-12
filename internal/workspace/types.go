@@ -66,13 +66,14 @@ type AllowedModel struct {
 
 // Assistant is a named system-prompt preset with an optional KB attach.
 type Assistant struct {
-	ID              uuid.UUID `json:"id"`
-	CustomerID      uuid.UUID `json:"customer_id"`
-	Name            string    `json:"name"`
-	Description     string    `json:"description"`
-	SystemPrompt    string    `json:"system_prompt"`
-	DefaultProvider string    `json:"default_provider"`
-	DefaultModel    string    `json:"default_model"`
+	Sharing         *ResourceSharing `json:"sharing,omitempty"`
+	ID              uuid.UUID        `json:"id"`
+	CustomerID      uuid.UUID        `json:"customer_id"`
+	Name            string           `json:"name"`
+	Description     string           `json:"description"`
+	SystemPrompt    string           `json:"system_prompt"`
+	DefaultProvider string           `json:"default_provider"`
+	DefaultModel    string           `json:"default_model"`
 	// Language: nil = auto-detect from user input, non-nil = always
 	// respond in this ISO code. The instruction is injected into the
 	// system prompt at message time (resolveAssistantConfig).
@@ -87,14 +88,15 @@ type Assistant struct {
 // KnowledgeSource is one document/URL/text snippet attached to one or more
 // assistants. Chunks are stored in workspace_knowledge_chunks.
 type KnowledgeSource struct {
-	ID         uuid.UUID `json:"id"`
-	CustomerID uuid.UUID `json:"customer_id"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"` // file | url | text
-	SourceRef  string    `json:"source_ref"`
-	InlineText *string   `json:"inline_text,omitempty"`
-	MimeType   *string   `json:"mime_type,omitempty"`
-	SizeBytes  int64     `json:"size_bytes"`
+	Sharing    *ResourceSharing `json:"sharing,omitempty"`
+	ID         uuid.UUID        `json:"id"`
+	CustomerID uuid.UUID        `json:"customer_id"`
+	Name       string           `json:"name"`
+	Type       string           `json:"type"` // file | url | text
+	SourceRef  string           `json:"source_ref"`
+	InlineText *string          `json:"inline_text,omitempty"`
+	MimeType   *string          `json:"mime_type,omitempty"`
+	SizeBytes  int64            `json:"size_bytes"`
 	// CharacterCount is the extracted text length post-ingest. 0 until
 	// the worker flips status to 'ready'. Useful for "this PDF
 	// produced N characters of indexed text" — reveals empty/scanned
