@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildArtifactDocument, extractHtmlArtifact } from "./artifact-document.ts";
+import { buildArtifactDocument, buildReactArtifactDocument, extractHtmlArtifact } from "./artifact-document.ts";
+import { extractReactArtifact, resolveArtifactImport } from "./react-artifact.ts";
 
 test("combines a generated HTML page with CSS and JavaScript", () => {
   const artifact = extractHtmlArtifact([
@@ -38,4 +39,37 @@ test("a model-controlled head cannot run before the preview policy", () => {
   assert.ok(document.indexOf("Content-Security-Policy") < document.indexOf("window.bad"));
   assert.match(document, /default-src 'none'/);
   assert.match(document, /form-action 'none'/);
+});
+
+test("selects a React entry and resolves local component imports", () => {
+  const artifact = extractReactArtifact([
+    "```tsx src/Counter.tsx",
+    "export default function Counter() { return <button>Count</button>; }",
+    "```",
+    "```tsx src/App.tsx",
+    "import Counter from './Counter'; export default function App() { return <Counter />; }",
+    "```",
+    "```css src/app.css",
+    "button { color: blue; }",
+    "```",
+  ].join("\n"));
+  assert.ok(artifact);
+  assert.equal(artifact.entry, "src/App.tsx");
+  assert.equal(resolveArtifactImport(artifact.entry, "./Counter", artifact.files), "src/Counter.tsx");
+  assert.equal(resolveArtifactImport(artifact.entry, "./app.css", artifact.files), "css:src/app.css");
+  assert.match(artifact.css, /color: blue/);
+  assert.equal(resolveArtifactImport(artifact.entry, "../../secret", artifact.files), null);
+});
+
+test("React preview embeds local runtime and puts CSP ahead of generated code", () => {
+  const document = buildReactArtifactDocument({
+    entry: "App.tsx",
+    modules: { "App.tsx": "module.exports.default = function App(){ return null; };" },
+    imports: {}, css: "body{color:blue}", autoMount: true,
+  }, "globalThis.__BASTIO_ARTIFACT_MODULES__={};", "/* utilities */");
+  assert.ok(document.indexOf("Content-Security-Policy") < document.indexOf("module.exports.default"));
+  assert.match(document, /connect-src 'none'/);
+  assert.match(document, /frame-src 'none'/);
+  assert.match(document, /body\{color:blue\}/);
+  assert.doesNotMatch(document, /https?:\/\//);
 });

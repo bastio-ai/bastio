@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { execSync } from "node:child_process";
+import { artifactRuntimePlugin } from "./vite-plugin-artifact-runtime.ts";
 
 /**
  * Resolve a build SHA from CI env vars or the local git tree.
@@ -19,7 +20,7 @@ function getBuildSha(): string {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), artifactRuntimePlugin()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
