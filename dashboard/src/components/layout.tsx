@@ -103,7 +103,7 @@ const navSections = [
   },
   {
     label: "Workforce",
-    items: [{ to: "/workspace", label: "Private AI Portal", icon: Sparkles }],
+    items: [{ to: "/workspace", label: "Workspace", icon: Sparkles }],
   },
   {
     label: "Developer API",

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useBlocker } from "@tanstack/react-router";
 import {
-  Bot,
   Check,
   ImageOff,
   LockKeyhole,
@@ -18,21 +18,37 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SkeletonRows } from "@/components/skeleton";
 import { cn } from "@/lib/utils";
-import { workspaceApi } from "./types";
+import { workspaceApi, type Settings } from "./types";
 import { MODEL_CATALOG, type AllowedModelEntry } from "./model-picker";
 import { useWorkspaceExtension } from "./extension-context";
 
-import { AccessControls } from "./access-controls";
+import type { SettingsSection } from "./navigation";
 
-export function SettingsTab() {
+export function SettingsTab({
+  section = "general",
+  onSectionChange,
+}: {
+  section?: SettingsSection;
+  onSectionChange?: (section: SettingsSection) => void;
+}) {
   const ext = useWorkspaceExtension();
+  const [cloudDirty, setCloudDirty] = useState(false);
   const qc = useQueryClient();
   const settings = useQuery({
     queryKey: ["workspace", "settings"],
     queryFn: workspaceApi.getSettings,
   });
+  const previousSettings = useRef<Settings | undefined>(undefined);
   const [storeContent, setStoreContent] = useState(true);
   const [spendCap, setSpendCap] = useState(0);
   const [allowedModels, setAllowedModels] = useState<AllowedModelEntry[]>([]);
@@ -42,16 +58,48 @@ export function SettingsTab() {
   const [disableImageAttachments, setDisableImageAttachments] = useState(false);
 
   useEffect(() => {
-    if (!settings.data) return;
-    setStoreContent(settings.data.store_conversation_content ?? true);
-    setSpendCap(settings.data.spend_cap_cents ?? 0);
-    setAllowedModels(settings.data.allowed_models ?? []);
-    setPersonaName(settings.data.ai_persona_name ?? "");
-    setPersonaPersonality(settings.data.ai_persona_personality ?? "");
-    setPersonaTone(settings.data.ai_persona_tone ?? "");
-    setDisableImageAttachments(
-      settings.data.disable_image_attachments ?? false,
+    const next = settings.data;
+    if (!next) return;
+    const previous = previousSettings.current;
+    // Refresh untouched fields while preserving edits, even if another admin saves.
+    setStoreContent((current) =>
+      !previous || current === (previous.store_conversation_content ?? true)
+        ? (next.store_conversation_content ?? true)
+        : current,
     );
+    setSpendCap((current) =>
+      !previous || current === (previous.spend_cap_cents ?? 0)
+        ? (next.spend_cap_cents ?? 0)
+        : current,
+    );
+    setAllowedModels((current) =>
+      !previous ||
+      JSON.stringify(current) === JSON.stringify(previous.allowed_models ?? [])
+        ? (next.allowed_models ?? [])
+        : current,
+    );
+    setPersonaName((current) =>
+      !previous || current.trim() === (previous.ai_persona_name ?? "").trim()
+        ? (next.ai_persona_name ?? "")
+        : current,
+    );
+    setPersonaPersonality((current) =>
+      !previous ||
+      current.trim() === (previous.ai_persona_personality ?? "").trim()
+        ? (next.ai_persona_personality ?? "")
+        : current,
+    );
+    setPersonaTone((current) =>
+      !previous || current.trim() === (previous.ai_persona_tone ?? "").trim()
+        ? (next.ai_persona_tone ?? "")
+        : current,
+    );
+    setDisableImageAttachments((current) =>
+      !previous || current === (previous.disable_image_attachments ?? false)
+        ? (next.disable_image_attachments ?? false)
+        : current,
+    );
+    previousSettings.current = next;
   }, [settings.data]);
 
   const currentState = useMemo(
@@ -94,10 +142,18 @@ export function SettingsTab() {
     [currentState, settings.data],
   );
   const dirty = currentState !== savedState;
+  const blocker = useBlocker({
+    shouldBlockFn: ({ next }) =>
+      (dirty || cloudDirty) &&
+      (next.pathname !== "/workspace" ||
+        (next.search as { view?: string }).view !== "settings"),
+    enableBeforeUnload: dirty || cloudDirty,
+    withResolver: true,
+  });
 
   const save = useMutation({
-    mutationFn: () =>
-      workspaceApi.patchSettings({
+    mutationFn: () => {
+      const patch = {
         store_conversation_content: storeContent,
         spend_cap_cents: spendCap,
         allowed_models: allowedModels,
@@ -105,27 +161,108 @@ export function SettingsTab() {
         ai_persona_personality: personaPersonality.trim() || null,
         ai_persona_tone: personaTone.trim() || null,
         disable_image_attachments: disableImageAttachments,
-      }),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["workspace", "settings"] }),
+      };
+      // Save only edited fields: another settings section may update this record.
+      const defaults = {
+        ...settings.data,
+        store_conversation_content:
+          settings.data?.store_conversation_content ?? true,
+        spend_cap_cents: settings.data?.spend_cap_cents ?? 0,
+        allowed_models: settings.data?.allowed_models ?? [],
+        disable_image_attachments:
+          settings.data?.disable_image_attachments ?? false,
+      };
+      return workspaceApi.patchSettings(
+        Object.fromEntries(
+          Object.entries(patch).filter(
+            ([key, value]) =>
+              JSON.stringify(value) !==
+              JSON.stringify(defaults[key as keyof typeof defaults] ?? null),
+          ),
+        ),
+      );
+    },
+    onSuccess: async () => {
+      const fresh = await workspaceApi.getSettings();
+      qc.setQueryData(["workspace", "settings"], fresh);
+    },
   });
 
   if (settings.isLoading) return <SkeletonRows count={5} />;
+  if (settings.error)
+    return (
+      <SecurityNotice title="Settings could not be loaded" tone="warning">
+        <p>{settings.error.message}</p>
+        <Button
+          variant="outline"
+          className="mt-3"
+          onClick={() => settings.refetch()}
+        >
+          Retry
+        </Button>
+      </SecurityNotice>
+    );
 
   const strictModelPolicy = allowedModels.length > 0;
-  const personaConfigured = Boolean(
-    personaName || personaPersonality || personaTone,
-  );
 
   return (
     <div>
+      <nav aria-label="Settings sections" className="mb-5 flex flex-wrap gap-2">
+        {(
+          [
+            ["general", "General", "Workspace name and AI identity"],
+            ["models", "Models & AI", "Models employees can use"],
+            [
+              "privacy",
+              "Privacy & data",
+              "Conversation storage and attachments",
+            ],
+            [
+              "usage",
+              "Spending & billing",
+              "Usage limits and provider charges",
+            ],
+          ] as const
+        ).map(([id, label, description]) => (
+          <button
+            type="button"
+            key={id}
+            aria-current={section === id ? "page" : undefined}
+            onClick={() => onSectionChange?.(id)}
+            className={cn(
+              "min-h-14 flex-1 basis-44 rounded-xl border border-border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              section === id
+                ? "bg-muted text-foreground"
+                : "bg-card text-muted-foreground hover:bg-muted/40",
+            )}
+          >
+            <span className="block text-sm font-medium">{label}</span>
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {description}
+            </span>
+          </button>
+        ))}
+      </nav>
+      {ext.settingsSection ? (
+        <div className="mb-5">
+          {ext.settingsSection(section, setCloudDirty)}
+        </div>
+      ) : null}
       <SectionHeader
-        title="Workspace-wide AI policy"
-        description="These controls apply across assistants and the employee portal."
+        className="flex-wrap gap-3 [&>div:first-child]:basis-full sm:flex-nowrap sm:[&>div:first-child]:basis-auto"
+        title={
+          {
+            general: "Shared AI identity",
+            models: "Approved models",
+            privacy: "Conversation privacy",
+            usage: "Workspace spending limit",
+          }[section]
+        }
+        description="Changes apply across the employee workspace. Save before leaving this page."
         action={
           <div className="flex items-center gap-2">
             {!dirty && save.isSuccess ? (
-              <span className="inline-flex items-center gap-1 text-[10px] text-success">
+              <span className="inline-flex items-center gap-1 text-xs text-success">
                 <Check className="h-3 w-3" /> Saved
               </span>
             ) : null}
@@ -135,242 +272,240 @@ export function SettingsTab() {
               onClick={() => save.mutate()}
             >
               <Save data-icon="inline-start" />{" "}
-              {save.isPending ? "Saving…" : "Save changes"}
+              {save.isPending ? "Saving…" : "Save AI settings"}
             </Button>
           </div>
         }
       />
 
-      <div className="mb-5 grid overflow-hidden rounded-xl border border-border/70 bg-card sm:grid-cols-2 sm:divide-x sm:divide-border/60 xl:grid-cols-4">
-        <PolicyMetric
-          label="AI identity"
-          value={personaConfigured ? "Configured" : "Assistant defaults"}
-          ready={personaConfigured}
-        />
-        <PolicyMetric
-          label="Model policy"
-          value={strictModelPolicy ? "Strict whitelist" : "Curated catalog"}
-          ready={strictModelPolicy}
-        />
-        <PolicyMetric
-          label="Models available"
-          value={
-            strictModelPolicy ? allowedModels.length : MODEL_CATALOG.length
-          }
-          ready
-        />
-        <PolicyMetric
-          label="Image uploads"
-          value={disableImageAttachments ? "Blocked" : "Allowed"}
-          ready={disableImageAttachments}
-        />
-      </div>
-
-      <section className="mt-5 rounded-xl border border-border bg-card p-4">
-        <h2 className="text-[13px] font-bold tracking-tight">
-          Conversation storage
-        </h2>
-        <label className="mt-3 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={!storeContent}
-            onChange={(e) => setStoreContent(!e.target.checked)}
-          />{" "}
-          Do not store conversation content
-        </label>
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          Temporary chats keep their content in the open browser tab. Leaving
-          chat, refreshing or closing it loses the conversation text. Bastio
-          retains usage, cost and security-decision metadata, without prompt
-          text, attachments or security snippets.
-        </p>
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          This applies to new writes. Previously saved content and archives
-          remain. Knowledge documents are stored separately. Model providers
-          apply their own retention policies. Conversation content is not
-          collected for training.
-        </p>
-        <h2 className="mt-5 text-[13px] font-bold tracking-tight">
-          Monthly Workspace spending limit
-        </h2>
-        <label className="mt-2 flex items-center gap-2 text-xs">
-          USD{" "}
-          <Input
-            aria-label="Monthly spending limit in USD"
-            type="number"
-            min="0"
-            step="0.01"
-            value={spendCap / 100}
-            onChange={(e) =>
-              setSpendCap(Math.max(0, Math.round(Number(e.target.value) * 100)))
-            }
-            className="max-w-32"
-          />
-        </label>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Zero removes the limit. Estimated model costs count across employees;
-          near-limit requests reserve their maximum allowance before sending.
-          Responses allow up to 8,192 output tokens. Resets each calendar month
-          in UTC.
-        </p>
-      </section>
-      <AccessControls />
-      <section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-card">
-        <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-              <ImageOff className="h-3.5 w-3.5" />
-            </div>
-            <div>
-              <h2 className="text-[13px] font-semibold text-foreground">
-                Image attachment policy
-              </h2>
-              <p className="mt-0.5 max-w-2xl text-[10px] leading-relaxed text-muted-foreground">
-                Block images in employee chat when every attachment must pass
-                text extraction and security inspection.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={disableImageAttachments}
-            onClick={() => setDisableImageAttachments((current) => !current)}
-            className={cn(
-              "inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
-              disableImageAttachments
-                ? "border-success-border bg-success-bg text-success"
-                : "border-border/70 bg-background text-muted-foreground hover:bg-muted/40",
-            )}
-          >
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                disableImageAttachments
-                  ? "bg-success"
-                  : "bg-muted-foreground/50",
-              )}
-            />
-            {disableImageAttachments ? "Images blocked" : "Images allowed"}
-          </button>
-        </div>
-        {!disableImageAttachments ? (
-          <div className="border-t border-border/60 px-4 py-3">
-            <SecurityNotice
-              title="Images bypass text-only inspection"
-              tone="warning"
-            >
-              Image uploads are rendered as visual context and are not
-              text-extracted. Disable them for regulated or high-assurance
-              workspaces.
-            </SecurityNotice>
-          </div>
-        ) : null}
-      </section>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.72fr)_minmax(0,1.28fr)]">
-        <section className="rounded-xl border border-border/70 bg-card">
-          <div className="border-b border-border/60 px-4 py-3.5">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-                <Sparkles className="h-3.5 w-3.5" />
-              </div>
-              <div>
-                <h2 className="text-[13px] font-semibold text-foreground">
-                  Shared AI identity
-                </h2>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  A consistent persona layered onto every assistant.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4 p-4">
-            <div>
-              <FieldLabel optional>Name</FieldLabel>
-              <Input
-                value={personaName}
-                onChange={(event) => setPersonaName(event.target.value)}
-                placeholder="e.g. Bob"
-                maxLength={120}
-              />
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                Shown as the shared AI identity in the portal.
-              </p>
-            </div>
-            <div>
-              <FieldLabel optional>Personality</FieldLabel>
-              <Input
-                value={personaPersonality}
-                onChange={(event) => setPersonaPersonality(event.target.value)}
-                placeholder="e.g. helpful, precise, concise"
-                maxLength={500}
-              />
-            </div>
-            <div>
-              <FieldLabel optional>Tone of voice</FieldLabel>
-              <Input
-                value={personaTone}
-                onChange={(event) => setPersonaTone(event.target.value)}
-                placeholder="e.g. professional and direct"
-                maxLength={200}
-              />
-            </div>
-            <SecurityNotice
-              title="Assistant instructions still apply"
-              tone="info"
-            >
-              Blank fields add no workspace-level persona. Each assistant’s own
-              system prompt remains the source of its role and boundaries.
-            </SecurityNotice>
-          </div>
+      {section === "privacy" && (
+        <section className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-[13px] font-bold tracking-tight">
+            Conversation storage
+          </h2>
+          <label className="mt-3 flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={!storeContent}
+              onChange={(e) => setStoreContent(!e.target.checked)}
+            />{" "}
+            Do not store conversation content
+          </label>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Temporary chats keep their content in the open browser tab. Leaving
+            chat, refreshing or closing it loses the conversation text. Bastio
+            retains usage, cost and security-decision metadata, without prompt
+            text, attachments or security snippets.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            This applies to new writes. Previously saved content and archives
+            remain. Knowledge documents are stored separately. Model providers
+            apply their own retention policies. Conversation content is not
+            collected for training.
+          </p>
         </section>
-
-        <section className="rounded-xl border border-border/70 bg-card">
-          <div className="flex items-start justify-between gap-4 border-b border-border/60 px-4 py-3.5">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-                <LockKeyhole className="h-3.5 w-3.5" />
+      )}
+      {section === "usage" && (
+        <section className="rounded-xl border border-border bg-card p-5">
+          <h2 className="text-[13px] font-bold tracking-tight">
+            Monthly Workspace spending limit
+          </h2>
+          <label className="mt-2 flex items-center gap-2 text-xs">
+            USD{" "}
+            <Input
+              aria-label="Monthly spending limit in USD"
+              type="number"
+              min="0"
+              step="0.01"
+              value={spendCap / 100}
+              onChange={(e) =>
+                setSpendCap(
+                  Math.max(0, Math.round(Number(e.target.value) * 100)),
+                )
+              }
+              className="max-w-32"
+            />
+          </label>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Zero removes the limit. Estimated model costs count across
+            employees; near-limit requests reserve their maximum allowance
+            before sending. Responses allow up to 8,192 output tokens. Resets
+            each calendar month in UTC.
+          </p>
+        </section>
+      )}
+      {section === "privacy" && (
+        <section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-card">
+          <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
+                <ImageOff className="h-3.5 w-3.5" />
               </div>
               <div>
                 <h2 className="text-[13px] font-semibold text-foreground">
-                  Model access policy
+                  Image attachment policy
                 </h2>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  Control the models employees can select at chat time.
+                <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                  Block images in employee chat when every attachment must pass
+                  text extraction and security inspection.
                 </p>
               </div>
             </div>
-            <Badge variant={strictModelPolicy ? "success" : "warning"}>
-              {strictModelPolicy ? "Restricted" : "Catalog default"}
-            </Badge>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={disableImageAttachments}
+              onClick={() => setDisableImageAttachments((current) => !current)}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium transition-colors",
+                disableImageAttachments
+                  ? "border-success-border bg-success-bg text-success"
+                  : "border-border/70 bg-background text-muted-foreground hover:bg-muted/40",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  disableImageAttachments
+                    ? "bg-success"
+                    : "bg-muted-foreground/50",
+                )}
+              />
+              {disableImageAttachments ? "Images blocked" : "Images allowed"}
+            </button>
           </div>
-          <div className="space-y-4 p-4">
-            {!strictModelPolicy ? (
+          {!disableImageAttachments ? (
+            <div className="border-t border-border/60 px-4 py-3">
               <SecurityNotice
-                title="All curated models are currently available"
+                title="Images bypass text-only inspection"
                 tone="warning"
               >
-                An empty whitelist intentionally exposes the full curated
-                catalog. Select approved models below to enforce a strict
-                allowlist in both the portal UI and chat send path.
+                Image uploads are rendered as visual context and are not
+                text-extracted. Disable them for regulated or high-assurance
+                workspaces.
               </SecurityNotice>
-            ) : (
-              <SecurityNotice
-                title="Strict model whitelist enforced"
-                tone="success"
-              >
-                Only the selected provider and model pairs are available to
-                employees. Server-side validation provides defense in depth
-                beyond the picker UI.
-              </SecurityNotice>
-            )}
-            <ModelWhitelistEditor
-              value={allowedModels}
-              onChange={setAllowedModels}
-            />
-          </div>
+            </div>
+          ) : null}
         </section>
+      )}
+
+      <div className="space-y-5">
+        {section === "general" && (
+          <section className="rounded-xl border border-border/70 bg-card">
+            <div className="border-b border-border/60 px-4 py-3.5">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <h2 className="text-[13px] font-semibold text-foreground">
+                    Shared AI identity
+                  </h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    A consistent persona layered onto every assistant.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4 p-4">
+              <div>
+                <FieldLabel optional htmlFor="persona-name">
+                  Name
+                </FieldLabel>
+                <Input
+                  id="persona-name"
+                  value={personaName}
+                  onChange={(event) => setPersonaName(event.target.value)}
+                  placeholder="e.g. Bob"
+                  maxLength={120}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Shown as the shared AI identity in the portal.
+                </p>
+              </div>
+              <div>
+                <FieldLabel optional htmlFor="persona-personality">
+                  Personality
+                </FieldLabel>
+                <Input
+                  id="persona-personality"
+                  value={personaPersonality}
+                  onChange={(event) =>
+                    setPersonaPersonality(event.target.value)
+                  }
+                  placeholder="e.g. helpful, precise, concise"
+                  maxLength={500}
+                />
+              </div>
+              <div>
+                <FieldLabel optional htmlFor="persona-tone">
+                  Tone of voice
+                </FieldLabel>
+                <Input
+                  id="persona-tone"
+                  value={personaTone}
+                  onChange={(event) => setPersonaTone(event.target.value)}
+                  placeholder="e.g. professional and direct"
+                  maxLength={200}
+                />
+              </div>
+              <SecurityNotice
+                title="Assistant instructions still apply"
+                tone="info"
+              >
+                Blank fields add no workspace-level persona. Each assistant’s
+                own system prompt remains the source of its role and boundaries.
+              </SecurityNotice>
+            </div>
+          </section>
+        )}
+
+        {section === "models" && (
+          <section className="rounded-xl border border-border/70 bg-card">
+            <div className="flex items-start justify-between gap-4 border-b border-border/60 px-4 py-3.5">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
+                  <LockKeyhole className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <h2 className="text-[13px] font-semibold text-foreground">
+                    Choose models
+                  </h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Control the models employees can select at chat time.
+                  </p>
+                </div>
+              </div>
+              <Badge variant={strictModelPolicy ? "success" : "warning"}>
+                {strictModelPolicy ? "Restricted" : "Catalog default"}
+              </Badge>
+            </div>
+            <div className="space-y-4 p-4">
+              {!strictModelPolicy ? (
+                <SecurityNotice
+                  title="All curated models are currently available"
+                  tone="warning"
+                >
+                  With no models selected, employees can use the full curated
+                  catalog. Select approved models below to enforce a strict
+                  allowlist in both the portal UI and chat send path.
+                </SecurityNotice>
+              ) : (
+                <SecurityNotice
+                  title="Only approved models are available"
+                  tone="success"
+                >
+                  Only the selected provider and model pairs are available to
+                  employees. Bastio checks this policy on every chat request.
+                </SecurityNotice>
+              )}
+              <ModelWhitelistEditor
+                value={allowedModels}
+                onChange={setAllowedModels}
+              />
+            </div>
+          </section>
+        )}
       </div>
 
       {save.error ? (
@@ -384,7 +519,7 @@ export function SettingsTab() {
       ) : null}
       {dirty ? (
         <div className="sticky bottom-3 z-10 mt-5 flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-popover/95 px-4 py-3 shadow-lg backdrop-blur">
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <ShieldAlert className="h-3.5 w-3.5" /> Unsaved policy changes
           </div>
           <Button
@@ -398,46 +533,33 @@ export function SettingsTab() {
         </div>
       ) : null}
 
-      {ext.settingsExtra ? (
+      {!ext.settingsSection && ext.settingsExtra ? (
         <div className="mt-5">{ext.settingsExtra}</div>
       ) : null}
-    </div>
-  );
-}
-
-function PolicyMetric({
-  label,
-  value,
-  ready,
-}: {
-  label: string;
-  value: string | number;
-  ready?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
-      <div
-        className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-lg border",
-          ready
-            ? "border-success-border bg-success-bg text-success"
-            : "border-border/60 bg-muted/30 text-muted-foreground",
-        )}
+      <Dialog
+        open={blocker.status === "blocked"}
+        onOpenChange={(open) => {
+          if (!open) blocker.reset?.();
+        }}
       >
-        {ready ? (
-          <Check className="h-3.5 w-3.5" />
-        ) : (
-          <Bot className="h-3.5 w-3.5" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-0.5 truncate text-[12px] font-medium text-foreground">
-          {value}
-        </p>
-      </div>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Leave without saving?</DialogTitle>
+            <DialogDescription>
+              You have unsaved workspace settings. Keep editing to save them, or
+              leave to discard your changes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => blocker.reset?.()}>
+              Keep editing
+            </Button>
+            <Button onClick={() => blocker.proceed?.()}>
+              Discard and leave
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -449,6 +571,7 @@ function ModelWhitelistEditor({
   value: AllowedModelEntry[];
   onChange: (next: AllowedModelEntry[]) => void;
 }) {
+  const [search, setSearch] = useState("");
   const allowedKey = (entry: AllowedModelEntry) =>
     `${entry.provider}/${entry.model}`;
   const allowSet = new Set(value.map(allowedKey));
@@ -485,17 +608,42 @@ function ModelWhitelistEditor({
 
   return (
     <div className="space-y-3">
+      <Input
+        aria-label="Search models"
+        placeholder="Search models or providers…"
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+      />
+      <p className="text-xs text-muted-foreground">
+        {value.length
+          ? `${value.length} approved models selected`
+          : "All curated models allowed"}
+        . Expand a provider to choose models.
+      </p>
       {Object.entries(byProvider).map(([provider, models]) => {
+        const visible = models.filter((model) =>
+          `${provider} ${model.label} ${model.model}`
+            .toLowerCase()
+            .includes(search.toLowerCase()),
+        );
+        if (!visible.length) return null;
         const selected = models.filter((model) =>
           allowSet.has(`${provider}/${model.model}`),
         );
         const allOn = selected.length === models.length;
         const someOn = selected.length > 0;
         return (
-          <div
+          <details
             key={provider}
+            open={search.trim() ? true : undefined}
             className="overflow-hidden rounded-lg border border-border/70"
           >
+            <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-3 bg-muted/20 px-3 py-3 text-sm font-medium capitalize">
+              {provider}
+              <span className="text-xs font-normal normal-case text-muted-foreground">
+                {selected.length}/{models.length} selected · expand
+              </span>
+            </summary>
             <label className="flex cursor-pointer items-center gap-3 border-b border-border/50 bg-muted/20 px-3 py-2.5">
               <input
                 type="checkbox"
@@ -506,14 +654,14 @@ function ModelWhitelistEditor({
                 onChange={() => toggleProvider(provider, models)}
               />
               <span className="text-[12px] font-medium capitalize text-foreground">
-                {provider}
+                Select all {provider} models
               </span>
-              <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+              <span className="ml-auto font-mono text-xs text-muted-foreground">
                 {selected.length}/{models.length} selected
               </span>
             </label>
             <div className="grid sm:grid-cols-2">
-              {models.map((model, index) => {
+              {visible.map((model, index) => {
                 const selectedModel = allowSet.has(
                   `${provider}/${model.model}`,
                 );
@@ -535,7 +683,7 @@ function ModelWhitelistEditor({
                     <div className="min-w-0">
                       <p
                         className={cn(
-                          "truncate text-[11px] font-medium",
+                          "truncate text-xs font-medium",
                           selectedModel
                             ? "text-foreground"
                             : "text-muted-foreground",
@@ -551,9 +699,19 @@ function ModelWhitelistEditor({
                 );
               })}
             </div>
-          </div>
+          </details>
         );
       })}
+      {search &&
+        !MODEL_CATALOG.some((model) =>
+          `${model.provider} ${model.label} ${model.model}`
+            .toLowerCase()
+            .includes(search.toLowerCase()),
+        ) && (
+          <p className="py-4 text-sm text-muted-foreground">
+            No models match “{search}”.
+          </p>
+        )}
       {value.length > 0 ? (
         <Button size="xs" variant="ghost" onClick={() => onChange([])}>
           Use the full curated catalog
