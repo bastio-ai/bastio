@@ -17,6 +17,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/security"
+	"github.com/bastio-ai/bastio/pkg/encryption"
 )
 
 // Default customer + user used when running in OSS single-tenant mode
@@ -80,6 +81,8 @@ type Handler struct {
 	river       *river.Client[pgx.Tx]
 	txtResolver TXTResolver     // nil → defaultTXTResolver
 	embedder    EmbeddingClient // nil → keyword-only RAG
+	mcpCipher   *encryption.Service
+	mcpHTTP     *http.Client
 	// Security pipeline — same engine/profile/recorder the gateway uses.
 	// All optional: when nil the workspace falls back to its pre-pipeline
 	// behavior (direct provider call, no policy enforcement, no
@@ -239,6 +242,17 @@ func (h *Handler) Routes() chi.Router {
 	r.With(RequireRole(RoleViewer)).Get("/me/effective-models", h.getEffectiveModels)
 	r.With(RequireRole(RoleViewer)).Get("/me/provider-readiness", h.providerReadiness)
 
+	r.With(RequireRole(RoleMember)).Get("/mcp", h.listMCPConnections)
+	r.With(RequireRole(RoleAdmin)).Put("/mcp/policy", h.putMCPPolicy)
+	r.Route("/mcp/connections", func(r chi.Router) {
+		r.Use(RequireRole(RoleMember))
+		r.Post("/", h.saveMCPConnection)
+		r.Put("/{id}", h.saveMCPConnection)
+		r.Delete("/{id}", h.revokeMCPConnection)
+		r.Get("/{id}/tools", h.listMCPTools)
+		r.Post("/{id}/call", h.callMCPTool)
+	})
+
 	r.Route("/assistants", func(r chi.Router) {
 		r.With(RequireRole(RoleViewer)).Get("/", h.listAssistants)
 		r.With(RequireRole(RoleAdmin)).Post("/", h.createAssistant)
@@ -249,6 +263,7 @@ func (h *Handler) Routes() chi.Router {
 
 	r.Route("/knowledge", func(r chi.Router) {
 		r.With(RequireRole(RoleViewer)).Get("/", h.listKnowledge)
+		r.With(RequireRole(RoleAdmin)).Get("/index-status", h.knowledgeIndexStatus)
 		r.With(RequireRole(RoleAdmin)).Post("/", h.createKnowledge)
 		r.With(RequireRole(RoleAdmin)).Post("/upload", h.uploadKnowledge)
 		r.With(RequireRole(RoleViewer)).Get("/{id}", h.getKnowledge)

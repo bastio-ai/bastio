@@ -89,7 +89,8 @@ type Server struct {
 	// workspaceHandler is captured during V1 route registration so the
 	// root-level Host-intercept middleware can dispatch custom-domain
 	// requests to its HostRoutes() handler. Set by registerV1Routes.
-	workspaceHandler *workspace.Handler
+	workspaceHandler  *workspace.Handler
+	workspaceEmbedder EmbeddingClient
 
 	opts options
 }
@@ -375,6 +376,10 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, erro
 		opt(&o)
 	}
 
+	embedder, err := WorkspaceEmbeddingFromEnv(os.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("workspace embeddings: %w", err)
+	}
 	db, err := database.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
@@ -465,7 +470,7 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, erro
 		slog.Info("iplist enabled", "block", cfg.IPListBlock, "refresh", cfg.IPListRefresh)
 	}
 
-	return &Server{cfg: cfg, db: db, redis: redisClient, ch: ch, recorder: recorder, river: rc, ipList: ipListMgr, opts: o}, nil
+	return &Server{cfg: cfg, db: db, redis: redisClient, ch: ch, recorder: recorder, river: rc, ipList: ipListMgr, opts: o, workspaceEmbedder: embedder}, nil
 }
 
 // DB returns the shared PostgreSQL wrapper.
@@ -512,6 +517,11 @@ func (s *Server) Start(ctx context.Context) error {
 	defer func() { stopMaintenance(); <-maintenanceDone }()
 
 	handler := s.Handler()
+	if s.workspaceHandler != nil {
+		indexingDone := make(chan struct{})
+		go func() { defer close(indexingDone); s.workspaceHandler.RunKnowledgeMaintenance(maintenance) }()
+		defer func() { stopMaintenance(); <-indexingDone }()
+	}
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
 	httpSrv := &http.Server{
@@ -794,12 +804,8 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	if s.river != nil {
 		workspaceHandler.SetRiverClient(s.river)
 	}
-	// OSS dev embedder: lazy OpenAI client when an API key is in env.
-	// Cloud will replace with a per-customer key resolver via the
-	// same setter.
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		workspaceHandler.SetEmbeddingClient(workspace.NewOpenAIEmbeddingClient(key))
-	}
+	workspaceHandler.SetEmbeddingClient(s.workspaceEmbedder)
+	workspaceHandler.SetMCPCredentialEncryption(s.opts.encryption)
 	// Workspace invitation flow (email + public + invite base URLs)
 	// moved to bastio-cloud/internal/workspace alongside the member
 	// management handlers — see Service.WithEmailer / WithPublicBaseURL

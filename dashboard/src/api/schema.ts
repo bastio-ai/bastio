@@ -1306,6 +1306,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/knowledge/index-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceKnowledgeIndexStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspace/knowledge/upload": {
         parameters: {
             query?: never;
@@ -1799,10 +1815,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceListMCP"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["workspaceSetMCPPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspaceCreateMCPConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["workspaceUpdateMCPConnection"];
+        post?: never;
+        delete: operations["workspaceRevokeMCPConnection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["workspaceListMCPTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspaceCallMCPTool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        WorkspaceMCPPolicy: {
+            allow_personal: boolean;
+        };
+        WorkspaceMCPList: {
+            connections: components["schemas"]["WorkspaceMCPConnection"][];
+            allow_personal: boolean;
+            can_manage: boolean;
+        };
+        WorkspaceMCPConnection: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uri */
+            endpoint: string;
+            /** @enum {string} */
+            scope: "personal" | "workspace";
+            owner_user_id: string;
+            allowed_tools: string[];
+            has_credential: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        WorkspaceMCPInput: {
+            name: string;
+            /** Format: uri */
+            endpoint: string;
+            /** @enum {string} */
+            scope: "personal" | "workspace";
+            allowed_tools?: string[];
+            credential?: string;
+        };
+        WorkspaceMCPTool: {
+            name: string;
+            description?: string;
+            inputSchema: {
+                [key: string]: unknown;
+            };
+        };
         MCPPolicy: {
             allowed_tools: string[];
             blocked_tools: string[];
@@ -6155,6 +6311,31 @@ export interface operations {
             };
         };
     };
+    workspaceKnowledgeIndexStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrator-visible embedding model and remaining background indexing work */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        model: string;
+                        dimensions: number;
+                        pending_sources: number;
+                    };
+                };
+            };
+        };
+    };
     workspaceUploadKnowledge: {
         parameters: {
             query?: never;
@@ -7303,6 +7484,179 @@ export interface operations {
                             provider?: string;
                             configured?: boolean;
                         }[];
+                    };
+                };
+            };
+        };
+    };
+    workspaceListMCP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Personal and workspace-shared MCP connections visible to the member */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPList"];
+                };
+            };
+        };
+    };
+    workspaceSetMCPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceMCPPolicy"];
+            };
+        };
+        responses: {
+            /** @description Administrator updated personal integration policy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPPolicy"];
+                };
+            };
+        };
+    };
+    workspaceCreateMCPConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceMCPInput"];
+            };
+        };
+        responses: {
+            /** @description Created; credentials are never returned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPConnection"];
+                };
+            };
+        };
+    };
+    workspaceUpdateMCPConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceMCPInput"];
+            };
+        };
+        responses: {
+            /** @description Updated; only owners manage personal integrations and administrators manage shared integrations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPConnection"];
+                };
+            };
+        };
+    };
+    workspaceRevokeMCPConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Integration revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceListMCPTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discovered tools filtered by allowlist and inspected as untrusted content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        tools: components["schemas"]["WorkspaceMCPTool"][];
+                    };
+                };
+            };
+        };
+    };
+    workspaceCallMCPTool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    arguments: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Security-processed textual result; raw arguments and results are not retained in audit records */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        text: string;
+                        is_error: boolean;
+                        categories: string[];
                     };
                 };
             };

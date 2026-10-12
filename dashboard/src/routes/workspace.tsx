@@ -25,16 +25,18 @@ import { Button } from "@/components/ui/button";
 import { useWorkspaceSidebar } from "@/components/workspace-sidebar-context";
 import { DashboardTab } from "@/components/workspace/dashboard-tab";
 import { AssistantsTab } from "@/components/workspace/assistants-tab";
+import { MCPIntegrations } from "@/components/workspace/mcp-integrations";
 import { KnowledgeTab } from "@/components/workspace/knowledge-tab";
 import { SettingsTab } from "@/components/workspace/settings-tab";
 import { useWorkspaceExtension } from "@/components/workspace/extension-context";
 
-type AdminTab = "dashboard" | "assistants" | "knowledge" | "settings";
+type AdminTab = "dashboard" | "assistants" | "knowledge" | "integrations" | "settings";
 
 const BASE_TABS: { id: AdminTab; label: string; icon: LucideIcon }[] = [
   { id: "dashboard", label: "Overview", icon: LayoutDashboard },
   { id: "assistants", label: "Assistants", icon: Bot },
   { id: "knowledge", label: "Knowledge", icon: BookOpen },
+  { id: "integrations", label: "Integrations", icon: Plug },
   { id: "settings", label: "AI controls", icon: Settings2 },
 ];
 
@@ -51,6 +53,7 @@ const TAB_META: Record<AdminTab, { title: string; description: string }> = {
     title: "Knowledge",
     description: "Manage the governed sources assistants can retrieve and cite.",
   },
+  integrations: { title: "MCP integrations", description: "Share protected tools with your team and manage personal connections." },
   settings: {
     title: "AI controls",
     description: "Set the shared AI identity and control which models employees can use.",
@@ -169,6 +172,7 @@ export function WorkspacePage() {
       ) : null}
       {tab === "assistants" ? <AssistantsTab /> : null}
       {tab === "knowledge" ? <KnowledgeTab /> : null}
+      {tab === "integrations" ? <MCPIntegrations /> : null}
       {tab === "settings" ? <SettingsTab /> : null}
       {extraTabs.map((item) =>
         tab === item.id ? <div key={item.id}>{item.component}</div> : null,

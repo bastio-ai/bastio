@@ -23,6 +23,8 @@ type EmbeddingClient interface {
 	// against newer queries until re-indexed.
 	Embed(ctx context.Context, inputs []string) ([][]float32, error)
 	Dimension() int
+	// ModelID identifies the vector space, including revision when applicable.
+	ModelID() string
 }
 
 // OpenAIEmbeddingClient calls /v1/embeddings on api.openai.com (or a
@@ -49,7 +51,8 @@ func NewOpenAIEmbeddingClient(apiKey string) *OpenAIEmbeddingClient {
 	}
 }
 
-func (c *OpenAIEmbeddingClient) Dimension() int { return c.Dim }
+func (c *OpenAIEmbeddingClient) Dimension() int  { return c.Dim }
+func (c *OpenAIEmbeddingClient) ModelID() string { return "openai:" + c.Model }
 
 func (c *OpenAIEmbeddingClient) Embed(ctx context.Context, inputs []string) ([][]float32, error) {
 	if len(inputs) == 0 {
