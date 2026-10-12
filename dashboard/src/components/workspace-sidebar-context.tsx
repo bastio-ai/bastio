@@ -32,13 +32,16 @@ export type WorkspaceSidebarConfig = {
 type WorkspaceSidebarContextValue = {
   config: WorkspaceSidebarConfig | null;
   setConfig: (config: WorkspaceSidebarConfig | null) => void;
+  navigationVisible: boolean;
+  setNavigationVisible: (visible: boolean) => void;
 };
 
 const WorkspaceSidebarContext = createContext<WorkspaceSidebarContextValue | null>(null);
 
 export function WorkspaceSidebarProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<WorkspaceSidebarConfig | null>(null);
-  const value = useMemo(() => ({ config, setConfig }), [config]);
+  const [navigationVisible, setNavigationVisible] = useState(true);
+  const value = useMemo(() => ({ config, setConfig, navigationVisible, setNavigationVisible }), [config, navigationVisible]);
   return <WorkspaceSidebarContext.Provider value={value}>{children}</WorkspaceSidebarContext.Provider>;
 }
 
