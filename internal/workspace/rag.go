@@ -9,6 +9,7 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/google/uuid"
 )
 
@@ -126,7 +127,7 @@ func (s *Store) chunkAndEmbedWithScan(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx,
-		`DELETE FROM workspace_knowledge_chunks WHERE knowledge_source_id = $1`, k.ID); err != nil {
+		`DELETE FROM workspace_knowledge_chunks WHERE customer_id = $1 AND knowledge_source_id = $2`, k.CustomerID, k.ID); err != nil {
 		return fmt.Errorf("clear chunks: %w", err)
 	}
 
@@ -161,8 +162,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 	}
 
 	if _, err := tx.Exec(ctx,
-		`UPDATE workspace_knowledge_sources SET status = 'ready' WHERE id = $1`,
-		k.ID,
+		`UPDATE workspace_knowledge_sources SET status = 'ready' WHERE customer_id = $1 AND id = $2`,
+		k.CustomerID, k.ID,
 	); err != nil {
 		return fmt.Errorf("mark ready: %w", err)
 	}
@@ -475,17 +476,24 @@ func (h *Handler) augmentWithRAG(ctx context.Context, customerID uuid.UUID, conv
 // At the typical retrieval-K of 5, this keeps the gate well under
 // the 50ms budget that the rest of the security pipeline targets.
 //
-// Fails open per-chunk: a scanner error on one chunk lets that chunk
-// through (logged at warn level). The alternative — failing closed
-// per-chunk — would silently degrade RAG every time the engine
-// hiccups. Logged failures are easier to diagnose than missing
-// citations.
+// Honors the Workspace failure mode: strict deployments withhold any chunk
+// that cannot be evaluated, including on profile lookup failures.
 func (h *Handler) filterChunksBySecurity(
 	ctx context.Context,
 	customerID uuid.UUID,
 	hits []ChunkHit,
 ) []ChunkHit {
-	if h.secEngine == nil || h.secProfiles == nil || len(hits) == 0 {
+	return h.filterChunksWithFailureMode(ctx, customerID, hits, scanFailClosed)
+}
+
+func (h *Handler) filterChunksWithFailureMode(ctx context.Context, customerID uuid.UUID, hits []ChunkHit, failClosed bool) []ChunkHit {
+	if len(hits) == 0 {
+		return hits
+	}
+	if h.secEngine == nil || h.secProfiles == nil {
+		if failClosed {
+			return nil
+		}
 		return hits
 	}
 
@@ -502,26 +510,31 @@ func (h *Handler) filterChunksBySecurity(
 		go func(idx int) {
 			defer wg.Done()
 			hit := hits[idx]
-			decision, err := scanForIngest(ctx, h.secEngine, h.secProfiles,
-				customerID, hit.Content)
-			if err != nil || decision == nil {
-				// Fail-open per-chunk; log + keep.
-				slog.Warn("rag retrieval scan: error, keeping chunk",
-					"chunk_id", hit.ChunkID,
-					"source_id", hit.SourceID,
-					"err", err)
-				results[idx] = result{keep: true, hit: hit}
-				return
+			// Source names are included in the model prompt too. Inspect them
+			// as untrusted content so filenames cannot leak PII or instructions.
+			for _, text := range []*string{&hit.SourceName, &hit.Content} {
+				if *text == "" {
+					continue
+				}
+				decision, err := scanWorkspaceContent(ctx, h.secEngine, h.secProfiles,
+					customerID, *text, security.RoleRetrieval, failClosed)
+				if err != nil || decision == nil {
+					slog.Warn("rag retrieval scan unavailable", "chunk_id", hit.ChunkID, "source_id", hit.SourceID, "err", err)
+					if failClosed {
+						results[idx] = result{keep: false}
+						return
+					}
+					continue
+				}
+				switch decision.Action {
+				case "block":
+					results[idx] = result{keep: false, blocked: decision.Categories}
+					return
+				case "sanitize":
+					*text = decision.SanitizedContent
+				}
 			}
-			switch decision.Action {
-			case "block":
-				results[idx] = result{keep: false, blocked: decision.Categories}
-			case "sanitize":
-				hit.Content = decision.SanitizedContent
-				results[idx] = result{keep: true, hit: hit}
-			default:
-				results[idx] = result{keep: true, hit: hit}
-			}
+			results[idx] = result{keep: true, hit: hit}
 		}(i)
 	}
 	wg.Wait()

@@ -294,7 +294,13 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 	finalContent := final.content
 	persistFinish := finishReason
 	var persistError *string
-	outDecision, _ := scanForIngest(r.Context(), h.secEngine, h.secProfiles, cid, final.content)
+	outDecision, outputScanErr := h.scanModelOutput(r.Context(), cid, final.content)
+	if outputScanErr != nil {
+		finalContent = "Bastio could not verify the model response. Please retry when security evaluation is available."
+		persistFinish = "security_scan_unavailable"
+		message := "output security scan unavailable"
+		persistError = &message
+	}
 	if outDecision != nil {
 		switch outDecision.Action {
 		case "block":

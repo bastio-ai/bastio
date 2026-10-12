@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -54,8 +55,8 @@ type IngestKnowledgeWorker struct {
 	embedder EmbeddingClient // nil → chunks land with NULL embeddings (keyword RAG)
 	// secEngine + secProfiles are the same engine the gateway runs on
 	// every chat turn. Wired here so the worker scans extracted KB text
-	// before it reaches the chunk store. Both nil = fail-open (no scan
-	// performed). See ingest_security.go for the decision policy.
+	// before it reaches the chunk store. Missing dependencies honor the
+	// Workspace failure mode. See ingest_security.go for the decision policy.
 	secEngine   *security.Engine
 	secProfiles security.ProfileLookup
 }
@@ -86,7 +87,7 @@ func (w *IngestKnowledgeWorker) SetEmbedder(e EmbeddingClient) { w.embedder = e 
 func (w *IngestKnowledgeWorker) SetSecurityEngine(e *security.Engine) { w.secEngine = e }
 
 // SetSecurityProfiles wires the per-customer profile lookup. Without
-// it the worker falls back to fail-open ingest. Pair with
+// it the worker follows the Workspace failure mode. Pair with
 // SetSecurityEngine.
 func (w *IngestKnowledgeWorker) SetSecurityProfiles(p security.ProfileLookup) {
 	w.secProfiles = p
@@ -126,6 +127,12 @@ func (w *IngestKnowledgeWorker) Work(ctx context.Context, job *river.Job[Workspa
 		w.markFailed(ctx, job.Args.CustomerID, job.Args.SourceID, "source has no blob ref")
 		return nil
 	}
+	// Client-supplied source refs must never read another tenant's original
+	// upload. Local upload refs are issued for this exact source row.
+	if _, local := w.blobs.(*LocalBlobStore); local && !strings.HasPrefix(src.SourceRef, fmt.Sprintf("local://%s/%s/", job.Args.CustomerID, job.Args.SourceID)) {
+		w.markFailed(ctx, job.Args.CustomerID, job.Args.SourceID, "blob reference does not belong to this knowledge source")
+		return nil
+	}
 
 	body, err := w.blobs.Get(ctx, src.SourceRef)
 	if err != nil {
@@ -155,7 +162,7 @@ func (w *IngestKnowledgeWorker) Work(ctx context.Context, job *river.Job[Workspa
 	//              detected categories + a release / archive
 	//              affordance.
 	//   sanitize → use the rewritten text as the chunk source.
-	//              The original is GC'd; only the redacted form
+	//              Only the processed extracted text
 	//              ever reaches the embedding API or chunk row.
 	//   allow    → continue with the original text. Categories
 	//              (if any — `warn` / `log_only` actions) get
@@ -186,7 +193,8 @@ func (w *IngestKnowledgeWorker) Work(ctx context.Context, job *river.Job[Workspa
 		return nil
 	case "sanitize":
 		// Use the sanitized text everywhere downstream. The
-		// original never reaches storage or the embedding API.
+		// original extracted text never reaches the index or embedding API.
+		// The uploaded file is retained separately in the private blob store.
 		text = decision.SanitizedContent
 		slog.Info("workspace ingest: sanitized by security scan",
 			"source_id", job.Args.SourceID,
@@ -262,9 +270,8 @@ func (w *IngestKnowledgeWorker) markFailed(ctx context.Context, customerID, sour
 //
 // secEngine + secProfiles are threaded through from the Handler so
 // the inline worker runs the same security gate the standalone
-// worker mode would. Both nil = fail-open (no scanning, raw content
-// lands in chunks). Production deployments must wire both via
-// pkg/server's existing setters.
+// worker mode would. Missing dependencies honor the Workspace failure mode.
+// Production deployments must wire both via pkg/server's existing setters.
 func EnqueueIngest(
 	ctx context.Context,
 	_ *river.Client[pgx.Tx],

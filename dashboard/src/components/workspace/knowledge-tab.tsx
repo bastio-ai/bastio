@@ -100,6 +100,16 @@ export function KnowledgeTab() {
         }
       />
 
+      <details className="mb-5 rounded-lg border border-border/60 bg-card p-4 text-[11px] leading-relaxed">
+        <summary className="cursor-pointer font-medium">What happens to uploaded knowledge?</summary>
+        <ol className="mt-3 list-decimal space-y-2 pl-4 text-muted-foreground">
+          <li>The original file is stored privately on the Bastio server. Extracted text is checked against your workspace’s security profile before indexing.</li>
+          <li>Block quarantines matching files. Mask or Tokenize processes the detected values before the searchable text is stored. Warn and Log only allow unchanged text. Original files are retained separately, including any personal data they contain.</li>
+          <li>If an embedding service is configured, processed text is sent to that service to create search vectors. Relevant passages are sent to the selected model when an employee asks a question.</li>
+        </ol>
+        <p className="mt-3 border-t border-border/60 pt-3 text-muted-foreground">The conversation “do not store” setting does not apply to knowledge sources. Changing a security profile does not automatically rewrite previously indexed sources.</p>
+      </details>
+
       <input
         ref={fileInputRef}
         type="file"
