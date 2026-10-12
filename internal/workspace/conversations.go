@@ -593,8 +593,10 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	//              raw text never reaches storage.
 	//   allow    → continue with the original.
 	// =========================================================
-	outDecision, _ := scanForIngest(r.Context(), h.secEngine, h.secProfiles,
-		customerID, resp.Content)
+	outDecision, outputScanErr := h.scanModelOutput(r.Context(), customerID, resp.Content)
+	if outputScanErr != nil {
+		return nil, fmt.Errorf("output security scan unavailable")
+	}
 	if outDecision != nil && outDecision.Action == "block" {
 		blockedMsg := "Bastio blocked the model's response — it contained " +
 			joinCategories(outDecision.Categories) + ". Try rephrasing or contact your workspace admin."

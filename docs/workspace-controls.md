@@ -21,6 +21,14 @@ A capped workspace rejects models without a known price. Provider failures keep 
 
 ## Knowledge and assistant access
 
+### Upload processing and personal data
+
+The original uploaded file is retained in private server storage. Bastio extracts and scans its text with the workspace security profile before indexing. Detected PII, secrets and document instructions follow the selected actions: Block quarantines files; Mask or Tokenize processes the searchable text; Warn and Log only allow unchanged text. Tokenized knowledge keeps placeholders without a restoration mapping. Masking can preserve an email domain or a card’s last four digits, so it is not a guarantee of anonymity. Only extracted text is inspected; image pixels are not scanned.
+
+Processed text and search chunks are stored in PostgreSQL. When an embedding client is configured, processed chunks are sent to that service to generate vectors. Without one, retrieval uses local keyword matching. During chat, selected authorized passages are checked again and included in the request to the chosen model provider. Uploading knowledge does not send the whole document to a conversational model for summarization.
+
+The conversation storage setting does not apply to knowledge files. Masking searchable text does not erase the original uploaded file, and archiving a source does not permanently delete it. Existing indexed sources are not automatically rewritten when a profile changes. Cloud ingestion and retrieval honor the Workspace fail-closed setting: missing scanner dependencies or profile lookup failures prevent indexing and withhold unverified passages.
+
 Unassigned resources are shared with the workspace. Assigning one or more groups restricts access to those groups' members. Owners and administrators can manage all resources. List/read endpoints, assistant use, keyword retrieval, attached knowledge loading and vector retrieval enforce this policy. Removing an employee clears group memberships.
 
 In Cloud, opt-in SCIM provisioning links active directory users to verified Bastio identities within the seat limit, including pending invitations. It does not create sign-in credentials or implement SAML. SCIM groups become Workspace access groups. Deactivation removes managed employee memberships; owners and administrators remain under manual control. Deleted SCIM groups keep restrictions with no members until an administrator reassigns them. Disabling sync retains existing memberships. Unverified users and users above the seat limit remain unprovisioned; verification or another directory sync can retry linking.
