@@ -60,7 +60,8 @@ export function SettingsTab({
   useEffect(() => {
     const next = settings.data;
     if (!next) return;
-    const previous = previousSettings.current;
+    const previous = previousSettings.current?.customer_id === next.customer_id
+      ? previousSettings.current : undefined;
     // Refresh untouched fields while preserving edits, even if another admin saves.
     setStoreContent((current) =>
       !previous || current === (previous.store_conversation_content ?? true)
