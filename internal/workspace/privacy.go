@@ -16,6 +16,11 @@ type HistoryMessage struct {
 
 func privateChat(ctx context.Context) bool { v, _ := ctx.Value(privacyKey{}).(bool); return v }
 
+func TemporaryChat(ctx context.Context) bool { return privateChat(ctx) }
+func WithTemporaryChat(ctx context.Context, temporary bool) context.Context {
+	return context.WithValue(ctx, privacyKey{}, temporary)
+}
+
 // Temporary chats accept bounded browser-held history. System/tool roles cannot
 // be supplied by a client, and every replayed turn passes the security engine.
 func (h *Handler) prepareChat(r *http.Request, c *Conversation, b SendMessageRequest) (*http.Request, error) {
@@ -43,7 +48,7 @@ func (h *Handler) prepareChat(r *http.Request, c *Conversation, b SendMessageReq
 	if total > 32*1024*1024 {
 		return r, fmt.Errorf("chat context exceeds 32 MB")
 	}
-	return r.WithContext(context.WithValue(r.Context(), privacyKey{}, temporary)), nil
+	return r.WithContext(WithTemporaryChat(r.Context(), temporary)), nil
 }
 func (h *Handler) chatHistory(ctx context.Context, cid, id uuid.UUID, b SendMessageRequest) ([]Message, error) {
 	if !privateChat(ctx) {

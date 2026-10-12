@@ -17,7 +17,7 @@ func (h *Handler) providerReadiness(w http.ResponseWriter, r *http.Request) {
 		if h.registry != nil {
 			if client, err := h.registry.Get(providers.Provider(name)); err == nil {
 				ready = h.resolveAPIKeyCtx(r.Context(), customerIDFromCtx(r.Context()), providers.Provider(name)) != ""
-				if local, ok := client.(*providers.OllamaClient); ok {
+				if local, ok := client.(interface{ Configured() bool }); ok && name == "ollama" {
 					ready = local.Configured()
 				}
 			}
