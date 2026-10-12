@@ -81,6 +81,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Artifact preview tests
+        run: npm run test:artifacts
+
       - name: Build
         run: npm run build
 
