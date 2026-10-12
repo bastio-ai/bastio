@@ -156,9 +156,12 @@ function LayoutFrame({ children }: { children: ReactNode }) {
   const profileExt = useProfileExtension();
   const isThreatWorkspace = currentPath === "/threats";
   const isFocusedWorkspace = ["/", "/traces", "/sessions", "/analytics", "/threats"].includes(currentPath);
-  const { config: workspaceSidebar } = useWorkspaceSidebarState();
+  const { config: workspaceSidebar, setNavigationVisible } = useWorkspaceSidebarState();
   const hasContextSidebar = currentPath !== "/" && (isThreatWorkspace || Boolean(workspaceSidebar));
   const showContextNavigation = hasContextSidebar && !sidebarCollapsed && !showGlobalNavigation;
+  useEffect(() => {
+    setNavigationVisible(showContextNavigation);
+  }, [showContextNavigation, setNavigationVisible]);
   const sidebarViewKey = showContextNavigation
     ? `context:${isThreatWorkspace ? "threats" : currentPath}`
     : sidebarCollapsed

@@ -22,7 +22,7 @@ import {
 import { PageHeader } from "@/components/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useWorkspaceSidebar } from "@/components/workspace-sidebar-context";
+import { useWorkspaceSidebar, useWorkspaceSidebarState } from "@/components/workspace-sidebar-context";
 import { DashboardTab } from "@/components/workspace/dashboard-tab";
 import { AssistantsTab } from "@/components/workspace/assistants-tab";
 import { MCPIntegrations } from "@/components/workspace/mcp-integrations";
@@ -98,7 +98,7 @@ const EXTRA_TAB_ICONS: Record<string, LucideIcon> = {
 
 export function WorkspacePage() {
   const pageRef = useRef<HTMLDivElement>(null);
-  const navigationRef = useRef<HTMLElement>(null);
+  const { navigationVisible } = useWorkspaceSidebarState();
   const { extraTabs, openWorkspaceURL, hideUpsell } = useWorkspaceExtension();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as WorkspaceSearch;
@@ -140,10 +140,6 @@ export function WorkspacePage() {
     : "dashboard";
   useEffect(() => {
     pageRef.current?.scrollIntoView({ block: "start" });
-    navigationRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({
-      block: "nearest",
-      inline: "nearest",
-    });
   }, [tab, section]);
 
   useEffect(() => {
@@ -253,29 +249,17 @@ export function WorkspacePage() {
         action={<OpenWorkspaceLink openWorkspaceURL={openWorkspaceURL} />}
       />
 
-      <nav
-        ref={navigationRef}
-        aria-label="Workspace navigation"
-        className="mb-5 flex min-w-0 flex-nowrap gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1.5"
-      >
-        {allTabs.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-current={tab === item.id ? "page" : undefined}
-            onClick={() => changeTab(item.id)}
-            className={cn(
-              "inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              tab === item.id
-                ? "bg-muted text-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-            )}
-          >
-            <item.icon className="h-3.5 w-3.5" />
-            {item.label}
-          </button>
-        ))}
-      </nav>
+      <div className={cn("mb-5 max-w-sm", navigationVisible && "md:hidden")}>
+        <label htmlFor="workspace-page" className="sr-only">Workspace page</label>
+        <select
+          id="workspace-page"
+          value={tab}
+          onChange={(event) => changeTab(event.target.value)}
+          className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {allTabs.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+        </select>
+      </div>
       {tab === "dashboard" ? (
         <>
           <DashboardTab
