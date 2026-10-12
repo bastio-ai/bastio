@@ -1,10 +1,13 @@
-# Workspace controls
+---
+title: Workspace controls
+description: Conversation storage, spending, group access, account security and operational evidence.
+---
 
 Managers configure privacy, approved models, spending and groups in **Workspace → AI controls**. Account MFA and browser sessions are under **Profile & Security**. **Compliance & Audit** exports real Workspace operational records.
 
 ## Conversation storage
 
-“Do not store conversation content” applies to new writes. Bastio suppresses message bodies, conversation titles, attachment content, message metadata containing citations, provider error text and security snippets in PostgreSQL and ClickHouse. Operational identifiers, model names, token counts, estimated costs and security decisions remain. Existing saved content and archives are not erased. Knowledge documents are separate stored resources.
+“Do not store conversation content” applies to new writes. Bastio suppresses message bodies, conversation titles, attachment content, message metadata containing citations, provider error text and security snippets in PostgreSQL and ClickHouse. Temporary chats bypass the optional Cloud response cache, including when saved-history mode is re-enabled later. The cache also checks the current workspace policy before reading or writing a response. Operational identifiers, model names, token counts, estimated costs and security decisions remain. Existing saved content and archives are not erased; previously cached responses follow their existing expiry policy. Knowledge documents are separate stored resources.
 
 Temporary conversations use browser memory while the chat view remains open. Leaving chat, refreshing, signing out or closing the tab loses their text. Browser history sent to the API accepts at most 100 user/assistant turns and a total context of 32 MiB; replayed text passes the security engine. System/tool roles cannot be supplied through this history. The client retains the most recent 100 turns for continued conversation. A temporary conversation remains temporary after a manager re-enables storage.
 
