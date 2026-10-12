@@ -180,10 +180,11 @@ export const workspaceApi = {
   // Multipart upload — openapi-fetch supports `multipart/form-data` only
   // for shapes that JSON-stringify cleanly; for streaming a binary blob
   // we stick with raw fetch and hand the typed schema to the response.
-  uploadKnowledge: async (file: File, name?: string): Promise<KnowledgeSource> => {
+  uploadKnowledge: async (file: File, name?: string, sharing?: components["schemas"]["WorkspaceResourceSharing"]): Promise<KnowledgeSource> => {
     const form = new FormData();
     form.append("file", file);
     if (name) form.append("name", name);
+    if (sharing) form.append("sharing", JSON.stringify(sharing));
     const r = await fetch("/v1/workspace/knowledge/upload", {
       method: "POST",
       body: form,

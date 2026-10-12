@@ -347,6 +347,11 @@ WHERE customer_id = $1`, a.CustomerID, a.ID); err != nil {
 		}
 	}
 
+	if a.Sharing != nil {
+		if err := setResourceSharing(ctx, tx, a.CustomerID, a.ID, "assistant", *a.Sharing); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
@@ -408,6 +413,11 @@ WHERE customer_id = $1`, customerID, id); err != nil {
 			return nil, fmt.Errorf("set settings default: %w", err)
 		}
 	}
+	if p.Sharing != nil {
+		if err := setResourceSharing(ctx, tx, customerID, id, "assistant", *p.Sharing); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
@@ -456,15 +466,16 @@ ON CONFLICT (assistant_id, knowledge_source_id) DO NOTHING`,
 // without picking a new default; that's the correct safety
 // behavior since there should always be exactly one default.
 type AssistantPatch struct {
-	Name               *string         `json:"name"`
-	Description        *string         `json:"description"`
-	SystemPrompt       *string         `json:"system_prompt"`
-	DefaultProvider    *string         `json:"default_provider"`
-	DefaultModel       *string         `json:"default_model"`
-	Language           *string         `json:"language"`
-	SuggestedPrompts   json.RawMessage `json:"suggested_prompts"`
-	IsDefault          *bool           `json:"is_default,omitempty"`
-	KnowledgeSourceIDs *[]uuid.UUID    `json:"knowledge_source_ids,omitempty"`
+	Sharing            *ResourceSharing `json:"sharing,omitempty"`
+	Name               *string          `json:"name"`
+	Description        *string          `json:"description"`
+	SystemPrompt       *string          `json:"system_prompt"`
+	DefaultProvider    *string          `json:"default_provider"`
+	DefaultModel       *string          `json:"default_model"`
+	Language           *string          `json:"language"`
+	SuggestedPrompts   json.RawMessage  `json:"suggested_prompts"`
+	IsDefault          *bool            `json:"is_default,omitempty"`
+	KnowledgeSourceIDs *[]uuid.UUID     `json:"knowledge_source_ids,omitempty"`
 }
 
 func (s *Store) ArchiveAssistant(ctx context.Context, customerID, id uuid.UUID) error {
@@ -533,6 +544,11 @@ WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 }
 
 func (s *Store) CreateKnowledgeSource(ctx context.Context, k KnowledgeSource) (*KnowledgeSource, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
 	if len(k.Metadata) == 0 {
 		k.Metadata = json.RawMessage(`{}`)
 	}
@@ -541,11 +557,19 @@ func (s *Store) CreateKnowledgeSource(ctx context.Context, k KnowledgeSource) (*
 status, metadata)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 RETURNING id, created_at, updated_at`
-	if err := s.pool.QueryRow(ctx, q,
+	if err := tx.QueryRow(ctx, q,
 		k.CustomerID, k.Name, k.Type, k.SourceRef, k.InlineText,
 		k.MimeType, k.SizeBytes, k.Status, k.Metadata,
 	).Scan(&k.ID, &k.CreatedAt, &k.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("insert kb: %w", err)
+	}
+	if k.Sharing != nil {
+		if err := setResourceSharing(ctx, tx, k.CustomerID, k.ID, "knowledge", *k.Sharing); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 	return &k, nil
 }
@@ -1459,6 +1483,9 @@ WHERE customer_id = $1 AND user_id = $2 AND role <> 'owner'`
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM workspace_access_group_members WHERE customer_id=$1 AND user_id=$2`, customerID, userID); err != nil {
 		return fmt.Errorf("remove member permissions: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM workspace_resource_users WHERE customer_id=$1 AND user_id=$2`, customerID, userID); err != nil {
+		return fmt.Errorf("remove direct permissions: %w", err)
 	}
 	return tx.Commit(ctx)
 }
