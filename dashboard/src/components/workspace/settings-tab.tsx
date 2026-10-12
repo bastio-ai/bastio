@@ -48,6 +48,28 @@ export function SettingsTab({
     queryKey: ["workspace", "settings"],
     queryFn: workspaceApi.getSettings,
   });
+  const sectionsNav = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const nav = sectionsNav.current;
+    const active = nav?.querySelector('[aria-current="page"]');
+    if (!nav || !active) return;
+    // Keep a deep-linked section visible on narrow screens without moving the page.
+    const revealActive = () => {
+      const navBounds = nav.getBoundingClientRect();
+      const activeBounds = active.getBoundingClientRect();
+      if (activeBounds.left < navBounds.left) {
+        nav.scrollBy({ left: activeBounds.left - navBounds.left });
+      } else if (activeBounds.right > navBounds.right) {
+        nav.scrollBy({ left: activeBounds.right - navBounds.right });
+      }
+    };
+    revealActive();
+    const observer = new ResizeObserver(revealActive);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [section, settings.isSuccess]);
+
   const previousSettings = useRef<Settings | undefined>(undefined);
   const [storeContent, setStoreContent] = useState(true);
   const [spendCap, setSpendCap] = useState(0);
@@ -208,7 +230,11 @@ export function SettingsTab({
 
   return (
     <div>
-      <nav aria-label="Settings sections" className="mb-5 flex flex-wrap gap-2">
+      <nav
+        ref={sectionsNav}
+        aria-label="Settings sections"
+        className="mb-5 flex gap-1 overflow-x-auto border-b border-border"
+      >
         {(
           [
             ["general", "General", "Workspace name and AI identity"],
@@ -229,18 +255,16 @@ export function SettingsTab({
             type="button"
             key={id}
             aria-current={section === id ? "page" : undefined}
+            title={description}
             onClick={() => onSectionChange?.(id)}
             className={cn(
-              "min-h-14 flex-1 basis-44 rounded-xl border border-border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "relative min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-t-lg px-4 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors",
               section === id
-                ? "bg-muted text-foreground"
-                : "bg-card text-muted-foreground hover:bg-muted/40",
+                ? "bg-muted text-foreground after:bg-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground after:bg-transparent hover:after:bg-border",
             )}
           >
-            <span className="block text-sm font-medium">{label}</span>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              {description}
-            </span>
+            {label}
           </button>
         ))}
       </nav>
