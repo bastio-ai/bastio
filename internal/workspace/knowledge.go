@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 )
@@ -18,6 +19,25 @@ func (h *Handler) listKnowledge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	visible := rows[:0]
+	for _, item := range rows {
+		ok, e := h.store.canAccess(r.Context(), customerIDFromCtx(r.Context()), item.ID, "knowledge")
+		if e != nil {
+			writeError(w, 500, "permissions unavailable")
+			return
+		}
+		if ok {
+			if RoleFromCtx(r.Context()).AtLeast(RoleAdmin) {
+				item.Sharing, e = h.store.resourceSharing(r.Context(), customerIDFromCtx(r.Context()), item.ID, "knowledge")
+				if e != nil {
+					writeError(w, 500, "permissions unavailable")
+					return
+				}
+			}
+			visible = append(visible, item)
+		}
+	}
+	rows = visible
 	writeJSON(w, http.StatusOK, map[string]any{"sources": rows})
 }
 
@@ -27,10 +47,22 @@ func (h *Handler) getKnowledge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+	ok, e := h.store.canAccess(r.Context(), customerIDFromCtx(r.Context()), id, "knowledge")
+	if e != nil || !ok {
+		writeError(w, 404, "resource not found")
+		return
+	}
 	k, err := h.store.GetKnowledgeSource(r.Context(), customerIDFromCtx(r.Context()), id)
 	if err != nil {
 		notFoundOr500(w, err)
 		return
+	}
+	if RoleFromCtx(r.Context()).AtLeast(RoleAdmin) {
+		k.Sharing, err = h.store.resourceSharing(r.Context(), customerIDFromCtx(r.Context()), id, "knowledge")
+		if err != nil {
+			writeError(w, 500, "permissions unavailable")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, k)
 }
@@ -105,6 +137,9 @@ func (h *Handler) createKnowledge(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := h.store.CreateKnowledgeSource(r.Context(), body)
 	if err != nil {
+		if sharingError(w, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -163,10 +198,12 @@ func (h *Handler) uploadKnowledge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+(64<<10))
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -226,11 +263,20 @@ func (h *Handler) uploadKnowledge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cid := customerIDFromCtx(r.Context())
+	var sharing *ResourceSharing
+	if raw := r.FormValue("sharing"); raw != "" {
+		sharing = &ResourceSharing{}
+		if json.Unmarshal([]byte(raw), sharing) != nil {
+			writeError(w, 400, "invalid sharing configuration")
+			return
+		}
+	}
 
 	// Reserve a UUID up-front so the blob ref + DB row stay in sync.
 	// (We can't use INSERT ... RETURNING then upload, because the blob
 	// ref is what gets persisted in source_ref.)
 	src := KnowledgeSource{
+		Sharing:    sharing,
 		CustomerID: cid,
 		Name:       name,
 		Type:       "file",
@@ -239,6 +285,9 @@ func (h *Handler) uploadKnowledge(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := h.store.CreateKnowledgeSource(r.Context(), src)
 	if err != nil {
+		if sharingError(w, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "create source: "+err.Error())
 		return
 	}

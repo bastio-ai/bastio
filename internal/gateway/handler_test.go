@@ -115,6 +115,8 @@ func TestInferProvider(t *testing.T) {
 		{"deepseek-chat", providers.ProviderDeepSeek},
 		{"deepseek-reasoner", providers.ProviderDeepSeek},
 		{"groq/llama-3.3-70b-versatile", providers.ProviderGroq},
+		{"grok-4.7", providers.ProviderXAI},
+		{"xai/grok-4.7", providers.ProviderXAI},
 		{"ollama/llama3", providers.ProviderOllama},
 		{"bedrock/anthropic.claude-3", providers.ProviderBedrock},
 		{"mysterymodel", providers.ProviderOpenAI}, // default fallback
@@ -372,23 +374,10 @@ func TestSanitizeOutboundBody_MaskRewritesUserMessages(t *testing.T) {
 		t.Fatal("expected rewrite to occur")
 	}
 	if strings.Contains(string(out), "123-45-6789") {
-		// The assistant message should still contain the raw SSN because
-		// we only sanitize user-role messages. Tighten the check:
-		// the user-content must not contain it.
-		var env struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.Unmarshal(out, &env); err != nil {
-			t.Fatalf("output not valid JSON: %v", err)
-		}
-		for _, m := range env.Messages {
-			if m.Role == "user" && strings.Contains(m.Content, "123-45-6789") {
-				t.Errorf("raw SSN leaked into user content: %q", m.Content)
-			}
-		}
+		t.Fatalf("PII leaked through conversation history: %s", out)
+	}
+	if !strings.Contains(string(out), "you are helpful") || !json.Valid(out) {
+		t.Fatalf("instruction or JSON changed: %s", out)
 	}
 }
 
@@ -667,12 +656,12 @@ func TestScanStreamChunkForSecrets_HandlesMalformedJSON(t *testing.T) {
 
 func TestParseImageURLAllowlist(t *testing.T) {
 	cases := map[string][]string{
-		"":                                  nil,
-		"  ":                                nil,
-		"example.com":                       {"example.com"},
-		"a.com,b.com":                       {"a.com", "b.com"},
-		"  A.com  , B.COM ,  ":              {"a.com", "b.com"},
-		",,,a.com,,b.com,,":                 {"a.com", "b.com"},
+		"":                     nil,
+		"  ":                   nil,
+		"example.com":          {"example.com"},
+		"a.com,b.com":          {"a.com", "b.com"},
+		"  A.com  , B.COM ,  ": {"a.com", "b.com"},
+		",,,a.com,,b.com,,":    {"a.com", "b.com"},
 	}
 	for in, want := range cases {
 		got := parseImageURLAllowlist(in)
@@ -781,15 +770,13 @@ func extractDeltaContent(t *testing.T, chunk []byte) string {
 	return env.Choices[0].Delta.Content
 }
 
-func TestSanitizeOutboundBody_MultimodalContentSkipped(t *testing.T) {
-	// Structured content arrays (multimodal) aren't rewritten in v1. The
-	// message must round-trip unchanged (modulo JSON key ordering).
+func TestSanitizeOutboundBody_MultimodalContentMasked(t *testing.T) {
 	engine := security.NewEngine(detection.NewPIIDetector())
 	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":[{"type":"text","text":"SSN 123-45-6789"}]}]}`)
 
-	_, ok := sanitizeOutboundBody(body, engine, security.ActionMask, nil)
-	if ok {
-		t.Errorf("multimodal content must not be rewritten in v1")
+	out, ok := sanitizeOutboundBody(body, engine, security.ActionMask, nil)
+	if !ok || strings.Contains(string(out), "123-45-6789") {
+		t.Errorf("structured user text must be sanitized: %s", out)
 	}
 }
 
@@ -961,5 +948,3 @@ func TestChatCompletions_SemanticCacheMissAndStore(t *testing.T) {
 		t.Errorf("expected upstream calls to remain 1, got %d", len(mockClient.calls))
 	}
 }
-
-

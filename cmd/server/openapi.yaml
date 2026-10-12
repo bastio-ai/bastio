@@ -15,7 +15,7 @@ tags:
   - name: Developer APIs
     description: Standalone inline threat scanning, reversible PII redaction, and autonomous agent tool call guardrails.
   - name: Gateway
-    description: OpenAI and Anthropic compatible LLM security proxies.
+    description: Native OpenRouter, OpenAI and Claude API security proxies.
   - name: Observability
     description: Traces, sessions, user metrics, and Redis response cache settings.
   - name: Security
@@ -134,6 +134,436 @@ paths:
           description: Anthropic messages response
         "403":
           description: Request blocked by security policy
+
+  /v1/openrouter/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native OpenRouter endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: openRouterNativeGet
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: openRouterNativePost
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: openRouterNativePut
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: openRouterNativePatch
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: openRouterNativeDelete
+      summary: Forward a native OpenRouter API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
+  /v1/xai/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native xAI endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: xaiNativeGet
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: xaiNativePost
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: xaiNativePut
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: xaiNativePatch
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: xaiNativeDelete
+      summary: Forward a native xAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
+  /v1/openai/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native OpenAI endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: openAINativeGet
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: openAINativePost
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: openAINativePut
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: openAINativePatch
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: openAINativeDelete
+      summary: Forward a native OpenAI API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
+  /v1/anthropic/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        description: Native Claude endpoint, including nested resource paths.
+        schema: { type: string }
+    get:
+      operationId: claudeNativeGet
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    post:
+      operationId: claudeNativePost
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    put:
+      operationId: claudeNativePut
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    patch:
+      operationId: claudeNativePatch
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          multipart/form-data:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+    delete:
+      operationId: claudeNativeDelete
+      summary: Forward a native Claude API request
+      description: Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider status and response, or a Bastio security block.
+
+  /v1/responses:
+    post:
+      operationId: createNativeResponse
+      summary: OpenAI or OpenRouter Responses API
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/embeddings:
+    post:
+      operationId: createNativeEmbeddings
+      summary: OpenAI or OpenRouter embeddings
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/models:
+    get:
+      operationId: listNativeModels
+      summary: Native provider model discovery
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/messages:
+    post:
+      operationId: createClaudeMessage
+      summary: Claude Messages API
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/messages/count_tokens:
+    post:
+      operationId: countClaudeMessageTokens
+      summary: Claude message token counting
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: X-Bastio-Provider
+          in: header
+          description: Explicit upstream selection; use openrouter for OpenRouter model slugs.
+          schema: { type: string, enum: [openai, openrouter, xai, anthropic] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or security-policy block.
+
+  /v1/guard/{proxyId}/v1/{endpoint}:
+    parameters:
+      - name: proxyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: endpoint
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: proxyNativeGet
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    post:
+      operationId: proxyNativePost
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    put:
+      operationId: proxyNativePut
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    patch:
+      operationId: proxyNativePatch
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
+    delete:
+      operationId: proxyNativeDelete
+      summary: Native API through a tenant-owned gateway proxy
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native API response; inactive or cross-tenant proxies return 404.
 
   # Management API
   /v1/proxies:
@@ -1707,6 +2137,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/WorkspaceKnowledgeSource"
 
+  /v1/workspace/knowledge/index-status:
+    get:
+      operationId: workspaceKnowledgeIndexStatus
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Administrator-visible embedding model and remaining background indexing work
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, model, dimensions, pending_sources]
+                properties:
+                  enabled: { type: boolean }
+                  model: { type: string }
+                  dimensions: { type: integer }
+                  pending_sources: { type: integer }
   /v1/workspace/knowledge/upload:
     post:
       operationId: workspaceUploadKnowledge
@@ -1730,6 +2177,7 @@ paths:
                   format: binary
                 name:
                   type: string
+                sharing: { type: string, description: JSON-encoded WorkspaceResourceSharing applied atomically with source creation }
       responses:
         "201":
           description: Created (ingestion in progress)
@@ -1798,6 +2246,7 @@ paths:
       operationId: workspaceListConversations
       tags: [Workspace]
       parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
         - in: query
           name: limit
           schema: { type: integer, default: 50, maximum: 200 }
@@ -2055,8 +2504,474 @@ paths:
             application/json:
               schema:
                 type: object
+  /v1/mcp/servers:
+    get:
+      operationId: "listMCPServers"
+      summary: "List real enrolled MCP firewalls"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPServerList"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+    post:
+      operationId: "createMCPServer"
+      summary: "Enroll a server (admin)"
+      tags: ["MCP"]
+      responses:
+        201:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPEnrollment"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPCreateServer"
+  /v1/mcp/servers/{id}/policy:
+    put:
+      operationId: "updateMCPPolicy"
+      summary: "Update tool allow/block policy (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  policy:
+                    $ref: "#/components/schemas/MCPPolicy"
+                required: ["policy"]
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPPolicy"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/servers/{id}/rotate-token:
+    post:
+      operationId: "rotateMCPToken"
+      summary: "Replace a server enrollment token (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPToken"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/servers/{id}:
+    delete:
+      operationId: "revokeMCPServer"
+      summary: "Revoke a firewall enrollment (admin)"
+      tags: ["MCP"]
+      responses:
+        204:
+          description: "Success"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/events:
+    get:
+      operationId: "listMCPEvents"
+      summary: "List 30-day metadata-only MCP events"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPEventList"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      parameters:
+        - name: "server_id"
+          in: "query"
+          schema:
+            type: "string"
+            format: "uuid"
+        - name: "limit"
+          in: "query"
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 200
+  /v1/mcp/inspect:
+    post:
+      operationId: "inspectMCPTool"
+      summary: "Inspect tool arguments using the real local firewall engine; does not execute or persist input (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPDecision"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPInspectRequest"
+  /v1/mcp/runtime:
+    post:
+      operationId: "ingestMCPRuntime"
+      summary: "Refresh enrollment policy and ingest metadata; enrollment token authorizes only its server"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPRuntimeResponse"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        500:
+          description: "Operation failed"
+        429:
+          description: "Reporting limit exceeded; retry after 30 seconds"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPRuntimeBatch"
+      security:
+        - MCPEnrollment: []
+
+  /v1/workspace/provisioning:
+    get:
+      operationId: getWorkspaceProvisioning
+      summary: Cloud-only SCIM Workspace provisioning status (administrator required)
+      responses:
+        '200':
+          description: Current directory linking status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, directory_users, linked_members]
+                properties:
+                  enabled: { type: boolean }
+                  directory_users: { type: integer }
+                  linked_members: { type: integer }
+        '403': { description: Administrator role required }
+        '404': { description: Cloud feature unavailable in OSS }
+    put:
+      operationId: setWorkspaceProvisioning
+      summary: Cloud-only opt-in SCIM membership linking (administrator required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200': { description: Updated provisioning status }
+        '403': { description: Administrator role required }
+        '404': { description: Cloud feature unavailable in OSS }
+
+  /v1/workspace/spending:
+    get:
+      operationId: getWorkspaceSpending
+      responses:
+        '200':
+          description: Current calendar month estimated spending, including reservations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  used_cents: { type: number }
+                  limit_cents: { type: integer, nullable: true }
+                  near_limit: { type: boolean }
+  /v1/workspace/evidence:
+    get:
+      operationId: exportWorkspaceEvidence
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Tenant-scoped operational evidence, without compliance certification
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEvidence' }
+  /v1/workspace/access:
+    get:
+      operationId: getWorkspaceAccess
+      responses:
+        '200':
+          description: Administrative group and resource permissions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceAccess' }
+  /v1/workspace/access/groups:
+    put:
+      operationId: putWorkspaceAccessGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceAccessGroup' }
+      responses:
+        '200':
+          description: Updated group
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceAccessGroup' }
+  /v1/workspace/access/resources:
+    put:
+      operationId: putWorkspaceResourceAccess
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceResourceAccess' }
+      responses:
+        '200':
+          description: Updated permissions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceResourceAccess' }
+
+  /v1/workspace/me/provider-readiness:
+    get:
+      operationId: getWorkspaceProviderReadiness
+      responses:
+        '200':
+          description: Configured providers; does not guarantee upstream credential or model access
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider: { type: string }
+                        configured: { type: boolean }
+
+  /v1/workspace/mcp:
+    get:
+      operationId: workspaceListMCP
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Personal and workspace-shared MCP connections visible to the member
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPList" }
+  /v1/workspace/mcp/policy:
+    put:
+      operationId: workspaceSetMCPPolicy
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMCPPolicy" }
+      responses:
+        "200":
+          description: Administrator updated personal integration policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPPolicy" }
+  /v1/workspace/mcp/connections:
+    post:
+      operationId: workspaceCreateMCPConnection
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMCPInput" }
+      responses:
+        "201":
+          description: Created; credentials are never returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPConnection" }
+  /v1/workspace/mcp/connections/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      operationId: workspaceUpdateMCPConnection
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMCPInput" }
+      responses:
+        "200":
+          description: Updated; only owners manage personal integrations and administrators manage shared integrations
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPConnection" }
+    delete:
+      operationId: workspaceRevokeMCPConnection
+      tags: [Workspace]
+      responses:
+        "204": { description: Integration revoked }
+  /v1/workspace/mcp/connections/{id}/tools:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: workspaceListMCPTools
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Discovered tools filtered by allowlist and inspected as untrusted content
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools: { type: array, items: { $ref: "#/components/schemas/WorkspaceMCPTool" } }
+  /v1/workspace/mcp/connections/{id}/call:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: workspaceCallMCPTool
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, arguments]
+              properties:
+                name: { type: string, maxLength: 128 }
+                arguments: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Security-processed textual result; raw arguments and results are not retained in audit records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, is_error, categories]
+                properties:
+                  text: { type: string }
+                  is_error: { type: boolean }
+                  categories: { type: array, items: { type: string } }
+
 components:
   securitySchemes:
+    MCPEnrollment:
+      type: http
+      scheme: bearer
+      description: A one-time server-scoped MCP enrollment credential; not a gateway API key.
     ApiKeyAuth:
       type: apiKey
       in: header
@@ -2064,6 +2979,213 @@ components:
       description: "Bearer sk-bastio-..."
 
   schemas:
+    WorkspaceMCPPolicy:
+      type: object
+      required: [allow_personal]
+      properties:
+        allow_personal: { type: boolean }
+    WorkspaceMCPList:
+      type: object
+      required: [connections, allow_personal, can_manage]
+      properties:
+        connections: { type: array, items: { $ref: "#/components/schemas/WorkspaceMCPConnection" } }
+        allow_personal: { type: boolean }
+        can_manage: { type: boolean }
+    WorkspaceMCPConnection:
+      type: object
+      required: [id, name, endpoint, scope, owner_user_id, allowed_tools, has_credential, created_at]
+      properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
+        id: { type: string, format: uuid }
+        name: { type: string }
+        endpoint: { type: string, format: uri }
+        scope: { type: string, enum: [personal, workspace] }
+        owner_user_id: { type: string }
+        allowed_tools: { type: array, items: { type: string } }
+        has_credential: { type: boolean }
+        created_at: { type: string, format: date-time }
+    WorkspaceMCPInput:
+      type: object
+      required: [name, endpoint, scope]
+      properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        endpoint: { type: string, format: uri, maxLength: 2048 }
+        scope: { type: string, enum: [personal, workspace] }
+        allowed_tools: { type: array, maxItems: 100, items: { type: string } }
+        credential: { type: string, maxLength: 8192, writeOnly: true }
+    WorkspaceMCPTool:
+      type: object
+      required: [name, inputSchema]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        inputSchema: { type: object, additionalProperties: true }
+    MCPPolicy:
+      type: "object"
+      properties:
+        allowed_tools:
+          type: "array"
+          maxItems: 100
+          items:
+            type: "string"
+            pattern: "^[A-Za-z0-9_.:/-]{1,128}$"
+        blocked_tools:
+          type: "array"
+          maxItems: 100
+          items:
+            type: "string"
+            pattern: "^[A-Za-z0-9_.:/-]{1,128}$"
+      required: ["allowed_tools", "blocked_tools"]
+    MCPServer:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+        client:
+          type: "string"
+          enum: ["claude", "cursor", "cline", "terminal", "other"]
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+        created_at:
+          type: "string"
+          format: "date-time"
+        last_seen_at:
+          type: ["string", "null"]
+          format: "date-time"
+        revoked_at:
+          type: ["string", "null"]
+          format: "date-time"
+        calls:
+          type: "integer"
+        blocked:
+          type: "integer"
+        dropped_events:
+          type: "integer"
+      required: ["id", "name", "client", "policy", "created_at", "last_seen_at", "revoked_at", "calls", "blocked", "dropped_events"]
+    MCPEvent:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        server_id:
+          type: "string"
+          format: "uuid"
+        server_name:
+          type: "string"
+        client:
+          type: "string"
+        tool_name:
+          type: "string"
+        direction:
+          type: "string"
+          enum: ["request", "response", "tool_description"]
+        action:
+          type: "string"
+          enum: ["allowed", "blocked", "sanitized", "warned"]
+        categories:
+          type: "array"
+          items:
+            type: "string"
+        duration_ms:
+          type: "number"
+        occurred_at:
+          type: "string"
+          format: "date-time"
+      required: ["id", "server_id", "tool_name", "direction", "action", "categories", "duration_ms", "occurred_at"]
+    MCPServerList:
+      type: "object"
+      properties:
+        servers:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/MCPServer"
+      required: ["servers"]
+    MCPEventList:
+      type: "object"
+      properties:
+        events:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/MCPEvent"
+      required: ["events"]
+    MCPCreateServer:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        client:
+          type: "string"
+          enum: ["claude", "cursor", "cline", "terminal", "other"]
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+      required: ["name", "client", "policy"]
+    MCPEnrollment:
+      type: "object"
+      properties:
+        server:
+          $ref: "#/components/schemas/MCPServer"
+        enrollment_token:
+          type: "string"
+      required: ["server", "enrollment_token"]
+    MCPToken:
+      type: "object"
+      properties:
+        enrollment_token:
+          type: "string"
+      required: ["enrollment_token"]
+    MCPInspectRequest:
+      type: "object"
+      properties:
+        tool_name:
+          type: "string"
+        arguments:
+          type: "object"
+          additionalProperties: true
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+      required: ["tool_name", "arguments", "policy"]
+    MCPDecision:
+      type: "object"
+      properties:
+        action:
+          type: "string"
+          enum: ["allowed", "blocked", "sanitized", "warned"]
+        categories:
+          type: "array"
+          items:
+            type: "string"
+        arguments:
+          type: ["object", "null"]
+          additionalProperties: true
+        duration_ms:
+          type: "number"
+      required: ["action", "categories", "arguments", "duration_ms"]
+    MCPRuntimeBatch:
+      type: "object"
+      properties:
+        events:
+          type: "array"
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/MCPEvent"
+        dropped_events:
+          type: "integer"
+          minimum: 0
+      required: ["events", "dropped_events"]
+    MCPRuntimeResponse:
+      type: "object"
+      properties:
+        server_id:
+          type: "string"
+          format: "uuid"
+        policy:
+          $ref: "#/components/schemas/MCPPolicy"
+      required: ["server_id", "policy"]
     HealthResponse:
       type: object
       properties:
@@ -2151,7 +3273,7 @@ components:
           type: string
         target_provider:
           type: string
-          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+          enum: [openai, openrouter, xai, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         target_model:
           type: string
         settings:
@@ -2494,7 +3616,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+          enum: [openai, openrouter, xai, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         key:
           type: string
           description: Plaintext key. Stored encrypted at rest.
@@ -2514,7 +3636,7 @@ components:
           type: string
         target_provider:
           type: string
-          enum: [openai, anthropic, bedrock, vertex, azure, ollama]
+          enum: [openai, openrouter, xai, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]
         target_model:
           type: string
         is_active:
@@ -4485,6 +5607,9 @@ components:
       type: object
       required: [customer_id, branding, seat_limit, retention_days, billing_mode, allowed_models, created_at, updated_at]
       properties:
+        store_conversation_content:
+          type: boolean
+          description: Store content for new chat writes; false retains only operational metadata.
         customer_id: { type: string, format: uuid }
         branding: { type: object, additionalProperties: true }
         default_assistant_id: { type: string, format: uuid, nullable: true }
@@ -4521,6 +5646,9 @@ components:
     WorkspaceSettingsPatch:
       type: object
       properties:
+        store_conversation_content:
+          type: boolean
+          description: Store content for new chat writes; false retains only operational metadata.
         branding: { type: object, additionalProperties: true }
         seat_limit: { type: integer }
         retention_days: { type: integer }
@@ -4538,12 +5666,13 @@ components:
       type: object
       required: [id, customer_id, name, default_provider, default_model, language, suggested_prompts, is_default, created_at, updated_at]
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }
         customer_id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
         system_prompt: { type: string }
-        default_provider: { type: string, enum: [openai, anthropic, bedrock, ollama, google] }
+        default_provider: { type: string, enum: [openai, openrouter, xai, anthropic, gemini, deepseek, groq, bedrock, ollama, google], description: "google is a legacy alias for gemini" }
         default_model: { type: string }
         language: { type: string }
         suggested_prompts:
@@ -4559,6 +5688,7 @@ components:
     WorkspaceAssistantPatch:
       type: object
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         name: { type: string }
         description: { type: string }
         system_prompt: { type: string }
@@ -4587,6 +5717,7 @@ components:
       type: object
       required: [id, customer_id, name, type, source_ref, size_bytes, status, metadata, created_at, updated_at]
       properties:
+        sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }
         customer_id: { type: string, format: uuid }
         name: { type: string }
@@ -4627,6 +5758,7 @@ components:
       type: object
       required: [id, customer_id, user_id, title, pinned, last_message_at, created_at, updated_at]
       properties:
+        content_stored: { type: boolean }
         id: { type: string, format: uuid }
         customer_id: { type: string, format: uuid }
         user_id: { type: string }
@@ -4651,6 +5783,7 @@ components:
       type: object
       required: [id, conversation_id, customer_id, role, content, prompt_tokens, completion_tokens, cost_cents, metadata, created_at]
       properties:
+        temporary: { type: boolean, description: Content was returned to the caller but suppressed in durable storage }
         id: { type: string, format: uuid }
         conversation_id: { type: string, format: uuid }
         customer_id: { type: string, format: uuid }
@@ -4661,6 +5794,7 @@ components:
         prompt_tokens: { type: integer }
         completion_tokens: { type: integer }
         cost_cents: { type: integer }
+        cost_cents_exact: { type: number, description: Estimated fractional cents for this message }
         finish_reason: { type: string, nullable: true }
         error: { type: string, nullable: true }
         metadata: { type: object, additionalProperties: true }
@@ -4670,6 +5804,15 @@ components:
       type: object
       required: [content]
       properties:
+        history:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string }
         content: { type: string }
         provider: { type: string }
         model: { type: string }
@@ -4738,3 +5881,57 @@ components:
       properties:
         model: { type: string }
         count: { type: integer }
+
+    WorkspaceAccessGroup:
+      type: object
+      required: [name, user_ids]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 80 }
+        user_ids: { type: array, items: { type: string } }
+    WorkspaceResourceSharing:
+      type: object
+      required: [restricted, group_ids, user_ids]
+      description: Restricted access permits members of any selected group or individually selected people. Empty restricted recipients permit only owners/admins. Omission preserves existing sharing on updates; new resources default to everyone.
+      properties:
+        restricted: { type: boolean }
+        group_ids: { type: array, maxItems: 100, items: { type: string, format: uuid } }
+        user_ids: { type: array, maxItems: 1000, items: { type: string } }
+
+    WorkspaceResourceAccess:
+      type: object
+      required: [type, id, group_ids]
+      properties:
+        type: { type: string, enum: [knowledge, assistant, mcp] }
+        id: { type: string, format: uuid }
+        group_ids: { type: array, items: { type: string, format: uuid } }
+        user_ids: { type: array, maxItems: 1000, items: { type: string } }
+        restricted:
+          type: boolean
+          description: Explicit restriction; true with no recipients remains admin-only. Omission preserves legacy inference from recipient arrays.
+    WorkspaceAccess:
+      type: object
+      properties:
+        groups: { type: array, items: { $ref: '#/components/schemas/WorkspaceAccessGroup' } }
+        resources: { type: array, items: { $ref: '#/components/schemas/WorkspaceResourceAccess' } }
+    WorkspaceEvidence:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        scope: { type: string }
+        certification: { type: string }
+        settings: { $ref: '#/components/schemas/WorkspaceSettings' }
+        counts:
+          type: object
+          properties:
+            messages: { type: integer }
+            model_calls: { type: integer }
+            policy_blocks: { type: integer }
+            output_blocks: { type: integer }
+            tokens: { type: integer }
+            estimated_spend_cents: { type: number }
+        events: { type: array, items: { type: object } }
+        events_total: { type: integer }
+        events_truncated: { type: boolean }

@@ -31,6 +31,20 @@ func NewBedrockClient() *BedrockClient { return &BedrockClient{} }
 
 func (c *BedrockClient) Name() Provider { return ProviderBedrock }
 
+func bedrockInferenceConfig(req *ChatRequest) *bedrocktypes.InferenceConfiguration {
+	config := &bedrocktypes.InferenceConfiguration{}
+	if req.MaxTokens != nil {
+		config.MaxTokens = aws.Int32(int32(*req.MaxTokens))
+	}
+	if req.Temperature != nil {
+		config.Temperature = aws.Float32(float32(*req.Temperature))
+	}
+	if req.TopP != nil {
+		config.TopP = aws.Float32(float32(*req.TopP))
+	}
+	return config
+}
+
 // Chat sends a non-streaming request via Converse.
 func (c *BedrockClient) Chat(ctx context.Context, req *ChatRequest, apiKey string) (*ChatResponse, error) {
 	client, err := c.clientFor(ctx, apiKey)
@@ -44,9 +58,10 @@ func (c *BedrockClient) Chat(ctx context.Context, req *ChatRequest, apiKey strin
 	}
 
 	out, err := client.Converse(ctx, &bedrockruntime.ConverseInput{
-		ModelId:  aws.String(modelID),
-		Messages: msgs,
-		System:   system,
+		ModelId:         aws.String(modelID),
+		Messages:        msgs,
+		System:          system,
+		InferenceConfig: bedrockInferenceConfig(req),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("bedrock converse: %w", err)
@@ -99,9 +114,10 @@ func (c *BedrockClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey
 	}
 
 	out, err := client.ConverseStream(ctx, &bedrockruntime.ConverseStreamInput{
-		ModelId:  aws.String(modelID),
-		Messages: msgs,
-		System:   system,
+		ModelId:         aws.String(modelID),
+		Messages:        msgs,
+		System:          system,
+		InferenceConfig: bedrockInferenceConfig(req),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("bedrock converse stream: %w", err)
@@ -177,7 +193,7 @@ func (c *BedrockClient) convert(req *ChatRequest) (string, []bedrocktypes.Messag
 
 	if req.Raw != nil {
 		var m struct {
-			Model    string        `json:"model"`
+			Model    string    `json:"model"`
 			Messages []Message `json:"messages"`
 		}
 		if err := json.Unmarshal(req.Raw, &m); err == nil {

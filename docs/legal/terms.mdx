@@ -16,7 +16,7 @@ Bastio provides an open-source AI security gateway, standalone guardrail APIs, a
 - **Prohibited Conduct**: You may not attempt to reverse engineer detector signatures, bypass cryptographic licensing keys, or execute denial-of-service attacks against Bastio infrastructure.
 
 ## 3. Data Processing & Privacy Guarantees
-- **Zero Data Retention**: Bastio does not store full prompt contents or LLM completions unless explicit audit logging is enabled by the customer.
+- **Conversation storage**: Workspace conversation history is stored according to the configured Workspace data settings. Upstream model-provider retention terms are separate from Bastio’s storage settings.
 - **Reversible PII Redaction**: PII token maps are held exclusively in volatile RAM during request lifetime and are destroyed immediately upon request completion.
 
 ## 4. Single-Binary Enterprise Licensing

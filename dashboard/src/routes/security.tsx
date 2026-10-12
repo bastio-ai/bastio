@@ -27,31 +27,24 @@ import { useSecurityExtension } from "@/components/security-extension";
 import { api } from "@/api/client";
 import type { SecurityProfile, UpdateSecurityProfileRequest } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { ACTION_HELP, ActionHelp, EnforcementGuide } from "@/components/security-action-help";
 
 type PIIAction = SecurityProfile["pii_action"];
 type PIITokenStyle = SecurityProfile["pii_token_style"];
 type Strategy = "block" | "mask" | "tokenize" | "warn" | "log_only";
 
-const PII_ACTION_OPTIONS: { value: PIIAction; label: string; hint: string }[] = [
-  { value: "mask", label: "Mask", hint: "Lossy one-way redaction" },
-  { value: "tokenize", label: "Tokenize", hint: "Reversible placeholders" },
-  { value: "block", label: "Block", hint: "Reject requests containing PII" },
-  { value: "warn", label: "Warn", hint: "Allow with a security finding" },
-  { value: "log_only", label: "Log only", hint: "Observe without enforcement" },
+const PII_ACTION_OPTIONS: { value: PIIAction; label: string }[] = [
+  { value: "mask", label: "Mask" },
+  { value: "tokenize", label: "Tokenize" },
+  { value: "block", label: "Block" },
+  { value: "warn", label: "Warn" },
+  { value: "log_only", label: "Log only" },
 ];
 
 const PII_TOKEN_STYLE_OPTIONS: { value: PIITokenStyle; label: string }[] = [
   { value: "angle", label: "<PII_SSN_1>" },
   { value: "curly", label: "{{PII_SSN_1}}" },
 ];
-
-const STRATEGY_HINT: Record<Strategy, string> = {
-  block: "Reject the request or response before it reaches the next system.",
-  mask: "Replace the detected secret with an irreversible mask.",
-  tokenize: "Replace PII with a reversible placeholder.",
-  warn: "Allow the request and create a security finding.",
-  log_only: "Record the detection without changing traffic.",
-};
 
 const STRATEGY_OPTIONS: Record<"text" | "secrets", { value: Strategy; label: string }[]> = {
   text: [
@@ -136,6 +129,7 @@ export function SecurityPage() {
         </TabsList>
 
         <TabsContent value="detectors" className="space-y-5">
+          <EnforcementGuide />
           <section className="overflow-hidden rounded-xl border border-border/70 bg-card">
             <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
               <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg border", profile?.canonicalize_enabled ? "border-success-border bg-success-bg text-success" : "border-border bg-muted/40 text-muted-foreground")}><Wand2 className="size-4" /></div>
@@ -307,19 +301,148 @@ function TopicPatternList({ profileId, disabled }: { profileId: string; disabled
   );
 }
 
-function PiiControls({ profile, disabled, onUpdate }: { profile: SecurityProfile; disabled: boolean; onUpdate: (data: UpdateSecurityProfileRequest) => void }) {
+function PiiControls({
+  profile,
+  disabled,
+  onUpdate,
+}: {
+  profile: SecurityProfile;
+  disabled: boolean;
+  onUpdate: (data: UpdateSecurityProfileRequest) => void;
+}) {
   return (
     <div className="space-y-3">
-      <div><label className="mb-1.5 block text-[10px] text-muted-foreground">Action</label><Select value={profile.pii_action} onValueChange={(value) => value && onUpdate({ pii_action: value as PIIAction })}><SelectTrigger className="w-full" disabled={disabled}><SelectValue /></SelectTrigger><SelectContent>{PII_ACTION_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select><p className="mt-1 text-[9px] text-muted-foreground">{PII_ACTION_OPTIONS.find((option) => option.value === profile.pii_action)?.hint}</p></div>
-      {profile.pii_action === "tokenize" ? <div><label className="mb-1.5 block text-[10px] text-muted-foreground">Token style</label><Select value={profile.pii_token_style} onValueChange={(value) => value && onUpdate({ pii_token_style: value as PIITokenStyle })}><SelectTrigger className="w-full" disabled={disabled}><SelectValue /></SelectTrigger><SelectContent>{PII_TOKEN_STYLE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}><code>{option.label}</code></SelectItem>)}</SelectContent></Select></div> : null}
-      <label className="flex items-start gap-2 text-[10px] leading-relaxed text-muted-foreground"><input type="checkbox" className="mt-0.5 size-3.5" checked={profile.pii_scan_response} onChange={(event) => onUpdate({ pii_scan_response: event.target.checked })} disabled={disabled} />Scan model responses for hallucinated or retrieved PII</label>
-      {profile.pii_action === "tokenize" ? <label className="flex items-start gap-2 text-[10px] leading-relaxed text-muted-foreground"><input type="checkbox" className="mt-0.5 size-3.5" checked={profile.pii_restore_response} onChange={(event) => onUpdate({ pii_restore_response: event.target.checked })} disabled={disabled} />Restore original values in the response</label> : null}
+      <div>
+        <label className="mb-1.5 block text-[10px] text-muted-foreground">
+          Action
+        </label>
+        <Select
+          value={profile.pii_action}
+          onValueChange={(value) =>
+            value && onUpdate({ pii_action: value as PIIAction })
+          }
+        >
+          <SelectTrigger
+            className="w-full"
+            aria-label="PII enforcement action"
+            disabled={disabled}
+          >
+            <SelectValue>{ACTION_HELP[profile.pii_action].label}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {PII_ACTION_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                <ActionOption action={option.value} />
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ActionHelp action={profile.pii_action} pii />
+      </div>
+      {profile.pii_action === "tokenize" ? (
+        <div>
+          <label className="mb-1.5 block text-[10px] text-muted-foreground">
+            Token style
+          </label>
+          <Select
+            value={profile.pii_token_style}
+            onValueChange={(value) =>
+              value && onUpdate({ pii_token_style: value as PIITokenStyle })
+            }
+          >
+            <SelectTrigger className="w-full" disabled={disabled}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PII_TOKEN_STYLE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <code>{option.label}</code>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+      <label className="flex items-start gap-2 text-[10px] leading-relaxed text-muted-foreground">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-3.5"
+          checked={profile.pii_scan_response}
+          onChange={(event) =>
+            onUpdate({ pii_scan_response: event.target.checked })
+          }
+          disabled={disabled}
+        />
+        Scan model responses for hallucinated or retrieved PII
+      </label>
+      {profile.pii_action === "tokenize" ? (
+        <label className="flex items-start gap-2 text-[10px] leading-relaxed text-muted-foreground">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-3.5"
+            checked={profile.pii_restore_response}
+            onChange={(event) =>
+              onUpdate({ pii_restore_response: event.target.checked })
+            }
+            disabled={disabled}
+          />
+          Restore original values in the response
+        </label>
+      ) : null}
     </div>
   );
 }
 
-function StrategyField({ value, options, onChange, disabled }: { value: Strategy; options: readonly { value: Strategy; label: string }[]; onChange: (next: Strategy) => void; disabled: boolean }) {
-  return <div><label className="mb-1.5 block text-[10px] text-muted-foreground">Action</label><Select value={value} onValueChange={(next) => next && onChange(next as Strategy)}><SelectTrigger className="w-full" disabled={disabled}><SelectValue /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">{STRATEGY_HINT[value]}</p></div>;
+function StrategyField({
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  value: Strategy;
+  options: readonly { value: Strategy; label: string }[];
+  onChange: (next: Strategy) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-[10px] text-muted-foreground">
+        Action
+      </label>
+      <Select
+        value={value}
+        onValueChange={(next) => next && onChange(next as Strategy)}
+      >
+        <SelectTrigger
+          className="w-full"
+          aria-label="Detector enforcement action"
+          disabled={disabled}
+        >
+          <SelectValue>{ACTION_HELP[value].label}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              <ActionOption action={option.value} />
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <ActionHelp action={value} />
+    </div>
+  );
+}
+
+function ActionOption({ action }: { action: Strategy }) {
+  const help = ACTION_HELP[action];
+  return (
+    <span className="block min-w-0 whitespace-normal py-0.5">
+      <span className="block text-[11px] font-medium">{help.label}</span>
+      <span className="block text-[10px] leading-relaxed text-muted-foreground">
+        {help.outcome}
+      </span>
+    </span>
+  );
 }
 
 function ThresholdField({ value, onChange, disabled }: { value: number; onChange: (next: number) => void; disabled: boolean }) {

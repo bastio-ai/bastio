@@ -1,6 +1,7 @@
 {
   "title": "Providers",
   "pages": [
+    "openrouter",
     "openai",
     "anthropic",
     "bedrock",

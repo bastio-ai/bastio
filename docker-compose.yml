@@ -12,6 +12,14 @@ services:
       REDIS_URL: redis://redis:6379
       CLICKHOUSE_URL: http://clickhouse:8123
       BASTIO_LOG_LEVEL: info
+      BASTIO_GATEWAY_TIMEOUT: ${BASTIO_GATEWAY_TIMEOUT:-10m}
+      BASTIO_MAX_GATEWAY_BODY_BYTES: ${BASTIO_MAX_GATEWAY_BODY_BYTES:-67108864}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}
       # Optional: set PRESIDIO_URL when running with the `presidio` profile
       # to route governance classifier calls to Microsoft Presidio.
       PRESIDIO_URL: ${PRESIDIO_URL:-}

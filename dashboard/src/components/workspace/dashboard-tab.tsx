@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -9,7 +10,10 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-import { AdminSummaryStrip, SecurityNotice } from "@/components/admin/admin-primitives";
+import {
+  AdminSummaryStrip,
+  SecurityNotice,
+} from "@/components/admin/admin-primitives";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/skeleton";
 import { cn, formatNumber } from "@/lib/utils";
@@ -24,9 +28,10 @@ import { useWorkspaceExtension } from "./extension-context";
 
 type Props = {
   onOpenChat: (conversationID?: string) => void;
+  onOpenTab?: (tab: string) => void;
 };
 
-export function DashboardTab({ onOpenChat }: Props) {
+export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
   const ext = useWorkspaceExtension();
   const summary = useQuery({
     queryKey: ["workspace", "analytics", "summary"],
@@ -49,8 +54,38 @@ export function DashboardTab({ onOpenChat }: Props) {
     queryFn: workspaceApi.getSettings,
   });
 
+  const readiness = useQuery({
+    queryKey: ["workspace", "provider-readiness"],
+    queryFn: async () => {
+      const r = await fetch("/v1/workspace/me/provider-readiness", {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Provider readiness unavailable");
+      return r.json() as Promise<{
+        providers: { provider: string; configured: boolean }[];
+      }>;
+    },
+  });
+  const spending = useQuery({
+    queryKey: ["workspace", "spending"],
+    queryFn: async () => {
+      const r = await fetch("/v1/workspace/spending", {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Spending status unavailable");
+      return r.json() as Promise<{
+        used_cents: number;
+        limit_cents: number | null;
+        near_limit: boolean;
+      }>;
+    },
+  });
+  const connected =
+    readiness.data?.providers.filter((p) => p.configured).length ?? 0;
   const assistantCount = assistants.data?.assistants.length ?? 0;
-  const readySources = knowledge.data?.sources.filter((item) => item.status === "ready").length ?? 0;
+  const readySources =
+    knowledge.data?.sources.filter((item) => item.status === "ready").length ??
+    0;
   const allowedModelCount = settings.data?.allowed_models?.length ?? 0;
   const hasPersona = Boolean(
     settings.data?.ai_persona_name ||
@@ -60,22 +95,93 @@ export function DashboardTab({ onOpenChat }: Props) {
 
   return (
     <div>
+      <section className="mb-5 rounded-xl border border-border bg-card p-4">
+        <h2 className="text-[13px] font-bold tracking-tight">
+          Prepare your employee pilot
+        </h2>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Connect a provider, approve models and storage, add a useful
+          assistant, then verify a real answer before inviting the team.
+        </p>
+        <ol className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+          <li>
+            <Link to="/proxies" className="underline">
+              1. Connect provider credentials
+            </Link>
+            <p className="mt-1 text-muted-foreground">
+              {connected} configured providers. Configuration is checked here; a
+              real prompt verifies credentials and model access.
+            </p>
+          </li>
+          <li>
+            <button
+              className="underline"
+              onClick={() => onOpenTab?.("settings")}
+            >
+              2. Choose approved models and privacy
+            </button>
+            <p className="mt-1 text-muted-foreground">
+              Storage:{" "}
+              {settings.data?.store_conversation_content === false
+                ? "temporary chats"
+                : "saved history"}
+              .
+            </p>
+          </li>
+          <li>
+            <button
+              className="underline"
+              onClick={() => onOpenTab?.("assistants")}
+            >
+              3. Create a useful assistant
+            </button>
+            <p className="mt-1 text-muted-foreground">
+              {assistantCount} assistants · {readySources} ready knowledge
+              sources.
+            </p>
+          </li>
+          <li>
+            <button className="underline" onClick={() => onOpenChat()}>
+              4. Verify a first answer
+            </button>
+            <p className="mt-1 text-muted-foreground">
+              Send a harmless sample, check its sources and security outcome.
+            </p>
+          </li>
+          {ext.extraTabs.some((t) => t.id === "team") && (
+            <li>
+              <button className="underline" onClick={() => onOpenTab?.("team")}>
+                5. Invite employees
+              </button>
+              <p className="mt-1 text-muted-foreground">
+                Start with a small team and follow usage in analytics.
+              </p>
+            </li>
+          )}
+        </ol>
+      </section>
       <AdminSummaryStrip
         items={[
           {
             label: "Messages this month",
-            value: summary.data ? formatNumber(summary.data.messages_this_month) : "—",
+            value: summary.data
+              ? formatNumber(summary.data.messages_this_month)
+              : "—",
             detail: "Across portal conversations",
           },
           {
             label: "Tokens used",
-            value: summary.data ? formatTokens(summary.data.tokens_this_month) : "—",
+            value: summary.data
+              ? formatTokens(summary.data.tokens_this_month)
+              : "—",
             detail: "Current billing month",
           },
           {
             label: "Estimated cost",
-            value: summary.data ? formatCents(summary.data.cost_cents_this_month) : "—",
-            detail: "Model usage estimate",
+            value: spending.data ? formatCents(spending.data.used_cents) : "—",
+            detail: spending.data?.near_limit
+              ? "Approaching monthly limit"
+              : "Includes in-flight reservations",
           },
           {
             label: "Active users",
@@ -92,7 +198,9 @@ export function DashboardTab({ onOpenChat }: Props) {
         <section className="overflow-hidden rounded-xl border border-border/70 bg-card">
           <div className="flex items-center justify-between gap-4 border-b border-border/60 px-4 py-3.5">
             <div>
-              <h2 className="text-[13px] font-semibold text-foreground">Recent conversations</h2>
+              <h2 className="text-[13px] font-semibold text-foreground">
+                Recent conversations
+              </h2>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Latest employee activity in the private portal.
               </p>
@@ -104,17 +212,27 @@ export function DashboardTab({ onOpenChat }: Props) {
           </div>
 
           {recent.isLoading ? (
-            <div className="p-4"><SkeletonRows count={5} /></div>
+            <div className="p-4">
+              <SkeletonRows count={5} />
+            </div>
           ) : recent.data?.conversations.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center px-6 py-12 text-center">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
                 <MessageSquarePlus className="h-4 w-4" />
               </div>
-              <h3 className="mt-4 text-[13px] font-medium text-foreground">No conversations yet</h3>
+              <h3 className="mt-4 text-[13px] font-medium text-foreground">
+                No conversations yet
+              </h3>
               <p className="mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">
-                Open the portal to test the employee experience and create the first governed conversation.
+                Open the portal to test the employee experience and create the
+                first governed conversation.
               </p>
-              <Button className="mt-4" size="sm" variant="outline" onClick={() => onOpenChat()}>
+              <Button
+                className="mt-4"
+                size="sm"
+                variant="outline"
+                onClick={() => onOpenChat()}
+              >
                 Open portal <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
@@ -136,7 +254,9 @@ export function DashboardTab({ onOpenChat }: Props) {
             <div className="border-b border-border/60 px-4 py-3.5">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-[13px] font-semibold text-foreground">Workspace readiness</h2>
+                <h2 className="text-[13px] font-semibold text-foreground">
+                  Workspace readiness
+                </h2>
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Configuration that shapes every employee conversation.
@@ -146,34 +266,63 @@ export function DashboardTab({ onOpenChat }: Props) {
               <ReadinessRow
                 icon={Bot}
                 label="Assistants"
-                value={assistants.isLoading ? "Checking…" : assistantCount ? `${assistantCount} configured` : "Not configured"}
+                value={
+                  assistants.isLoading
+                    ? "Checking…"
+                    : assistantCount
+                      ? `${assistantCount} configured`
+                      : "Not configured"
+                }
                 ready={assistantCount > 0}
               />
               <ReadinessRow
                 icon={BookOpen}
                 label="Knowledge"
-                value={knowledge.isLoading ? "Checking…" : readySources ? `${readySources} ready` : "No ready sources"}
+                value={
+                  knowledge.isLoading
+                    ? "Checking…"
+                    : readySources
+                      ? `${readySources} ready`
+                      : "No ready sources"
+                }
                 ready={readySources > 0}
               />
               <ReadinessRow
                 icon={Settings2}
                 label="Model access"
-                value={settings.isLoading ? "Checking…" : allowedModelCount ? `${allowedModelCount} approved` : "All curated models"}
+                value={
+                  settings.isLoading
+                    ? "Checking…"
+                    : allowedModelCount
+                      ? `${allowedModelCount} approved`
+                      : "All curated models"
+                }
                 ready={allowedModelCount > 0}
                 neutral={allowedModelCount === 0}
               />
               <ReadinessRow
                 icon={ShieldCheck}
                 label="AI identity"
-                value={settings.isLoading ? "Checking…" : hasPersona ? "Configured" : "Assistant defaults"}
+                value={
+                  settings.isLoading
+                    ? "Checking…"
+                    : hasPersona
+                      ? "Configured"
+                      : "Assistant defaults"
+                }
                 ready={hasPersona}
                 neutral={!hasPersona}
               />
             </div>
           </section>
 
-          <SecurityNotice title="Gateway policies remain authoritative" tone="success">
-            Portal requests pass through Bastio security controls. Assistant prompts and knowledge access do not bypass threat inspection, policy enforcement, or trace logging.
+          <SecurityNotice
+            title="Gateway policies remain authoritative"
+            tone="success"
+          >
+            Portal requests pass through Bastio security controls. Assistant
+            prompts and knowledge access do not bypass threat inspection, policy
+            enforcement, or trace logging.
           </SecurityNotice>
 
           {ext.quickActions ? (
@@ -215,14 +364,24 @@ function ReadinessRow({
       <CheckCircle2
         className={cn(
           "h-3.5 w-3.5 shrink-0",
-          ready ? "text-success" : neutral ? "text-muted-foreground/50" : "text-muted-foreground/30",
+          ready
+            ? "text-success"
+            : neutral
+              ? "text-muted-foreground/50"
+              : "text-muted-foreground/30",
         )}
       />
     </div>
   );
 }
 
-function RecentConversationRow({ item, onClick }: { item: ConversationListItem; onClick: () => void }) {
+function RecentConversationRow({
+  item,
+  onClick,
+}: {
+  item: ConversationListItem;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -230,7 +389,9 @@ function RecentConversationRow({ item, onClick }: { item: ConversationListItem; 
       className="group flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[12px] font-medium text-foreground">{item.title}</p>
+        <p className="truncate text-[12px] font-medium text-foreground">
+          {item.title}
+        </p>
         <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
           {item.last_message_peek
             ? `${item.last_message_role === "assistant" ? "AI" : "User"}: ${item.last_message_peek}`
@@ -238,7 +399,9 @@ function RecentConversationRow({ item, onClick }: { item: ConversationListItem; 
         </p>
       </div>
       <div className="hidden shrink-0 items-center gap-4 text-[10px] text-muted-foreground sm:flex">
-        <span className="font-mono tabular-nums">{item.message_count} msgs</span>
+        <span className="font-mono tabular-nums">
+          {item.message_count} msgs
+        </span>
         <span>{relativeTime(item.last_message_at)}</span>
         <ArrowRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
       </div>

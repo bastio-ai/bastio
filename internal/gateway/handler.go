@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -44,6 +45,13 @@ type Handler struct {
 	overlayLoader     *overlay.Loader
 	streamSecrets     *detection.SecretsDetector
 	imageURLAllowlist []string
+	nativeKeyResolver func(*http.Request, providers.Provider) string
+}
+
+// SetNativeKeyResolver supplies credentials in the standalone local CLI.
+// Production uses tenant/proxy credentials through the proxy service.
+func (h *Handler) SetNativeKeyResolver(resolve func(*http.Request, providers.Provider) string) {
+	h.nativeKeyResolver = resolve
 }
 
 // NewHandler creates a new gateway handler. A nil profiles lookup is
@@ -178,6 +186,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Read request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		if _, oversized := err.(*http.MaxBytesError); oversized {
+			writeRouteError(w, &routeError{413, "request exceeds gateway body limit"})
+			return
+		}
 		http.Error(w, `{"error":"failed to read request"}`, http.StatusBadRequest)
 		return
 	}
@@ -190,6 +202,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.Unmarshal(body, &chatReq); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if h.tryNativeChat(w, r, body, chatReq.Model) {
 		return
 	}
 
@@ -317,7 +333,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				lastErr = err
 				if isRetryableError(err) && i < len(candidateModels)-1 {
-					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", sanitizeLog(err.Error()))
 					continue
 				}
 				break
@@ -327,6 +343,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 				FallbackModels: chatReq.FallbackModels,
 				Stream:         true,
 				Raw:            body,
+				Headers:        r.Header,
 			}
 			selectedModel = modelName
 			selectedProvider = string(provider.Name())
@@ -416,7 +433,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				lastErr = err
 				if isRetryableError(err) && i < len(candidateModels)-1 {
-					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", err)
+					slog.Warn("resolve provider failed, attempting fallback model", "model", sanitizeLog(modelName), "fallback", sanitizeLog(candidateModels[i+1]), "error", sanitizeLog(err.Error()))
 					continue
 				}
 				break
@@ -426,6 +443,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 				FallbackModels: chatReq.FallbackModels,
 				Stream:         false,
 				Raw:            body,
+				Headers:        r.Header,
 			}
 			selectedModel = modelName
 			selectedProvider = string(provider.Name())
@@ -481,6 +499,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 // AnthropicMessages handles Anthropic-compatible /v1/guard/{proxyId}/v1/messages requests.
 func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.providers.Native(providers.ProviderAnthropic); err == nil {
+		h.NativeAPI("", "/messages")(w, r)
+		return
+	}
 	start := time.Now()
 
 	info, ok := auth.FromContext(r.Context())
@@ -496,7 +518,7 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.proxies.GetByID(r.Context(), proxyID)
+	p, err := h.proxies.GetByID(r.Context(), info.CustomerID, proxyID)
 	if err != nil {
 		http.Error(w, `{"error":"proxy not found"}`, http.StatusNotFound)
 		return
@@ -572,6 +594,17 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if scanResult != nil && (scanResult.Action == security.ActionMask || scanResult.Action == security.ActionTokenize) {
+		var tm *security.TokenMap
+		if scanResult.Action == security.ActionTokenize {
+			tm = security.NewTokenMap(profile.PIITokenStyle)
+		}
+		body, _ = sanitizeInput(body, h.security, scanResult.Action, tm)
+		if tm != nil && tm.Size() > 0 {
+			r = r.WithContext(security.WithTokenMap(r.Context(), tm))
+		}
+	}
+
 	providerKey, err := h.proxies.ResolveProviderKey(r.Context(), info.CustomerID, proxyID, providers.ProviderAnthropic)
 	if err != nil {
 		http.Error(w, `{"error":"no anthropic key configured"}`, http.StatusBadGateway)
@@ -585,8 +618,9 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := &providers.ChatRequest{
-		Stream: chatReq.Stream,
-		Raw:    body,
+		Stream:  chatReq.Stream,
+		Raw:     body,
+		Headers: r.Header,
 	}
 
 	var respBody []byte
@@ -930,56 +964,70 @@ func validateImageURLs(messages []json.RawMessage, allowlist []string) (string, 
 	if len(allowlist) == 0 {
 		return "", true
 	}
-	allowed := make(map[string]struct{}, len(allowlist))
-	for _, h := range allowlist {
-		allowed[h] = struct{}{}
+	raw, _ := json.Marshal(messages)
+	return validateImageContent(raw, allowlist)
+}
+
+// validateImageContent recognizes Chat, Responses and Claude image blocks,
+// including images nested in tool results, without examining binary payloads.
+func validateImageContent(raw json.RawMessage, allowlist []string) (string, bool) {
+	if len(allowlist) == 0 {
+		return "", true
 	}
-	for _, raw := range messages {
-		var msg struct {
-			Content json.RawMessage `json:"content"`
+	var items []json.RawMessage
+	if json.Unmarshal(raw, &items) == nil && items != nil {
+		for _, item := range items {
+			if rejected, ok := validateImageContent(item, allowlist); !ok {
+				return rejected, false
+			}
 		}
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			continue
+		return "", true
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) != nil || obj == nil {
+		return "", true
+	}
+	var kind, imageURL string
+	_ = json.Unmarshal(obj["type"], &kind)
+	switch kind {
+	case "image_url", "input_image", "computer_screenshot":
+		if json.Unmarshal(obj["image_url"], &imageURL) != nil {
+			var ref struct {
+				URL string `json:"url"`
+			}
+			_ = json.Unmarshal(obj["image_url"], &ref)
+			imageURL = ref.URL
 		}
-		// String-content messages have no image_url parts.
-		if len(msg.Content) == 0 || msg.Content[0] != '[' {
-			continue
+	case "image":
+		var source struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
 		}
-		var parts []json.RawMessage
-		if err := json.Unmarshal(msg.Content, &parts); err != nil {
-			continue
+		_ = json.Unmarshal(obj["source"], &source)
+		if source.Type == "url" {
+			imageURL = source.URL
 		}
-		for _, p := range parts {
-			var part struct {
-				Type     string `json:"type"`
-				ImageURL struct {
-					URL string `json:"url"`
-				} `json:"image_url"`
+	}
+	if imageURL != "" && !strings.HasPrefix(strings.ToLower(imageURL), "data:") {
+		u, err := url.Parse(imageURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" {
+			return imageURL, false
+		}
+		allowed := false
+		for _, host := range allowlist {
+			if strings.EqualFold(u.Hostname(), host) {
+				allowed = true
+				break
 			}
-			if err := json.Unmarshal(p, &part); err != nil {
-				continue
-			}
-			if part.Type != "image_url" || part.ImageURL.URL == "" {
-				continue
-			}
-			u := part.ImageURL.URL
-			// Inline data URLs bypass the allowlist — the bytes are
-			// in the request body, no remote host is contacted.
-			if strings.HasPrefix(strings.ToLower(u), "data:") {
-				continue
-			}
-			parsed, err := url.Parse(u)
-			if err != nil || parsed.Host == "" {
-				return u, false
-			}
-			host := strings.ToLower(parsed.Host)
-			// Strip an optional port — allowlists are about hosts,
-			// not specific ports.
-			if i := strings.Index(host, ":"); i >= 0 {
-				host = host[:i]
-			}
-			if _, ok := allowed[host]; !ok {
-				return u, false
+		}
+		if !allowed {
+			return imageURL, false
+		}
+	}
+	for _, key := range []string{"messages", "input", "content", "requests", "params"} {
+		if nested, exists := obj[key]; exists {
+			if rejected, ok := validateImageContent(nested, allowlist); !ok {
+				return rejected, false
 			}
 		}
 	}
@@ -1243,57 +1291,37 @@ func buildBastioEnvelope(ctx context.Context, traceID uuid.UUID, start time.Time
 
 // resolveProvider determines which provider client and API key to use.
 func (h *Handler) resolveProvider(r *http.Request, info *auth.APIKeyInfo, model string, body []byte) (providers.Client, string, error) {
-	// Determine provider from model name
-	provider := inferProvider(model)
-
-	client, err := h.providers.Get(provider)
+	route, err := h.nativeRoute(r, info, "", model)
 	if err != nil {
-		return nil, "", fmt.Errorf("provider %s not available", provider)
+		return nil, "", err
 	}
-
-	var proxyID uuid.UUID
-	var providerKey string
-
-	// Look up the first active proxy for this customer + provider if proxy service is available
-	if h.proxies != nil && info != nil {
-		proxies, err := h.proxies.ListByCustomer(r.Context(), info.CustomerID)
-		if err == nil {
-			for _, p := range proxies {
-				if p.TargetProvider == provider && p.IsActive {
-					proxyID = p.ID
-					break
-				}
-			}
-		}
-		providerKey, _ = h.proxies.ResolveProviderKey(r.Context(), info.CustomerID, proxyID, provider)
+	client, err := h.providers.Get(route.provider)
+	if err != nil {
+		return nil, "", err
 	}
-
-	// Fallback to environment variables if key is not stored in DB
-	if providerKey == "" {
-		switch provider {
-		case providers.ProviderOpenAI:
-			providerKey = os.Getenv("OPENAI_API_KEY")
-		case providers.ProviderAnthropic:
-			providerKey = os.Getenv("ANTHROPIC_API_KEY")
+	key := route.key
+	if key == "" {
+		switch route.provider {
 		case providers.ProviderGemini:
-			providerKey = os.Getenv("GEMINI_API_KEY")
-			if providerKey == "" {
-				providerKey = os.Getenv("GOOGLE_API_KEY")
+			key = os.Getenv("GEMINI_API_KEY")
+			if key == "" {
+				key = os.Getenv("GOOGLE_API_KEY")
 			}
 		case providers.ProviderDeepSeek:
-			providerKey = os.Getenv("DEEPSEEK_API_KEY")
+			key = os.Getenv("DEEPSEEK_API_KEY")
 		case providers.ProviderGroq:
-			providerKey = os.Getenv("GROQ_API_KEY")
+			key = os.Getenv("GROQ_API_KEY")
 		}
 	}
-
-	return client, providerKey, nil
+	return client, key, nil
 }
 
 // inferProvider guesses the provider from a model name.
 func inferProvider(model string) providers.Provider {
 	m := strings.ToLower(strings.TrimSpace(model))
 	switch {
+	case strings.HasPrefix(m, "openrouter/"):
+		return providers.ProviderOpenRouter
 	case strings.HasPrefix(m, "gpt") || strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3") || strings.HasPrefix(m, "o4") || strings.HasPrefix(m, "text-embedding") || strings.HasPrefix(m, "openai/"):
 		return providers.ProviderOpenAI
 	case strings.HasPrefix(m, "claude") || strings.HasPrefix(m, "anthropic/"):
@@ -1302,6 +1330,8 @@ func inferProvider(model string) providers.Provider {
 		return providers.ProviderGemini
 	case strings.HasPrefix(m, "deepseek") || strings.HasPrefix(m, "deepseek/"):
 		return providers.ProviderDeepSeek
+	case strings.HasPrefix(m, "grok-") || strings.HasPrefix(m, "xai/") || strings.HasPrefix(m, "x-ai/"):
+		return providers.ProviderXAI
 	case strings.HasPrefix(m, "groq/") || strings.Contains(m, "groq"):
 		return providers.ProviderGroq
 	case strings.HasPrefix(m, "ollama/") || strings.HasPrefix(m, "local/"):
@@ -1462,6 +1492,10 @@ const maxSpanBodyChars = 64 * 1024
 // inline path read these from r.RemoteAddr / r.UserAgent() directly;
 // keep them on the input so the new path doesn't drop the columns.
 type recordInput struct {
+	ProxyID      uuid.UUID
+	Method       string
+	HTTPStatus   uint16
+	CostCents    *float64
 	TraceID      uuid.UUID
 	Info         *auth.APIKeyInfo
 	Model        string
@@ -1505,12 +1539,21 @@ func (h *Handler) recordTrace(in recordInput) {
 		traceName = in.Headers.Get("X-Bastio-Trace-Name")
 		tags = tagsFromHeaders(in.Headers)
 	}
+	cost := llmpipeline.EstimateCostCents(in.Model, in.InputTokens, in.OutputTokens)
+	if in.CostCents != nil {
+		cost = *in.CostCents
+	}
+	httpStatus := in.HTTPStatus
+	if httpStatus == 0 {
+		httpStatus = statusToHTTPCode(in.Status)
+	}
 	llmpipeline.RecordChatTrace(llmpipeline.ChatTraceInput{
+		ProxyID:      in.ProxyID,
+		Method:       in.Method,
 		Recorder:     h.recorder,
 		TraceID:      in.TraceID,
 		CustomerID:   in.Info.CustomerID,
 		APIKeyID:     in.Info.ID,
-		Method:       "POST",
 		Path:         in.Path,
 		Provider:     in.Provider,
 		Model:        in.Model,
@@ -1518,9 +1561,9 @@ func (h *Handler) recordTrace(in recordInput) {
 		CompletedAt:  now,
 		InputTokens:  in.InputTokens,
 		OutputTokens: in.OutputTokens,
-		CostCents:    llmpipeline.EstimateCostCents(in.Model, in.InputTokens, in.OutputTokens),
+		CostCents:    cost,
 		Status:       in.Status,
-		HTTPStatus:   statusToHTTPCode(in.Status),
+		HTTPStatus:   httpStatus,
 		EndUserID:    endUserID,
 		SessionID:    sessionID,
 		IPHash:       in.IPAddress,
@@ -1573,79 +1616,8 @@ func statusToHTTPCode(status string) uint16 {
 // placeholders are opaque to the PII regex — only genuinely new PII
 // (hallucination / RAG leak) is flagged.
 func (h *Handler) postProcessResponse(ctx context.Context, raw []byte) ([]byte, bool, string) {
-	profile, ok := security.ProfileFromContext(ctx)
-	if !ok {
-		return nil, false, ""
-	}
-	tm, hasTM := security.TokenMapFromContext(ctx)
-	needScan := profile.PIIScanResponse && h.security != nil
-	needRestore := hasTM && profile.PIIRestoreResponse
-	if !needScan && !needRestore {
-		return nil, false, ""
-	}
-
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return nil, false, ""
-	}
-	choicesRaw, exists := envelope["choices"]
-	if !exists {
-		return nil, false, ""
-	}
-	var choices []json.RawMessage
-	if err := json.Unmarshal(choicesRaw, &choices); err != nil {
-		return nil, false, ""
-	}
-
-	changed := false
-	for i, craw := range choices {
-		var choice map[string]json.RawMessage
-		if err := json.Unmarshal(craw, &choice); err != nil {
-			continue
-		}
-		mraw, exists := choice["message"]
-		if !exists {
-			continue
-		}
-		var message map[string]json.RawMessage
-		if err := json.Unmarshal(mraw, &message); err != nil {
-			continue
-		}
-
-		contentChanged, blocked, reason := rewriteMessageContent(ctx, h.security, message, tm, needScan, needRestore)
-		if blocked {
-			return nil, true, reason
-		}
-		if !contentChanged {
-			continue
-		}
-
-		newMessage, err := json.Marshal(message)
-		if err != nil {
-			continue
-		}
-		choice["message"] = newMessage
-		newChoice, err := json.Marshal(choice)
-		if err != nil {
-			continue
-		}
-		choices[i] = newChoice
-		changed = true
-	}
-
-	if !changed {
-		return nil, false, ""
-	}
-	newChoices, err := json.Marshal(choices)
-	if err != nil {
-		return nil, false, ""
-	}
-	envelope["choices"] = newChoices
-	out, err := json.Marshal(envelope)
-	if err != nil {
-		return nil, false, ""
-	}
-	return out, false, ""
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "/", nil)
+	return h.postProcessNativeResponse(req, raw)
 }
 
 // rewriteMessageContent rewrites the `content` string field (and
@@ -1758,75 +1730,10 @@ func processAssistantText(ctx context.Context, engine *security.Engine, text str
 	return text, false, ""
 }
 
-// sanitizeOutboundBody rewrites user-role messages in an OpenAI-shape
-// chat completions body, replacing each message's string content with
-// the sanitized form (masked or tokenized). Non-string content fields
-// (multimodal content arrays) are left untouched — this is a known v1
-// limitation. Returns the rewritten body and true when at least one
-// message was changed; the original body and false otherwise.
+// sanitizeOutboundBody covers structured user content and tool results while
+// preserving provider metadata and binary attachments.
 func sanitizeOutboundBody(body []byte, engine *security.Engine, action security.Action, tm *security.TokenMap) ([]byte, bool) {
-	if engine == nil {
-		return body, false
-	}
-
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return body, false
-	}
-	rawMsgs, ok := envelope["messages"]
-	if !ok {
-		return body, false
-	}
-	var msgs []json.RawMessage
-	if err := json.Unmarshal(rawMsgs, &msgs); err != nil {
-		return body, false
-	}
-
-	changed := false
-	for i, raw := range msgs {
-		var msg map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &msg); err != nil {
-			continue
-		}
-		var role string
-		if err := json.Unmarshal(msg["role"], &role); err != nil || role != "user" {
-			continue
-		}
-		var content string
-		if err := json.Unmarshal(msg["content"], &content); err != nil {
-			// Structured multimodal content — skip for v1.
-			continue
-		}
-		sanitized := engine.SanitizeWithMap(content, action, tm)
-		if sanitized == content {
-			continue
-		}
-		cb, err := json.Marshal(sanitized)
-		if err != nil {
-			continue
-		}
-		msg["content"] = cb
-		newMsg, err := json.Marshal(msg)
-		if err != nil {
-			continue
-		}
-		msgs[i] = newMsg
-		changed = true
-	}
-	if !changed {
-		return body, false
-	}
-
-	newMsgsBytes, err := json.Marshal(msgs)
-	if err != nil {
-		return body, false
-	}
-	envelope["messages"] = newMsgsBytes
-	out, err := json.Marshal(envelope)
-	if err != nil {
-		return body, false
-	}
-	return out, true
+	return sanitizeInput(body, engine, action, tm)
 }
 
 // extractUserContent pulls the text content from chat messages for security scanning.
@@ -2040,6 +1947,16 @@ var providerStatusRE = regexp.MustCompile(`status (\d{3})`)
 //   - returns `{"error": {"message": "...", "provider": "..."}}` JSON
 //     with the matching status code on the response.
 func writeProviderError(w http.ResponseWriter, providerName string, err error) string {
+	var upstream *providers.ProviderError
+	if errors.As(err, &upstream) {
+		copyProviderResponseHeaders(w.Header(), upstream.Headers)
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.WriteHeader(upstream.Status)
+		_, _ = w.Write(upstream.Body)
+		return string(upstream.Body)
+	}
 	msg := err.Error()
 	status := http.StatusBadGateway
 	if m := providerStatusRE.FindStringSubmatch(msg); len(m) == 2 {

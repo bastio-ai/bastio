@@ -45,6 +45,7 @@ export function ProxyDetailPage() {
   }
 
   const p = proxy.data;
+  const nativeBasePath = ["openai", "openrouter", "xai", "anthropic"].includes(p.target_provider) ? `/v1/guard/${p.id}/v1` : "/v1";
   const rows = traces.data ?? [];
 
   return (
@@ -52,13 +53,13 @@ export function ProxyDetailPage() {
       <AdminPageHeader
         eyebrow="LLM gateway"
         title={p.name}
-        description={<span>Requests entering <span className="font-mono text-foreground">{p.listen_path}</span> are routed to {p.target_provider} with the controls configured for this gateway.</span>}
+        description={<span>Requests entering <span className="font-mono text-foreground">{nativeBasePath}</span> are routed to {p.target_provider} with the controls configured for this gateway.</span>}
         badge={<Badge variant={p.is_active ? "success" : "secondary"} className="px-1.5 py-0 text-[10px]">{p.is_active ? "active" : "disabled"}</Badge>}
         actions={<BackLink />}
       />
 
       <AdminSummaryStrip items={[
-        { label: "Listen path", value: p.listen_path, detail: p.slug },
+        { label: "SDK base path", value: nativeBasePath, detail: p.slug },
         { label: "Provider", value: p.target_provider, detail: "Upstream target" },
         { label: "Default model", value: p.target_model || "Request supplied", detail: p.target_model ? "Gateway default" : "No forced model" },
         { label: "Recent traces", value: rows.length, detail: `Created ${new Date(p.created_at).toLocaleDateString()}`, tone: rows.length ? "success" : "default" },

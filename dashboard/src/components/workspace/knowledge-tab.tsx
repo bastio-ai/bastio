@@ -1,3 +1,4 @@
+import { ResourceSharingButton, SharingPicker, sharingLabel, adminOnlySharing, type ResourceSharing } from "./sharing-controls";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, BookOpen, ClipboardPaste, FileText, FileUp, Loader2, Plus, ShieldAlert } from "lucide-react";
@@ -17,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/skeleton";
 import { cn } from "@/lib/utils";
+import { http, unwrap } from "@/api/typed";
 import { workspaceApi, relativeTime, type KnowledgeSource } from "./types";
 
 function formatBytes(n: number): string {
@@ -42,10 +44,13 @@ export function KnowledgeTab() {
       return data?.sources.some((item) => item.status === "pending" || item.status === "processing") ? 2000 : false;
     },
   });
+  const indexing = useQuery({ queryKey: ["workspace", "knowledge-index-status"], queryFn: () => unwrap(http.GET("/v1/workspace/knowledge/index-status")), refetchInterval: 10000 });
   const [creating, setCreating] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<KnowledgeSource | null>(null);
   const [releaseTarget, setReleaseTarget] = useState<KnowledgeSource | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploadSharing, setUploadSharing] = useState<ResourceSharing>(adminOnlySharing());
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,7 +62,14 @@ export function KnowledgeTab() {
     },
   });
   const upload = useMutation({
-    mutationFn: (file: File) => workspaceApi.uploadKnowledge(file),
+    mutationFn: async () => {
+      const files = [...pendingFiles];
+      for (const file of files) {
+        await workspaceApi.uploadKnowledge(file, undefined, uploadSharing);
+        setPendingFiles((current) => current.filter((item) => item !== file));
+        qc.invalidateQueries({ queryKey: ["workspace", "knowledge"] });
+      }
+    },
     onSuccess: () => {
       setUploadError(null);
       qc.invalidateQueries({ queryKey: ["workspace", "knowledge"] });
@@ -74,7 +86,9 @@ export function KnowledgeTab() {
   const onFiles = (files: FileList | null) => {
     if (!files?.length) return;
     setUploadError(null);
-    Array.from(files).forEach((file) => upload.mutate(file));
+    setUploadSharing(adminOnlySharing());
+    setPendingFiles(Array.from(files));
+    upload.reset();
   };
 
   const sources = list.data?.sources ?? [];
@@ -99,6 +113,18 @@ export function KnowledgeTab() {
           </div>
         }
       />
+
+      {indexing.data && <p className="mb-4 text-xs text-muted-foreground">{indexing.data.enabled ? `${indexing.data.model.startsWith("bge:") ? "Self-hosted semantic search" : "Semantic search enabled"} · ${indexing.data.pending_sources ? `${indexing.data.pending_sources} sources indexing in the background` : "Index up to date"}` : "Keyword search · embedding service is not configured"}</p>}
+
+      <details className="mb-5 rounded-lg border border-border/60 bg-card p-4 text-[11px] leading-relaxed">
+        <summary className="cursor-pointer font-medium">What happens to uploaded knowledge?</summary>
+        <ol className="mt-3 list-decimal space-y-2 pl-4 text-muted-foreground">
+          <li>The original file is stored privately on the Bastio server. Extracted text is checked against your workspace’s security profile before indexing.</li>
+          <li>Block quarantines matching files. Mask or Tokenize processes the detected values before the searchable text is stored. Warn and Log only allow unchanged text. Original files are retained separately, including any personal data they contain.</li>
+          <li>Cloud uses Bastio’s self-hosted GPU embedding service over a private connection. Other deployments use the embedding service configured by their operator. Processed text is sent to that service to create search vectors. Relevant passages are sent to the selected model when an employee asks a question.</li>
+        </ol>
+        <p className="mt-3 border-t border-border/60 pt-3 text-muted-foreground">The conversation “do not store” setting does not apply to knowledge sources. Changing a security profile does not automatically rewrite previously indexed sources.</p>
+      </details>
 
       <input
         ref={fileInputRef}
@@ -175,19 +201,19 @@ export function KnowledgeTab() {
           />
         ) : (
           <>
-            <div className="hidden grid-cols-[minmax(240px,1.5fr)_120px_130px_150px_120px] gap-4 border-b border-border/60 px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[minmax(240px,1.5fr)_120px_130px_150px_180px] gap-4 border-b border-border/60 px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
               <span>Source</span><span>Status</span><span>Size</span><span>Last synced</span><span />
             </div>
             <div className="divide-y divide-border/50">
               {sources.map((source) => (
-                <div key={source.id} className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-muted/20 md:grid-cols-[minmax(240px,1.5fr)_120px_130px_150px_120px] md:items-center md:gap-4">
+                <div key={source.id} className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-muted/20 md:grid-cols-[minmax(240px,1.5fr)_120px_130px_150px_180px] md:items-center md:gap-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
                       <FileText className="h-3.5 w-3.5" />
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-[12px] font-medium text-foreground">{source.name}</p>
-                      <p className="truncate text-[10px] text-muted-foreground">{source.mime_type || source.type}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">{source.mime_type || source.type} · {sharingLabel(source.sharing)}</p>
                       {source.error ? <p className="mt-1 text-[10px] text-destructive">{source.error}</p> : null}
                       {source.status === "quarantined" ? <ScanSummary source={source} /> : null}
                     </div>
@@ -202,6 +228,7 @@ export function KnowledgeTab() {
                     {source.status === "quarantined" ? (
                       <Button size="xs" variant="outline" onClick={() => setReleaseTarget(source)}>Review</Button>
                     ) : null}
+                    <ResourceSharingButton type="knowledge" id={source.id} name={source.name} sharing={source.sharing} />
                     <Button size="icon-xs" variant="ghost" aria-label={`Archive ${source.name}`} onClick={() => setArchiveTarget(source)}><Archive /></Button>
                   </div>
                 </div>
@@ -214,6 +241,15 @@ export function KnowledgeTab() {
       <SecurityNotice className="mt-5" title="Retrieval remains permission-bound" tone="success">
         Uploading a source does not expose it globally. Only assistants with an explicit source assignment can retrieve its content.
       </SecurityNotice>
+
+      <Dialog open={pendingFiles.length > 0} onOpenChange={(open) => !open && !upload.isPending && setPendingFiles([])}>
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>Upload knowledge files</DialogTitle><DialogDescription>Choose recipients before these files are stored or indexed.</DialogDescription></DialogHeader>
+        <ul className="max-h-24 overflow-y-auto text-xs text-muted-foreground">{pendingFiles.map((file, index) => <li key={`${file.name}:${index}`}>{file.name}</li>)}</ul>
+        <SharingPicker value={uploadSharing} onChange={setUploadSharing} disabled={upload.isPending} />
+        {upload.error && <p role="alert" className="text-xs text-destructive">{upload.error.message}</p>}
+        <DialogFooter><Button variant="outline" disabled={upload.isPending} onClick={() => setPendingFiles([])}>Cancel</Button><Button disabled={upload.isPending} onClick={() => upload.mutate()}>{upload.isPending ? "Uploading…" : `Upload ${pendingFiles.length === 1 ? "file" : "files"}`}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <KnowledgeEditor
         open={creating}
@@ -317,19 +353,21 @@ function QuarantineEvidence({ source }: { source: KnowledgeSource }) {
 function KnowledgeEditor({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
+  const [sharing, setSharing] = useState<ResourceSharing>(adminOnlySharing());
   const save = useMutation({
-    mutationFn: () => workspaceApi.createKnowledge({ name, type: "text", inline_text: content }),
+    mutationFn: () => workspaceApi.createKnowledge({ name, type: "text", inline_text: content, sharing }),
     onSuccess: () => {
       onSaved();
       onClose();
       setName("");
       setContent("");
+      setSharing(adminOnlySharing());
     },
   });
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Paste knowledge text</DialogTitle>
           <DialogDescription>
@@ -350,6 +388,7 @@ function KnowledgeEditor({ open, onClose, onSaved }: { open: boolean; onClose: (
             className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-[12px] leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </div>
+        <SharingPicker value={sharing} onChange={setSharing} disabled={save.isPending} />
         <SecurityNotice title="Treat pasted text as a governed source" tone="info">
           Avoid credentials and secrets. The content is stored and may be retrieved into an assigned assistant’s prompt context.
         </SecurityNotice>

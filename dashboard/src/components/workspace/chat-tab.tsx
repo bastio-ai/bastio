@@ -26,8 +26,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SkeletonRows } from "@/components/skeleton";
-import { MessageBubble, parseMessageAttachments, AttachmentChipStrip } from "./message-bubble";
+import {
+  MessageBubble,
+  parseMessageAttachments,
+  AttachmentChipStrip,
+} from "./message-bubble";
 import { OnboardingCard } from "./onboarding-card";
+import { MCPIntegrationsButton } from "./mcp-integrations";
 import {
   ModelPicker,
   DEFAULT_MODEL,
@@ -41,6 +46,7 @@ import {
   relativeTime,
   type ConversationListItem,
   type Assistant,
+  type Message,
 } from "./types";
 
 // Aliased so the chat-tab body reads cleanly even though the picker
@@ -84,8 +90,15 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     () => readConversationIDFromPath() ?? initialConversationID ?? null,
   );
   const [draft, setDraft] = useState("");
+  const composeRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const textarea = composeRef.current;
+    if (textarea) { textarea.style.height = "auto"; textarea.style.height = Math.min(textarea.scrollHeight, 240) + "px"; }
+  }, [draft]);
   const [streamingDraft, setStreamingDraft] = useState<string | null>(null);
-  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
+    null,
+  );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Model selection lives at the chat-surface level so the picker
@@ -105,7 +118,9 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
   // conversation exists with an assistant_id bound, that wins — this
   // state only matters for the empty / pre-first-message flow. Null
   // = "use the workspace's default_assistant".
-  const [selectedAssistantID, setSelectedAssistantID] = useState<string | null>(null);
+  const [selectedAssistantID, setSelectedAssistantID] = useState<string | null>(
+    null,
+  );
 
   // Pending file attachments. We extract text content client-side for
   // text-shaped files so the model sees the content; binaries are
@@ -170,10 +185,47 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     queryFn: () => workspaceApi.getSettings(),
     staleTime: 60_000,
   });
-  const availableModels =
-    settings.data?.allowed_models && settings.data.allowed_models.length > 0
-      ? pickModelChoices(settings.data.allowed_models)
-      : DEFAULT_MODELS;
+  const spending = useQuery({
+    queryKey: ["workspace", "spending"],
+    queryFn: async () => {
+      const r = await fetch("/v1/workspace/spending", {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Spending status unavailable");
+      return r.json() as Promise<{
+        used_cents: number;
+        limit_cents: number | null;
+        near_limit: boolean;
+      }>;
+    },
+    refetchInterval: 60_000,
+  });
+  const readiness = useQuery({
+    queryKey: ["workspace", "provider-readiness"],
+    queryFn: async () => {
+      const r = await fetch("/v1/workspace/me/provider-readiness", {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Provider readiness unavailable");
+      return r.json() as Promise<{
+        providers: { provider: string; configured: boolean }[];
+      }>;
+    },
+  });
+  const effectiveModels = useQuery({
+    queryKey: ["workspace", "effective-models"],
+    queryFn: workspaceApi.getEffectiveModels,
+  });
+  const availableModels = (
+    effectiveModels.data?.allowed_models?.length
+      ? pickModelChoices(effectiveModels.data.allowed_models)
+      : DEFAULT_MODELS
+  ).filter(
+    (m) =>
+      readiness.data?.providers.some(
+        (p) => p.provider === m.provider && p.configured,
+      ) ?? false,
+  );
 
   // Auto-correct the active model when it's not in the allowed list
   // (admin changed the whitelist while the user was on a now-banned
@@ -189,9 +241,24 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableModels.map((m) => `${m.provider}/${m.model}`).join(",")]);
 
+  const temporaryChats = useRef(new Map<string, Message[]>());
+  const activeConversation = useQuery({
+    queryKey: ["workspace", "conversation", activeID],
+    queryFn: () => workspaceApi.getConversation(activeID!),
+    enabled: !!activeID,
+  });
+  const temporary =
+    settings.data?.store_conversation_content === false ||
+    activeConversation.data?.content_stored === false ||
+    (!!activeID && temporaryChats.current.has(activeID));
   const messages = useQuery({
     queryKey: ["workspace", "messages", activeID],
-    queryFn: () => workspaceApi.listMessages(activeID!),
+    queryFn: () =>
+      temporary
+        ? Promise.resolve({
+            messages: temporaryChats.current.get(activeID!) ?? [],
+          })
+        : workspaceApi.listMessages(activeID!),
     enabled: !!activeID,
   });
 
@@ -298,7 +365,11 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     if (!manageUrl) return;
     const next = activeID ? `/c/${activeID}` : "/";
     if (window.location.pathname !== next) {
-      window.history.pushState({}, "", next + window.location.search + window.location.hash);
+      window.history.pushState(
+        {},
+        "",
+        next + window.location.search + window.location.hash,
+      );
     }
   }, [activeID, manageUrl]);
 
@@ -321,7 +392,8 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     }
     if (modelParam) {
       const match = DEFAULT_MODELS.find(
-        (m) => `${m.provider}/${m.model}` === modelParam || m.model === modelParam,
+        (m) =>
+          `${m.provider}/${m.model}` === modelParam || m.model === modelParam,
       );
       if (match) {
         setModel(match);
@@ -361,19 +433,35 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
   const togglePin = useMutation({
     mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
       workspaceApi.updateConversation(id, { pinned }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace", "conversations"] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["workspace", "conversations"] }),
   });
 
   const rename = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) =>
       workspaceApi.updateConversation(id, { title }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["workspace", "conversations"] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["workspace", "conversations"] }),
   });
 
   // Tracks the in-flight SSE request so the user can hit Stop. Cleared
   // when the stream finishes (success, error, or user cancel). One
   // request at a time — the send button is disabled while sending.
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      for (const id of temporaryChats.current.keys()) {
+        qc.removeQueries({
+          queryKey: ["workspace", "messages", id],
+          exact: true,
+        });
+      }
+      temporaryChats.current.clear();
+    },
+    [qc],
+  );
 
   const cancelStream = () => {
     abortRef.current?.abort();
@@ -384,6 +472,12 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
   // from the form submit so regenerate + edit can reuse it without
   // reading from the draft state.
   const sendContent = async (composed: string, optimisticUserText?: string) => {
+    if (!settings.data || !readiness.data || availableModels.length === 0) {
+      setError(
+        "No approved model is ready yet. Ask your admin to connect a provider, or wait for Workspace settings to load.",
+      );
+      return;
+    }
     setSending(true);
     setError(null);
     setPendingUserMessage(optimisticUserText ?? composed);
@@ -401,17 +495,51 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
         convID = c.id;
         setActiveID(convID);
       }
-      await workspaceApi.streamSendMessage(
+      const isTemporary =
+        temporary || settings.data?.store_conversation_content === false;
+      const prior =
+        temporaryChats.current.get(convID) ?? messages.data?.messages ?? [];
+      const result = await workspaceApi.streamSendMessage(
         convID,
         {
           content: composed,
           provider: model.provider,
           model: model.model,
+          history: isTemporary
+            ? prior
+                .slice(-100)
+                .filter(
+                  (m) =>
+                    m.role === "user" || (m.role === "assistant" && !m.error),
+                )
+                .map((m) => ({
+                  role: m.role as "user" | "assistant",
+                  content: m.content,
+                }))
+            : undefined,
         },
         (delta) => setStreamingDraft((prev) => (prev ?? "") + delta),
         controller.signal,
       );
-      qc.invalidateQueries({ queryKey: ["workspace", "messages", convID] });
+      if (isTemporary || result.temporary) {
+        const user: Message = {
+          id: crypto.randomUUID(),
+          conversation_id: convID,
+          customer_id: result.customer_id,
+          role: "user",
+          content: composed,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          cost_cents: 0,
+          metadata: {},
+          created_at: new Date().toISOString(),
+        };
+        const next = [...prior, user, result];
+        temporaryChats.current.set(convID, next);
+        qc.setQueryData(["workspace", "messages", convID], { messages: next });
+      } else {
+        qc.invalidateQueries({ queryKey: ["workspace", "messages", convID] });
+      }
       qc.invalidateQueries({ queryKey: ["workspace", "conversations"] });
     } catch (err) {
       // AbortError = user pressed Stop. Don't surface as an error;
@@ -419,6 +547,8 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
       // tokens because the server didn't finalize the message).
       if ((err as Error).name !== "AbortError") {
         setError((err as Error).message);
+        setDraft(composed);
+        qc.invalidateQueries({ queryKey: ["workspace", "messages", activeID] });
       }
     } finally {
       setSending(false);
@@ -433,6 +563,12 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     const trimmed = draft.trim();
     if (!trimmed && attachments.length === 0) return;
     if (sending) return;
+    if (!settings.data || !readiness.data || availableModels.length === 0) {
+      setError(
+        "No approved model is ready yet. Ask your admin to connect a provider, or wait for Workspace settings to load.",
+      );
+      return;
+    }
 
     // Prepend attachment content as a fenced block so the model sees
     // them as context. Binary attachments only carry the filename;
@@ -455,8 +591,19 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     const lastUser = [...msgs].reverse().find((m) => m.role === "user");
     if (!lastUser) return;
     try {
-      await workspaceApi.deleteFromMessage(activeID, lastUser.id);
-      await qc.invalidateQueries({ queryKey: ["workspace", "messages", activeID] });
+      if (temporary) {
+        const next = msgs.slice(
+          0,
+          msgs.findIndex((m) => m.id === lastUser.id),
+        );
+        temporaryChats.current.set(activeID, next);
+        qc.setQueryData(["workspace", "messages", activeID], {
+          messages: next,
+        });
+      } else await workspaceApi.deleteFromMessage(activeID, lastUser.id);
+      await qc.invalidateQueries({
+        queryKey: ["workspace", "messages", activeID],
+      });
     } catch (err) {
       setError((err as Error).message);
       return;
@@ -472,8 +619,20 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     const trimmed = newContent.trim();
     if (!trimmed) return;
     try {
-      await workspaceApi.deleteFromMessage(activeID, messageID);
-      await qc.invalidateQueries({ queryKey: ["workspace", "messages", activeID] });
+      if (temporary) {
+        const msgs = temporaryChats.current.get(activeID) ?? [];
+        const next = msgs.slice(
+          0,
+          msgs.findIndex((m) => m.id === messageID),
+        );
+        temporaryChats.current.set(activeID, next);
+        qc.setQueryData(["workspace", "messages", activeID], {
+          messages: next,
+        });
+      } else await workspaceApi.deleteFromMessage(activeID, messageID);
+      await qc.invalidateQueries({
+        queryKey: ["workspace", "messages", activeID],
+      });
     } catch (err) {
       setError((err as Error).message);
       return;
@@ -598,18 +757,75 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] bg-cyan-500/10 text-cyan-500">
                   <ShieldCheck className="h-3.5 w-3.5" />
                 </span>
-                <span className="truncate text-[12px] font-medium text-foreground">Protected conversation</span>
+                <span className="truncate text-[12px] font-medium text-foreground">
+                  Protected conversation
+                </span>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="hidden items-center gap-1.5 rounded-[4px] border border-border bg-background/60 px-2 py-1 text-[9px] font-medium text-muted-foreground sm:inline-flex">
-                <LockKeyhole className="h-3 w-3 text-cyan-500" /> Zero retention
+                <LockKeyhole className="h-3 w-3" />{" "}
+                {temporary ? "Temporary chat" : "History saved"}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-border bg-background/60 px-2 py-1 text-[9px] font-medium text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Policies active
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{" "}
+                Policies active
               </span>
             </div>
           </div>
+          {spending.data?.near_limit && (
+            <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+              Workspace spending is approaching its monthly limit. Your admin
+              can review the allowance.
+            </p>
+          )}
+          {readiness.isSuccess && availableModels.length === 0 && (
+            <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+              No approved model is connected yet. Ask your Workspace admin to
+              connect a provider and approve models.
+            </p>
+          )}
+          {temporary && (
+            <p className="border-b border-border px-4 py-2 text-xs text-muted-foreground">
+              Content stays in this chat view. Leaving or refreshing loses the
+              text. Usage and security decisions are retained.
+            </p>
+          )}
+          {!activeID && (
+            <div className="flex flex-wrap gap-2 border-b border-border px-4 py-2">
+              {[
+                {
+                  label: "Summarize a document",
+                  prompt:
+                    "Summarize the attached document, highlight key decisions, and list action items with source references.",
+                },
+                {
+                  label: "Improve a draft",
+                  prompt:
+                    "Help me rewrite the following draft for clarity. Keep the meaning and flag anything that needs verification:\n\n",
+                },
+                {
+                  label: "Ask company knowledge",
+                  prompt:
+                    "Using the company documents available to this assistant, answer my question and cite the sources. If the answer is missing, say so:\n\n",
+                },
+              ].map((task) => (
+                <Button
+                  key={task.label}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setDraft(task.prompt);
+                    document
+                      .querySelector<HTMLTextAreaElement>("textarea")
+                      ?.focus();
+                  }}
+                >
+                  {task.label}
+                </Button>
+              ))}
+            </div>
+          )}
           {/* relative so the floating "jump to latest" button can
               anchor inside the scroll viewport without affecting flow. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
@@ -619,67 +835,77 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
               className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6"
             >
               <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col gap-4">
-            {/* Show the empty-state hero + assistant picker when:
+                {/* Show the empty-state hero + assistant picker when:
                 - no conversation is active, OR
                 - the active conversation has no messages yet
                 In both cases the user is about to compose their
                 first message and may want to pick an assistant.
                 Once message_count > 0 the conversation hides the
                 picker so the message thread takes the viewport. */}
-            {(() => {
-              const activeConv = conversations.data?.conversations.find(
-                (c) => c.id === activeID,
-              );
-              const isEmpty = !activeID || (activeConv?.message_count ?? 0) === 0;
-              if (!isEmpty) return null;
-              // Empty-state hero only — the assistant picker is
-              // reachable via the AssistantChip in the header. We
-              // dropped the always-visible chip grid because it
-              // crowded the empty state, especially in workspaces
-              // with many assistants.
-              if (activeID) return null;
-              return isFirstTime(conversations.data?.conversations ?? []) ? (
-                <OnboardingCard
-                  onSendFirstMessage={() => {
-                    document
-                      .querySelector<HTMLTextAreaElement>(
-                        'textarea[placeholder^="Ask Bastio"]',
-                      )
-                      ?.focus();
-                  }}
-                />
-              ) : (
-                <ChatEmptyState onPickSuggestion={setDraft} />
-              );
-            })()}
+                {(() => {
+                  const activeConv = conversations.data?.conversations.find(
+                    (c) => c.id === activeID,
+                  );
+                  const isEmpty =
+                    !activeID || (activeConv?.message_count ?? 0) === 0;
+                  if (!isEmpty) return null;
+                  // Empty-state hero only — the assistant picker is
+                  // reachable via the AssistantChip in the header. We
+                  // dropped the always-visible chip grid because it
+                  // crowded the empty state, especially in workspaces
+                  // with many assistants.
+                  if (activeID) return null;
+                  return isFirstTime(
+                    conversations.data?.conversations ?? [],
+                  ) ? (
+                    <OnboardingCard
+                      onSendFirstMessage={() => {
+                        document
+                          .querySelector<HTMLTextAreaElement>(
+                            'textarea[placeholder^="Ask Bastio"]',
+                          )
+                          ?.focus();
+                      }}
+                    />
+                  ) : (
+                    <ChatEmptyState onPickSuggestion={setDraft} />
+                  );
+                })()}
                 {activeID && messages.isLoading && <SkeletonRows count={3} />}
                 {activeID &&
                   messages.data?.messages.map((m, i, arr) => {
-                // Regenerate is only meaningful on the LAST assistant
-                // message (older ones can't be replayed without
-                // throwing away later content). Edit is on every user
-                // message — editing mid-history is the UX users
-                // actually want.
-                const isLastAssistant =
-                  m.role === "assistant" && i === arr.length - 1;
-                return (
-                  <MessageBubble
-                    key={m.id}
-                    m={m}
-                    onRegenerate={isLastAssistant ? regenerateLast : undefined}
-                    onEdit={
-                      m.role === "user"
-                        ? (newContent) => editUserMessage(m.id, newContent)
-                        : undefined
-                    }
-                  />
-                );
+                    // Regenerate is only meaningful on the LAST assistant
+                    // message (older ones can't be replayed without
+                    // throwing away later content). Edit is on every user
+                    // message — editing mid-history is the UX users
+                    // actually want.
+                    const isLastAssistant =
+                      m.role === "assistant" && i === arr.length - 1;
+                    return (
+                      <MessageBubble
+                        key={m.id}
+                        m={m}
+                        onRegenerate={
+                          isLastAssistant ? regenerateLast : undefined
+                        }
+                        onEdit={
+                          m.role === "user"
+                            ? (newContent) => editUserMessage(m.id, newContent)
+                            : undefined
+                        }
+                      />
+                    );
                   })}
                 {pendingUserMessage !== null && (
-                  <PendingBubble userText={pendingUserMessage} streamingDraft={streamingDraft} />
+                  <PendingBubble
+                    userText={pendingUserMessage}
+                    streamingDraft={streamingDraft}
+                  />
                 )}
                 {error && (
-                  <p className="text-center text-xs text-destructive">{error}</p>
+                  <p className="text-center text-xs text-destructive">
+                    {error}
+                  </p>
                 )}
                 <div ref={messagesEnd} />
               </div>
@@ -705,187 +931,218 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
               + (attach), model, assistant pills bottom-left, circular
               send bottom-right. Box itself shows focus state instead
               of putting a hard cyan ring on the textarea. */}
-          <form onSubmit={onSubmit} className="workspace-composer-shell border-t border-border/70 bg-background/75 px-3 pb-3 pt-3 backdrop-blur sm:px-5">
+          <form
+            onSubmit={onSubmit}
+            className="workspace-composer-shell border-t border-border/70 bg-background/75 px-3 pb-3 pt-3 backdrop-blur sm:px-5"
+          >
             <div className="mx-auto w-full max-w-4xl">
-            <div className="workspace-composer rounded-[8px] border border-border bg-background transition-colors focus-within:border-foreground/35 focus-within:ring-1 focus-within:ring-foreground/10">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={async (e) => {
-                  if (!e.target.files) return;
-                  await ingestFiles(e.target.files);
-                  e.currentTarget.value = "";
-                }}
-              />
+              <div className="workspace-composer rounded-[8px] border border-border bg-background transition-colors focus-within:border-foreground/35 focus-within:ring-1 focus-within:ring-foreground/10">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={async (e) => {
+                    if (!e.target.files) return;
+                    await ingestFiles(e.target.files);
+                    e.currentTarget.value = "";
+                  }}
+                />
 
-              <textarea
-                value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  // Auto-grow up to ~10 lines, then internal scroll.
-                  // Resets to auto first so deleting characters
-                  // shrinks the field too.
-                  const ta = e.currentTarget;
-                  ta.style.height = "auto";
-                  ta.style.height = Math.min(ta.scrollHeight, 240) + "px";
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    onSubmit(e as unknown as React.FormEvent);
-                  }
-                }}
-                rows={1}
-                className="block min-h-12 w-full resize-none border-none bg-transparent px-4 pt-3.5 text-[14px] leading-6 placeholder:text-muted-foreground focus:outline-none"
-                placeholder="Ask Bastio anything about your work…"
-                disabled={sending}
-              />
+                <textarea
+                  ref={composeRef}
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    // Auto-grow up to ~10 lines, then internal scroll.
+                    // Resets to auto first so deleting characters
+                    // shrinks the field too.
+                    const ta = e.currentTarget;
+                    ta.style.height = "auto";
+                    ta.style.height = Math.min(ta.scrollHeight, 240) + "px";
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      onSubmit(e as unknown as React.FormEvent);
+                    }
+                  }}
+                  rows={1}
+                  className="block min-h-12 w-full resize-none border-none bg-transparent px-4 pt-3.5 text-[14px] leading-6 placeholder:text-muted-foreground focus:outline-none"
+                  placeholder="Ask Bastio anything about your work…"
+                  disabled={sending}
+                />
 
-              {/* Attachment chip strip — appears between the textarea
+                {/* Attachment chip strip — appears between the textarea
                   and the control row. Files are kept in browser memory
                   only; nothing leaves until send. */}
-              {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 px-3 pb-1">
-                  {attachments.map((a, i) => (
-                    a.kind === "image" ? (
-                      <span
-                        key={`${a.name}-${i}`}
-                        className="relative inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/40 p-1 text-[11px]"
-                        title={`${a.name} · ${(a.size / 1024).toFixed(0)} KB · sent to model as image`}
-                      >
-                        <img
-                          src={a.dataURL}
-                          alt={a.name}
-                          className="h-10 w-10 rounded object-cover"
-                        />
-                        <span className="max-w-[140px] truncate pr-1">{a.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                          className="absolute -right-1 -top-1 rounded-full bg-background p-0.5 text-muted-foreground shadow-sm hover:text-destructive"
-                          aria-label={`Remove ${a.name}`}
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-3 pb-1">
+                    {attachments.map((a, i) =>
+                      a.kind === "image" ? (
+                        <span
+                          key={`${a.name}-${i}`}
+                          className="relative inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/40 p-1 text-[11px]"
+                          title={`${a.name} · ${(a.size / 1024).toFixed(0)} KB · sent to model as image`}
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ) : (
-                      <span
-                        key={`${a.name}-${i}`}
-                        className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/40 px-2 py-0.5 text-[11px]"
-                        title={
-                          a.kind === "text"
-                            ? `${a.text.length.toLocaleString()} chars extracted`
-                            : a.reason ?? "binary attachment; content not extracted"
-                        }
-                      >
-                        <Paperclip className="h-3 w-3" />
-                        <span className="max-w-[200px] truncate">{a.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label={`Remove ${a.name}`}
+                          <img
+                            src={a.dataURL}
+                            alt={a.name}
+                            className="h-10 w-10 rounded object-cover"
+                          />
+                          <span className="max-w-[140px] truncate pr-1">
+                            {a.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAttachments((prev) =>
+                                prev.filter((_, j) => j !== i),
+                              )
+                            }
+                            className="absolute -right-1 -top-1 rounded-full bg-background p-0.5 text-muted-foreground shadow-sm hover:text-destructive"
+                            aria-label={`Remove ${a.name}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : (
+                        <span
+                          key={`${a.name}-${i}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/40 px-2 py-0.5 text-[11px]"
+                          title={
+                            a.kind === "text"
+                              ? `${a.text.length.toLocaleString()} chars extracted`
+                              : (a.reason ??
+                                "binary attachment; content not extracted")
+                          }
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    )
-                  ))}
-                </div>
-              )}
+                          <Paperclip className="h-3 w-3" />
+                          <span className="max-w-[200px] truncate">
+                            {a.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAttachments((prev) =>
+                                prev.filter((_, j) => j !== i),
+                              )
+                            }
+                            className="text-muted-foreground hover:text-destructive"
+                            aria-label={`Remove ${a.name}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ),
+                    )}
+                  </div>
+                )}
 
-              {/* Control row inside the box. Left: + (attach) +
+                {/* Control row inside the box. Left: + (attach) +
                   model picker pill + assistant chip. Right: circular
                   send button — primary tone when there's content. */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2.5">
-                <div className="flex flex-wrap items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={sending}
-                    onClick={() => fileInputRef.current?.click()}
-                    aria-label="Attach files"
-                    title="Attach files for context"
-                    className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                  <ModelPicker value={model} onChange={setModel} available={availableModels} />
-                  <AssistantChip
-                    assistants={assistants.data?.assistants ?? []}
-                    activeConversationAssistantID={
-                      conversations.data?.conversations.find((c) => c.id === activeID)
-                        ?.assistant_id ?? null
-                    }
-                    // Locked once any message has been sent — switching
-                    // would rewrite the model's system context. Pre-send
-                    // and active conversations with 0 messages stay
-                    // editable (the popover triggers an archive +
-                    // recreate so a fresh row carries the new pick).
-                    isLocked={
-                      !!activeID &&
-                      (conversations.data?.conversations.find((c) => c.id === activeID)
-                        ?.message_count ?? 0) > 0
-                    }
-                    onStartNewChat={() => newConversation.mutate()}
-                    selectedID={selectedAssistantID}
-                    onSelect={async (id) => {
-                      setSelectedAssistantID(id);
-                      if (
-                        activeID &&
+                <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2.5">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={sending}
+                      onClick={() => fileInputRef.current?.click()}
+                      aria-label="Attach files"
+                      title="Attach files for context"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                    <MCPIntegrationsButton disabled={sending} onUseResult={(text) => setDraft((previous) => previous ? `${previous}\n\n${text}` : text)} />
+                    <ModelPicker
+                      value={model}
+                      onChange={setModel}
+                      available={availableModels}
+                    />
+                    <AssistantChip
+                      assistants={assistants.data?.assistants ?? []}
+                      activeConversationAssistantID={
+                        conversations.data?.conversations.find(
+                          (c) => c.id === activeID,
+                        )?.assistant_id ?? null
+                      }
+                      // Locked once any message has been sent — switching
+                      // would rewrite the model's system context. Pre-send
+                      // and active conversations with 0 messages stay
+                      // editable (the popover triggers an archive +
+                      // recreate so a fresh row carries the new pick).
+                      isLocked={
+                        !!activeID &&
                         (conversations.data?.conversations.find(
                           (c) => c.id === activeID,
-                        )?.message_count ?? 0) === 0
-                      ) {
-                        await workspaceApi.archiveConversation(activeID).catch(() => {});
-                        const c = await workspaceApi.createConversation({
-                          title: "New chat",
-                          assistant_id: id ?? undefined,
-                        });
-                        setActiveID(c.id);
-                        qc.invalidateQueries({ queryKey: ["workspace", "conversations"] });
+                        )?.message_count ?? 0) > 0
                       }
-                    }}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="hidden text-[10px] text-muted-foreground/70 sm:inline">⌘↵ to send</span>
-                {sending ? (
-                  // Stop button — cancels the SSE stream. The
-                  // streaming bubble disappears; the user message
-                  // stays in the DB (already persisted), the
-                  // assistant message is dropped (server never
-                  // finalized it). Keyboard: Esc also stops.
-                  <button
-                    type="button"
-                    onClick={cancelStream}
-                    aria-label="Stop generating"
-                    title="Stop generating (Esc)"
-                    className="flex h-8 w-8 items-center justify-center rounded-[5px] bg-foreground text-background transition hover:opacity-90"
-                  >
-                    <span className="block h-2.5 w-2.5 rounded-sm bg-background" />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!draft.trim() && attachments.length === 0}
-                    aria-label="Send"
-                    className="flex h-8 w-8 items-center justify-center rounded-[5px] bg-foreground text-background transition hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground disabled:hover:opacity-100"
-                  >
-                    <ArrowUp className="h-4 w-4" />
-                  </button>
-                )}
+                      onStartNewChat={() => newConversation.mutate()}
+                      selectedID={selectedAssistantID}
+                      onSelect={async (id) => {
+                        setSelectedAssistantID(id);
+                        if (
+                          activeID &&
+                          (conversations.data?.conversations.find(
+                            (c) => c.id === activeID,
+                          )?.message_count ?? 0) === 0
+                        ) {
+                          await workspaceApi
+                            .archiveConversation(activeID)
+                            .catch(() => {});
+                          const c = await workspaceApi.createConversation({
+                            title: "New chat",
+                            assistant_id: id ?? undefined,
+                          });
+                          setActiveID(c.id);
+                          qc.invalidateQueries({
+                            queryKey: ["workspace", "conversations"],
+                          });
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden text-[10px] text-muted-foreground/70 sm:inline">
+                      ⌘↵ to send
+                    </span>
+                    {sending ? (
+                      // Stop button — cancels the SSE stream. The
+                      // streaming bubble disappears; the user message
+                      // stays in the DB (already persisted), the
+                      // assistant message is dropped (server never
+                      // finalized it). Keyboard: Esc also stops.
+                      <button
+                        type="button"
+                        onClick={cancelStream}
+                        aria-label="Stop generating"
+                        title="Stop generating (Esc)"
+                        className="flex h-8 w-8 items-center justify-center rounded-[5px] bg-foreground text-background transition hover:opacity-90"
+                      >
+                        <span className="block h-2.5 w-2.5 rounded-sm bg-background" />
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={!draft.trim() && attachments.length === 0}
+                        aria-label="Send"
+                        className="flex h-8 w-8 items-center justify-center rounded-[5px] bg-foreground text-background transition hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground disabled:hover:opacity-100"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-            {/* Disclaimer sits below the box, muted enough to not
+              {/* Disclaimer sits below the box, muted enough to not
                 compete with the input itself but visible on every
                 load. Static text, not dismissible — every chat
                 product we benchmarked keeps it permanently. */}
-            <p className="mt-2 text-center text-[10px] text-muted-foreground/65">
-              AI can make mistakes. Your workspace policies apply to every message.
-            </p>
+              <p className="mt-2 text-center text-[10px] text-muted-foreground/65">
+                AI can make mistakes. Your workspace policies apply to every
+                message.
+              </p>
             </div>
           </form>
         </CardContent>
@@ -920,9 +1177,21 @@ function ConversationList({
   // a couple hundred conversations is fine on the client; if it grows
   // we move to a server-side search endpoint.
   const [query, setQuery] = useState("");
-  const filtered = query.trim()
-    ? items.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
-    : items;
+  const [searchTerm, setSearchTerm] = useState("");
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearchTerm(query.trim()), 250);
+    return () => window.clearTimeout(id);
+  }, [query]);
+  const search = useQuery({
+    queryKey: ["workspace", "conversation-search", searchTerm],
+    queryFn: () => workspaceApi.listConversations(200, searchTerm),
+    enabled: searchTerm.length > 0,
+  });
+  const filtered = searchTerm
+    ? (search.data?.conversations ?? [])
+    : query.trim()
+      ? items.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
+      : items;
 
   // Bucket conversations by relative date so the sidebar reads like
   // ChatGPT / Claude — Pinned at the top, then Today, Yesterday, Last
@@ -937,9 +1206,7 @@ function ConversationList({
   // searching the user wants every match — uncapped.
   const SIDEBAR_CAP = 8;
   const isSearching = query.trim().length > 0;
-  const groups = isSearching
-    ? allGroups
-    : capGroups(allGroups, SIDEBAR_CAP);
+  const groups = isSearching ? allGroups : capGroups(allGroups, SIDEBAR_CAP);
   const totalShown = groups.reduce((n, g) => n + g.items.length, 0);
   const hiddenCount = filtered.length - totalShown;
 
@@ -948,8 +1215,12 @@ function ConversationList({
       <CardContent className="flex min-h-0 flex-1 flex-col p-2.5">
         <div className="mb-2.5 flex shrink-0 items-center justify-between px-1 pt-0.5">
           <div>
-            <p className="text-[13px] font-semibold tracking-tight text-foreground">Conversations</p>
-            <p className="text-[10px] text-muted-foreground">Your recent workspace activity</p>
+            <p className="text-[13px] font-semibold tracking-tight text-foreground">
+              Conversations
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              Your recent workspace activity
+            </p>
           </div>
           <button
             type="button"
@@ -973,7 +1244,7 @@ function ConversationList({
         {/* Sidebar search — filters the bucketed list by title.
             Hidden when there are fewer than 5 conversations to keep
             the sidebar quiet for new tenants. */}
-        {items.length >= 5 && (
+        {(items.length > 0 || query) && (
           <div className="relative mb-2 shrink-0">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -1076,7 +1347,9 @@ function PendingBubble({
               <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-current align-baseline" />
             </pre>
           ) : (
-            <span className="inline-block animate-pulse text-muted-foreground">Thinking…</span>
+            <span className="inline-block animate-pulse text-muted-foreground">
+              Thinking…
+            </span>
           )}
         </div>
       </div>
@@ -1088,12 +1361,17 @@ function PendingBubble({
 // sees when no conversation is active. The copy reinforces the
 // wedge: this is where Shadow AI prompts come instead of public
 // chatbots — same speed, your knowledge, your branding.
-function ChatEmptyState({ onPickSuggestion }: { onPickSuggestion: (text: string) => void }) {
+function ChatEmptyState({
+  onPickSuggestion,
+}: {
+  onPickSuggestion: (text: string) => void;
+}) {
   const suggestions = [
     {
       title: "Summarize safely",
       description: "Extract decisions and flag sensitive details",
-      prompt: "Summarize this Q3 financial report and flag customer-list mentions.",
+      prompt:
+        "Summarize this Q3 financial report and flag customer-list mentions.",
       icon: FileText,
     },
     {
@@ -1105,13 +1383,15 @@ function ChatEmptyState({ onPickSuggestion }: { onPickSuggestion: (text: string)
     {
       title: "Compare policy",
       description: "Ground an answer in approved knowledge",
-      prompt: "Compare our refund policy with the one in the policy knowledge base.",
+      prompt:
+        "Compare our refund policy with the one in the policy knowledge base.",
       icon: Scale,
     },
     {
       title: "Explore an idea",
       description: "Structure a secure plan before you execute",
-      prompt: "Help me turn a rough product idea into a concise implementation plan.",
+      prompt:
+        "Help me turn a rough product idea into a concise implementation plan.",
       icon: Sparkles,
     },
   ];
@@ -1125,29 +1405,34 @@ function ChatEmptyState({ onPickSuggestion }: { onPickSuggestion: (text: string)
           How can Bastio help today?
         </h2>
         <p className="mx-auto mt-3 max-w-lg text-[13px] leading-5 text-muted-foreground sm:text-sm">
-          Work with approved models and company knowledge while Bastio enforces your security policies on every request.
+          Work with approved models and company knowledge while Bastio enforces
+          your security policies on every request.
         </p>
       </div>
       <div className="grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
         {suggestions.map((suggestion) => {
           const Icon = suggestion.icon;
           return (
-          <button
-            key={suggestion.title}
-            type="button"
-            onClick={() => onPickSuggestion(suggestion.prompt)}
-            className="group rounded-[7px] border border-border bg-background/70 p-3.5 text-left transition hover:border-foreground/20 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px] border border-border bg-muted/40 text-muted-foreground transition group-hover:text-cyan-500">
-                <Icon className="h-3.5 w-3.5" />
+            <button
+              key={suggestion.title}
+              type="button"
+              onClick={() => onPickSuggestion(suggestion.prompt)}
+              className="group rounded-[7px] border border-border bg-background/70 p-3.5 text-left transition hover:border-foreground/20 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px] border border-border bg-muted/40 text-muted-foreground transition group-hover:text-cyan-500">
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <span>
+                  <span className="block text-[12px] font-medium text-foreground">
+                    {suggestion.title}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] leading-4 text-muted-foreground">
+                    {suggestion.description}
+                  </span>
+                </span>
               </span>
-              <span>
-                <span className="block text-[12px] font-medium text-foreground">{suggestion.title}</span>
-                <span className="mt-0.5 block text-[10px] leading-4 text-muted-foreground">{suggestion.description}</span>
-              </span>
-            </span>
-          </button>
+            </button>
           );
         })}
       </div>
@@ -1194,7 +1479,7 @@ function AssistantChip({
   // pre-pick draft selection. Empty-state shows "No assistant".
   const effectiveID = activeConversationAssistantID ?? selectedID;
   const active = effectiveID
-    ? assistants.find((a) => a.id === effectiveID) ?? null
+    ? (assistants.find((a) => a.id === effectiveID) ?? null)
     : null;
   const label = active ? active.name : "No assistant";
   const editable = !isLocked && assistants.length > 0;
@@ -1209,10 +1494,7 @@ function AssistantChip({
     //    to ask, click is a no-op.
     if (isLocked) {
       return (
-        <LockedAssistantChip
-          label={label}
-          onStartNewChat={onStartNewChat}
-        />
+        <LockedAssistantChip label={label} onStartNewChat={onStartNewChat} />
       );
     }
     return (
@@ -1252,9 +1534,7 @@ function AssistantChip({
               the bottom of the viewport (compose row). max-h + overflow-y
               keeps 25-assistant workspaces scrollable instead of
               extending off-screen. */}
-          <div
-            className="absolute bottom-full left-0 z-20 mb-1 w-64 max-h-[60vh] overflow-y-auto rounded-md border border-border bg-background p-1 shadow-lg"
-          >
+          <div className="absolute bottom-full left-0 z-20 mb-1 w-64 max-h-[60vh] overflow-y-auto rounded-md border border-border bg-background p-1 shadow-lg">
             <button
               type="button"
               onClick={() => {
@@ -1333,10 +1613,10 @@ function LockedAssistantChip({
           <div className="absolute bottom-full left-0 z-20 mb-1 w-72 rounded-md border border-border bg-background p-3 shadow-lg">
             <p className="text-xs font-medium">Assistant is locked</p>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              The assistant's system prompt was captured when you sent
-              the first message. Swapping now would shift the model's
-              behavior mid-conversation, so this chip is read-only for
-              the rest of this chat.
+              The assistant's system prompt was captured when you sent the first
+              message. Swapping now would shift the model's behavior
+              mid-conversation, so this chip is read-only for the rest of this
+              chat.
             </p>
             {onStartNewChat && (
               <button
@@ -1367,43 +1647,47 @@ function LockedAssistantChip({
 // Date math is calendar-day, anchored to local midnight so a chat
 // from 11:30pm yesterday isn't filed under "Today" at 12:01am.
 function bucketConversations(items: ConversationListItem[]): {
-	label: string;
-	items: ConversationListItem[];
+  label: string;
+  items: ConversationListItem[];
 }[] {
-	const now = new Date();
-	const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-	const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
-	const last7Start = todayStart - 7 * 24 * 60 * 60 * 1000;
-	const last30Start = todayStart - 30 * 24 * 60 * 60 * 1000;
+  const now = new Date();
+  const todayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
+  const last7Start = todayStart - 7 * 24 * 60 * 60 * 1000;
+  const last30Start = todayStart - 30 * 24 * 60 * 60 * 1000;
 
-	const pinned: ConversationListItem[] = [];
-	const today: ConversationListItem[] = [];
-	const yesterday: ConversationListItem[] = [];
-	const last7: ConversationListItem[] = [];
-	const last30: ConversationListItem[] = [];
-	const older: ConversationListItem[] = [];
+  const pinned: ConversationListItem[] = [];
+  const today: ConversationListItem[] = [];
+  const yesterday: ConversationListItem[] = [];
+  const last7: ConversationListItem[] = [];
+  const last30: ConversationListItem[] = [];
+  const older: ConversationListItem[] = [];
 
-	for (const c of items) {
-		if (c.pinned) {
-			pinned.push(c);
-			continue;
-		}
-		const t = new Date(c.last_message_at).getTime();
-		if (t >= todayStart) today.push(c);
-		else if (t >= yesterdayStart) yesterday.push(c);
-		else if (t >= last7Start) last7.push(c);
-		else if (t >= last30Start) last30.push(c);
-		else older.push(c);
-	}
+  for (const c of items) {
+    if (c.pinned) {
+      pinned.push(c);
+      continue;
+    }
+    const t = new Date(c.last_message_at).getTime();
+    if (t >= todayStart) today.push(c);
+    else if (t >= yesterdayStart) yesterday.push(c);
+    else if (t >= last7Start) last7.push(c);
+    else if (t >= last30Start) last30.push(c);
+    else older.push(c);
+  }
 
-	return [
-		{ label: "Pinned", items: pinned },
-		{ label: "Today", items: today },
-		{ label: "Yesterday", items: yesterday },
-		{ label: "Previous 7 days", items: last7 },
-		{ label: "Previous 30 days", items: last30 },
-		{ label: "Older", items: older },
-	];
+  return [
+    { label: "Pinned", items: pinned },
+    { label: "Today", items: today },
+    { label: "Yesterday", items: yesterday },
+    { label: "Previous 7 days", items: last7 },
+    { label: "Previous 30 days", items: last30 },
+    { label: "Older", items: older },
+  ];
 }
 
 // capGroups trims a bucketed list to a maximum total item count while
@@ -1412,22 +1696,22 @@ function bucketConversations(items: ConversationListItem[]): {
 // remaining buckets get whatever room is left. Empty buckets are
 // dropped so the rendered list stays tidy.
 function capGroups(
-	groups: { label: string; items: ConversationListItem[] }[],
-	cap: number,
+  groups: { label: string; items: ConversationListItem[] }[],
+  cap: number,
 ): { label: string; items: ConversationListItem[] }[] {
-	const out: { label: string; items: ConversationListItem[] }[] = [];
-	let remaining = cap;
-	for (const g of groups) {
-		if (g.items.length === 0) continue;
-		if (g.label === "Pinned") {
-			out.push(g);
-			continue;
-		}
-		if (remaining <= 0) continue;
-		out.push({ label: g.label, items: g.items.slice(0, remaining) });
-		remaining -= Math.min(g.items.length, remaining);
-	}
-	return out;
+  const out: { label: string; items: ConversationListItem[] }[] = [];
+  let remaining = cap;
+  for (const g of groups) {
+    if (g.items.length === 0) continue;
+    if (g.label === "Pinned") {
+      out.push(g);
+      continue;
+    }
+    if (remaining <= 0) continue;
+    out.push({ label: g.label, items: g.items.slice(0, remaining) });
+    remaining -= Math.min(g.items.length, remaining);
+  }
+  return out;
 }
 
 // ConversationRow is one item in the bucketed list. The row body
@@ -1440,97 +1724,99 @@ function capGroups(
 // blur or Enter saves, Escape cancels. Cheaper UX than a separate
 // dialog and matches the hover/click flow of every modern chat app.
 function ConversationRow({
-	c,
-	active,
-	onSelect,
-	onTogglePin,
-	onArchive,
-	onRename,
+  c,
+  active,
+  onSelect,
+  onTogglePin,
+  onArchive,
+  onRename,
 }: {
-	c: ConversationListItem;
-	active: boolean;
-	onSelect: (id: string) => void;
-	onTogglePin: (id: string, pinned: boolean) => void;
-	onArchive: (id: string) => void;
-	onRename: (id: string, title: string) => void;
+  c: ConversationListItem;
+  active: boolean;
+  onSelect: (id: string) => void;
+  onTogglePin: (id: string, pinned: boolean) => void;
+  onArchive: (id: string) => void;
+  onRename: (id: string, title: string) => void;
 }) {
-	const [menuOpen, setMenuOpen] = useState(false);
-	const [renaming, setRenaming] = useState(false);
-	const [draft, setDraft] = useState(c.title);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(c.title);
 
-	const commitRename = () => {
-		const next = draft.trim();
-		if (next && next !== c.title) {
-			onRename(c.id, next);
-		}
-		setRenaming(false);
-	};
+  const commitRename = () => {
+    const next = draft.trim();
+    if (next && next !== c.title) {
+      onRename(c.id, next);
+    }
+    setRenaming(false);
+  };
 
-	return (
-		<li
-			onClick={() => {
-				if (renaming) return;
-				onSelect(c.id);
-			}}
-			className={`group relative flex min-h-12 cursor-pointer items-center justify-between gap-2 rounded-[5px] border px-2.5 py-1.5 text-sm transition ${
-				active ? "border-border bg-muted text-foreground" : "border-transparent hover:border-border/60 hover:bg-muted/45"
-			}`}
-		>
-			<div className="min-w-0 flex-1">
-				<div className="flex items-center gap-1.5">
-					{c.pinned && (
-						<Pin className="h-3 w-3 shrink-0 fill-cyan-500 text-cyan-500" />
-					)}
-					{renaming ? (
-						<input
-							autoFocus
-							value={draft}
-							onChange={(e) => setDraft(e.target.value)}
-							onClick={(e) => e.stopPropagation()}
-							onKeyDown={(e) => {
-								e.stopPropagation();
-								if (e.key === "Enter") {
-									e.preventDefault();
-									commitRename();
-								}
-								if (e.key === "Escape") {
-									setDraft(c.title);
-									setRenaming(false);
-								}
-							}}
-							onBlur={commitRename}
-							className="w-full min-w-0 rounded-sm border border-border bg-background px-1 text-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
-						/>
-					) : (
-						<p className="truncate text-[12px] font-medium">{c.title}</p>
-					)}
-				</div>
-				<p className="mt-0.5 text-[10px] text-muted-foreground">
-					{relativeTime(c.last_message_at)} · {c.message_count} messages
-				</p>
-			</div>
-			{!renaming && (
-				<RowMenu
-					open={menuOpen}
-					onOpenChange={setMenuOpen}
-					pinned={c.pinned}
-					onRename={() => {
-						setDraft(c.title);
-						setRenaming(true);
-						setMenuOpen(false);
-					}}
-					onTogglePin={() => {
-						onTogglePin(c.id, !c.pinned);
-						setMenuOpen(false);
-					}}
-					onArchive={() => {
-						if (confirm(`Archive "${c.title}"?`)) onArchive(c.id);
-						setMenuOpen(false);
-					}}
-				/>
-			)}
-		</li>
-	);
+  return (
+    <li
+      onClick={() => {
+        if (renaming) return;
+        onSelect(c.id);
+      }}
+      className={`group relative flex min-h-12 cursor-pointer items-center justify-between gap-2 rounded-[5px] border px-2.5 py-1.5 text-sm transition ${
+        active
+          ? "border-border bg-muted text-foreground"
+          : "border-transparent hover:border-border/60 hover:bg-muted/45"
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          {c.pinned && (
+            <Pin className="h-3 w-3 shrink-0 fill-cyan-500 text-cyan-500" />
+          )}
+          {renaming ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitRename();
+                }
+                if (e.key === "Escape") {
+                  setDraft(c.title);
+                  setRenaming(false);
+                }
+              }}
+              onBlur={commitRename}
+              className="w-full min-w-0 rounded-sm border border-border bg-background px-1 text-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            />
+          ) : (
+            <p className="truncate text-[12px] font-medium">{c.title}</p>
+          )}
+        </div>
+        <p className="mt-0.5 text-[10px] text-muted-foreground">
+          {relativeTime(c.last_message_at)} · {c.message_count} messages
+        </p>
+      </div>
+      {!renaming && (
+        <RowMenu
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
+          pinned={c.pinned}
+          onRename={() => {
+            setDraft(c.title);
+            setRenaming(true);
+            setMenuOpen(false);
+          }}
+          onTogglePin={() => {
+            onTogglePin(c.id, !c.pinned);
+            setMenuOpen(false);
+          }}
+          onArchive={() => {
+            if (confirm(`Archive "${c.title}"?`)) onArchive(c.id);
+            setMenuOpen(false);
+          }}
+        />
+      )}
+    </li>
+  );
 }
 
 // RowMenu is the 3-dot popover on a conversation row. Hover-visible
@@ -1539,107 +1825,110 @@ function ConversationRow({
 // inline edit on the parent row), Pin/Unpin (toggles), Archive (with
 // confirm).
 function RowMenu({
-	open,
-	onOpenChange,
-	pinned,
-	onRename,
-	onTogglePin,
-	onArchive,
+  open,
+  onOpenChange,
+  pinned,
+  onRename,
+  onTogglePin,
+  onArchive,
 }: {
-	open: boolean;
-	onOpenChange: (next: boolean) => void;
-	pinned: boolean;
-	onRename: () => void;
-	onTogglePin: () => void;
-	onArchive: () => void;
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  pinned: boolean;
+  onRename: () => void;
+  onTogglePin: () => void;
+  onArchive: () => void;
 }) {
-	return (
-		<>
-			<button
-				type="button"
-				onClick={(e) => {
-					e.stopPropagation();
-					onOpenChange(!open);
-				}}
-				className={`text-muted-foreground hover:text-foreground ${
-					open ? "visible" : "invisible group-hover:visible"
-				}`}
-				aria-label="Conversation actions"
-				title="More"
-			>
-				<MoreHorizontal className="h-4 w-4" />
-			</button>
-			{open && (
-				<>
-					<div
-						className="fixed inset-0 z-10"
-						onClick={(e) => {
-							e.stopPropagation();
-							onOpenChange(false);
-						}}
-						aria-hidden="true"
-					/>
-					{/* Anchored to the row's right edge. mt-6 nudges it
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenChange(!open);
+        }}
+        className={`text-muted-foreground hover:text-foreground ${
+          open ? "visible" : "invisible group-hover:visible"
+        }`}
+        aria-label="Conversation actions"
+        title="More"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-10"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenChange(false);
+            }}
+            aria-hidden="true"
+          />
+          {/* Anchored to the row's right edge. mt-6 nudges it
 					    below the button — Tailwind doesn't have %-based
 					    offsets so we keep it simple. */}
-					<div
-						className="absolute right-0 top-7 z-20 w-44 rounded-md border border-border bg-background p-1 shadow-lg"
-						onClick={(e) => e.stopPropagation()}
-					>
-						<MenuItem onClick={onRename} icon={<Pencil className="h-3.5 w-3.5" />}>
-							Rename
-						</MenuItem>
-						<MenuItem
-							onClick={onTogglePin}
-							icon={
-								pinned ? (
-									<PinOff className="h-3.5 w-3.5" />
-								) : (
-									<Pin className="h-3.5 w-3.5" />
-								)
-							}
-						>
-							{pinned ? "Unpin" : "Pin"}
-						</MenuItem>
-						<MenuItem
-							onClick={onArchive}
-							icon={<Trash2 className="h-3.5 w-3.5" />}
-							destructive
-						>
-							Archive
-						</MenuItem>
-					</div>
-				</>
-			)}
-		</>
-	);
+          <div
+            className="absolute right-0 top-7 z-20 w-44 rounded-md border border-border bg-background p-1 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MenuItem
+              onClick={onRename}
+              icon={<Pencil className="h-3.5 w-3.5" />}
+            >
+              Rename
+            </MenuItem>
+            <MenuItem
+              onClick={onTogglePin}
+              icon={
+                pinned ? (
+                  <PinOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Pin className="h-3.5 w-3.5" />
+                )
+              }
+            >
+              {pinned ? "Unpin" : "Pin"}
+            </MenuItem>
+            <MenuItem
+              onClick={onArchive}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+              destructive
+            >
+              Archive
+            </MenuItem>
+          </div>
+        </>
+      )}
+    </>
+  );
 }
 
 function MenuItem({
-	icon,
-	onClick,
-	destructive,
-	children,
+  icon,
+  onClick,
+  destructive,
+  children,
 }: {
-	icon: React.ReactNode;
-	onClick: () => void;
-	destructive?: boolean;
-	children: React.ReactNode;
+  icon: React.ReactNode;
+  onClick: () => void;
+  destructive?: boolean;
+  children: React.ReactNode;
 }) {
-	return (
-		<button
-			type="button"
-			onClick={onClick}
-			className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted ${
-				destructive
-					? "text-destructive hover:text-destructive"
-					: "text-foreground"
-			}`}
-		>
-			{icon}
-			{children}
-		</button>
-	);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted ${
+        destructive
+          ? "text-destructive hover:text-destructive"
+          : "text-foreground"
+      }`}
+    >
+      {icon}
+      {children}
+    </button>
+  );
 }
 
 // =============================================================================
@@ -1653,7 +1942,13 @@ type Attachment =
   // workspace handler peels them out into providers.Image content
   // parts before calling the model.
   | { kind: "image"; name: string; mime: string; size: number; dataURL: string }
-  | { kind: "binary"; name: string; mime: string; size: number; reason?: string };
+  | {
+      kind: "binary";
+      name: string;
+      mime: string;
+      size: number;
+      reason?: string;
+    };
 
 // readAttachment loads a File into a text or binary descriptor.
 //
@@ -1673,7 +1968,12 @@ async function readAttachment(file: File): Promise<Attachment> {
     );
   if (clientText) {
     const text = await file.text();
-    return { kind: "text", name: file.name, mime: file.type || "text/plain", text };
+    return {
+      kind: "text",
+      name: file.name,
+      mime: file.type || "text/plain",
+      text,
+    };
   }
 
   // Resize images client-side before upload — saves bandwidth +
@@ -1698,7 +1998,12 @@ async function readAttachment(file: File): Promise<Attachment> {
       };
     }
     if (resp.extracted) {
-      return { kind: "text", name: resp.name, mime: resp.mime_type, text: resp.text };
+      return {
+        kind: "text",
+        name: resp.name,
+        mime: resp.mime_type,
+        text: resp.text,
+      };
     }
     return {
       kind: "binary",

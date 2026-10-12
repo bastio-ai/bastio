@@ -9,6 +9,7 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/google/uuid"
 )
 
@@ -114,7 +115,7 @@ func (s *Store) chunkAndEmbedWithScan(
 	var vectors [][]float32
 	if embedder != nil {
 		v, err := embedder.Embed(ctx, parts)
-		if err == nil && len(v) == len(parts) {
+		if err == nil && len(v) == len(parts) && allValidEmbeddings(v, embedder.Dimension()) {
 			vectors = v
 		}
 	}
@@ -126,7 +127,7 @@ func (s *Store) chunkAndEmbedWithScan(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx,
-		`DELETE FROM workspace_knowledge_chunks WHERE knowledge_source_id = $1`, k.ID); err != nil {
+		`DELETE FROM workspace_knowledge_chunks WHERE customer_id = $1 AND knowledge_source_id = $2`, k.CustomerID, k.ID); err != nil {
 		return fmt.Errorf("clear chunks: %w", err)
 	}
 
@@ -152,17 +153,17 @@ func (s *Store) chunkAndEmbedWithScan(
 		}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO workspace_knowledge_chunks
-(knowledge_source_id, customer_id, ordinal, content, token_count, embedding, embedding_vec, sanitized, scan_categories)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			k.ID, k.CustomerID, i, p, len(p)/4, emb, embVec, sanitized, cats,
+(knowledge_source_id, customer_id, ordinal, content, token_count, embedding, embedding_vec, sanitized, scan_categories, embedding_model)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			k.ID, k.CustomerID, i, p, len(p)/4, emb, embVec, sanitized, cats, embeddingModel(embedder),
 		); err != nil {
 			return fmt.Errorf("insert chunk: %w", err)
 		}
 	}
 
 	if _, err := tx.Exec(ctx,
-		`UPDATE workspace_knowledge_sources SET status = 'ready' WHERE id = $1`,
-		k.ID,
+		`UPDATE workspace_knowledge_sources SET status = 'ready' WHERE customer_id = $1 AND id = $2`,
+		k.CustomerID, k.ID,
 	); err != nil {
 		return fmt.Errorf("mark ready: %w", err)
 	}
@@ -177,26 +178,33 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 // otherwise. The score returned is the original cosine similarity
 // (1 - distance), scaled to 0-100 for UI parity with the keyword path.
 func (s *Store) VectorSearchPG(ctx context.Context, customerID, assistantID uuid.UUID, query []float32, k int) ([]ChunkHit, error) {
+	return s.VectorSearchPGModel(ctx, customerID, assistantID, query, k, "openai:text-embedding-3-small")
+}
+
+func (s *Store) VectorSearchPGModel(ctx context.Context, customerID, assistantID uuid.UUID, query []float32, k int, model string) ([]ChunkHit, error) {
 	if k <= 0 {
 		k = retrievalK
 	}
-	args := []any{customerID, vectorLiteral(query), k}
+	args := []any{customerID, vectorLiteral(query), k, model}
 	scopeSQL := ""
 	if assistantID != uuid.Nil {
 		args = append(args, assistantID)
 		scopeSQL = `AND k.knowledge_source_id IN (
   SELECT knowledge_source_id FROM workspace_assistant_knowledge
-  WHERE assistant_id = $4 AND customer_id = $1
+  WHERE assistant_id = $5 AND customer_id = $1
 )`
 	}
+	scopeSQL += accessSQL(ctx, &args, "knowledge", "s.id")
+	vectorSQL := fmt.Sprintf("k.embedding_vec::vector(%d)", len(query))
 	q := fmt.Sprintf(`SELECT k.id, k.knowledge_source_id, s.name, k.ordinal, k.content,
-1 - (k.embedding_vec <=> $2::vector) AS similarity
+1 - (%s <=> $2::vector) AS similarity
 FROM workspace_knowledge_chunks k
-JOIN workspace_knowledge_sources s ON s.id = k.knowledge_source_id AND s.archived_at IS NULL
+JOIN workspace_knowledge_sources s ON s.id = k.knowledge_source_id AND s.archived_at IS NULL AND s.status = 'ready'
 WHERE k.customer_id = $1
+  AND k.embedding_model = $4 AND vector_dims(k.embedding_vec) = %d
   AND k.embedding_vec IS NOT NULL %s
-ORDER BY k.embedding_vec <=> $2::vector
-LIMIT $3`, scopeSQL)
+ORDER BY %s <=> $2::vector
+LIMIT $3`, vectorSQL, len(query), scopeSQL, vectorSQL)
 
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -230,9 +238,10 @@ func (s *Store) LoadChunksForAssistant(ctx context.Context, customerID, assistan
   WHERE assistant_id = $2 AND customer_id = $1
 )`
 	}
-	q := fmt.Sprintf(`SELECT k.id, k.knowledge_source_id, s.name, k.ordinal, k.content, k.embedding
+	scopeSQL += accessSQL(ctx, &args, "knowledge", "s.id")
+	q := fmt.Sprintf(`SELECT k.id, k.knowledge_source_id, s.name, k.ordinal, k.content, k.embedding, k.embedding_model
 FROM workspace_knowledge_chunks k
-JOIN workspace_knowledge_sources s ON s.id = k.knowledge_source_id AND s.archived_at IS NULL
+JOIN workspace_knowledge_sources s ON s.id = k.knowledge_source_id AND s.archived_at IS NULL AND s.status = 'ready'
 WHERE k.customer_id = $1 %s
   AND k.embedding IS NOT NULL
 ORDER BY k.knowledge_source_id, k.ordinal`, scopeSQL)
@@ -245,7 +254,7 @@ ORDER BY k.knowledge_source_id, k.ordinal`, scopeSQL)
 	for rows.Next() {
 		var c ChunkWithEmbedding
 		if err := rows.Scan(&c.ChunkID, &c.SourceID, &c.SourceName,
-			&c.Ordinal, &c.Content, &c.Embedding); err != nil {
+			&c.Ordinal, &c.Content, &c.Embedding, &c.EmbeddingModel); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		out = append(out, c)
@@ -255,12 +264,13 @@ ORDER BY k.knowledge_source_id, k.ordinal`, scopeSQL)
 
 // ChunkWithEmbedding is a chunk loaded for in-memory vector scoring.
 type ChunkWithEmbedding struct {
-	ChunkID    uuid.UUID
-	SourceID   uuid.UUID
-	SourceName string
-	Ordinal    int
-	Content    string
-	Embedding  []float32
+	ChunkID        uuid.UUID
+	SourceID       uuid.UUID
+	SourceName     string
+	Ordinal        int
+	Content        string
+	Embedding      []float32
+	EmbeddingModel string
 }
 
 // SearchRelevantChunks returns up to retrievalK chunks most relevant to
@@ -295,6 +305,7 @@ AND k.knowledge_source_id IN (
 		args = append(args, assistantID)
 	}
 
+	scopeSQL += accessSQL(ctx, &args, "knowledge", "s.id")
 	// Build (score, content) pair; score is the count of token matches.
 	// Order by score desc, then chunk ordinal for stable retrieval.
 	scoreParts := make([]string, 0, len(tokens))
@@ -308,7 +319,7 @@ AND k.knowledge_source_id IN (
 	q := fmt.Sprintf(`
 SELECT k.id, k.knowledge_source_id, s.name, k.ordinal, k.content, (%s) AS score
 FROM workspace_knowledge_chunks k
-JOIN workspace_knowledge_sources s ON s.id = k.knowledge_source_id AND s.archived_at IS NULL
+JOIN workspace_knowledge_sources s ON s.id = k.knowledge_source_id AND s.archived_at IS NULL AND s.status = 'ready'
 WHERE k.customer_id = $1 %s
   AND (%s) > 0
 ORDER BY score DESC, k.knowledge_source_id, k.ordinal
@@ -472,17 +483,24 @@ func (h *Handler) augmentWithRAG(ctx context.Context, customerID uuid.UUID, conv
 // At the typical retrieval-K of 5, this keeps the gate well under
 // the 50ms budget that the rest of the security pipeline targets.
 //
-// Fails open per-chunk: a scanner error on one chunk lets that chunk
-// through (logged at warn level). The alternative — failing closed
-// per-chunk — would silently degrade RAG every time the engine
-// hiccups. Logged failures are easier to diagnose than missing
-// citations.
+// Honors the Workspace failure mode: strict deployments withhold any chunk
+// that cannot be evaluated, including on profile lookup failures.
 func (h *Handler) filterChunksBySecurity(
 	ctx context.Context,
 	customerID uuid.UUID,
 	hits []ChunkHit,
 ) []ChunkHit {
-	if h.secEngine == nil || h.secProfiles == nil || len(hits) == 0 {
+	return h.filterChunksWithFailureMode(ctx, customerID, hits, scanFailClosed)
+}
+
+func (h *Handler) filterChunksWithFailureMode(ctx context.Context, customerID uuid.UUID, hits []ChunkHit, failClosed bool) []ChunkHit {
+	if len(hits) == 0 {
+		return hits
+	}
+	if h.secEngine == nil || h.secProfiles == nil {
+		if failClosed {
+			return nil
+		}
 		return hits
 	}
 
@@ -499,26 +517,31 @@ func (h *Handler) filterChunksBySecurity(
 		go func(idx int) {
 			defer wg.Done()
 			hit := hits[idx]
-			decision, err := scanForIngest(ctx, h.secEngine, h.secProfiles,
-				customerID, hit.Content)
-			if err != nil || decision == nil {
-				// Fail-open per-chunk; log + keep.
-				slog.Warn("rag retrieval scan: error, keeping chunk",
-					"chunk_id", hit.ChunkID,
-					"source_id", hit.SourceID,
-					"err", err)
-				results[idx] = result{keep: true, hit: hit}
-				return
+			// Source names are included in the model prompt too. Inspect them
+			// as untrusted content so filenames cannot leak PII or instructions.
+			for _, text := range []*string{&hit.SourceName, &hit.Content} {
+				if *text == "" {
+					continue
+				}
+				decision, err := scanWorkspaceContent(ctx, h.secEngine, h.secProfiles,
+					customerID, *text, security.RoleRetrieval, failClosed)
+				if err != nil || decision == nil {
+					slog.Warn("rag retrieval scan unavailable", "chunk_id", hit.ChunkID, "source_id", hit.SourceID, "err", err)
+					if failClosed {
+						results[idx] = result{keep: false}
+						return
+					}
+					continue
+				}
+				switch decision.Action {
+				case "block":
+					results[idx] = result{keep: false, blocked: decision.Categories}
+					return
+				case "sanitize":
+					*text = decision.SanitizedContent
+				}
 			}
-			switch decision.Action {
-			case "block":
-				results[idx] = result{keep: false, blocked: decision.Categories}
-			case "sanitize":
-				hit.Content = decision.SanitizedContent
-				results[idx] = result{keep: true, hit: hit}
-			default:
-				results[idx] = result{keep: true, hit: hit}
-			}
+			results[idx] = result{keep: true, hit: hit}
 		}(i)
 	}
 	wg.Wait()
@@ -584,18 +607,40 @@ func encodeCitationsMetadata(citations []Citation) json.RawMessage {
 }
 
 func (h *Handler) findRelevantChunks(ctx context.Context, customerID, assistantID uuid.UUID, query string) []ChunkHit {
-	// Vector path — only when an embedder is configured. Failure on
-	// either the embedder call or the chunk load drops us to keyword.
-	if h.embedder != nil {
-		if hits, ok := h.vectorSearch(ctx, customerID, assistantID, query); ok && len(hits) > 0 {
-			return hits
-		}
-	}
-	hits, err := h.store.SearchRelevantChunks(ctx, customerID, assistantID, query)
-	if err != nil {
+	decision, err := scanWorkspaceContent(ctx, h.secEngine, h.secProfiles, customerID, query, security.RoleUser, scanFailClosed)
+	if err != nil || decision != nil && decision.Action == "block" {
 		return nil
 	}
-	return hits
+	if decision != nil && decision.Action == "sanitize" {
+		query = decision.SanitizedContent
+	}
+	// Hybrid retrieval keeps sources usable while their vectors are backfilled.
+	var vectorHits []ChunkHit
+	if h.embedder != nil {
+		vectorHits, _ = h.vectorSearch(ctx, customerID, assistantID, query)
+	}
+	keywordHits, err := h.store.SearchRelevantChunks(ctx, customerID, assistantID, query)
+	if err != nil {
+		keywordHits = nil
+	}
+	out := make([]ChunkHit, 0, retrievalK)
+	seen := make(map[uuid.UUID]bool)
+	add := func(hit ChunkHit) {
+		if !seen[hit.ChunkID] && len(out) < retrievalK {
+			seen[hit.ChunkID] = true
+			out = append(out, hit)
+		}
+	}
+	for _, hit := range vectorHits[:min(len(vectorHits), retrievalK/2)] {
+		add(hit)
+	}
+	for _, hit := range keywordHits {
+		add(hit)
+	}
+	for _, hit := range vectorHits {
+		add(hit)
+	}
+	return out
 }
 
 // vectorSearch returns (hits, true) on success and (nil, false) when
@@ -608,13 +653,13 @@ func (h *Handler) findRelevantChunks(ctx context.Context, customerID, assistantI
 // in-process REAL[] cosine when not — fine for MVP-scale KBs.
 func (h *Handler) vectorSearch(ctx context.Context, customerID, assistantID uuid.UUID, query string) ([]ChunkHit, bool) {
 	queryVecs, err := h.embedder.Embed(ctx, []string{query})
-	if err != nil || len(queryVecs) != 1 {
+	if err != nil || len(queryVecs) != 1 || !validEmbedding(queryVecs[0], h.embedder.Dimension()) {
 		return nil, false
 	}
 	q := queryVecs[0]
 
 	if h.store.PGVectorReady(ctx) {
-		hits, err := h.store.VectorSearchPG(ctx, customerID, assistantID, q, retrievalK)
+		hits, err := h.store.VectorSearchPGModel(ctx, customerID, assistantID, q, retrievalK, embeddingModel(h.embedder))
 		if err != nil || len(hits) == 0 {
 			return nil, false
 		}
@@ -638,6 +683,9 @@ func (h *Handler) vectorSearchInProcess(ctx context.Context, customerID, assista
 	}
 	scoredChunks := make([]scored, 0, len(chunks))
 	for _, c := range chunks {
+		if c.EmbeddingModel != embeddingModel(h.embedder) {
+			continue
+		}
 		s := CosineSimilarity(q, c.Embedding)
 		if s <= 0 {
 			continue

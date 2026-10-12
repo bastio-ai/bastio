@@ -19,6 +19,25 @@ func (h *Handler) listAssistants(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	visible := rows[:0]
+	for _, item := range rows {
+		ok, e := h.store.canAccess(r.Context(), cid, item.ID, "assistant")
+		if e != nil {
+			writeError(w, 500, "permissions unavailable")
+			return
+		}
+		if ok {
+			if RoleFromCtx(r.Context()).AtLeast(RoleAdmin) {
+				item.Sharing, e = h.store.resourceSharing(r.Context(), customerIDFromCtx(r.Context()), item.ID, "assistant")
+				if e != nil {
+					writeError(w, 500, "permissions unavailable")
+					return
+				}
+			}
+			visible = append(visible, item)
+		}
+	}
+	rows = visible
 	writeJSON(w, http.StatusOK, map[string]any{"assistants": rows})
 }
 
@@ -28,10 +47,22 @@ func (h *Handler) getAssistant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+	ok, e := h.store.canAccess(r.Context(), customerIDFromCtx(r.Context()), id, "assistant")
+	if e != nil || !ok {
+		writeError(w, 404, "resource not found")
+		return
+	}
 	a, err := h.store.GetAssistant(r.Context(), customerIDFromCtx(r.Context()), id)
 	if err != nil {
 		notFoundOr500(w, err)
 		return
+	}
+	if RoleFromCtx(r.Context()).AtLeast(RoleAdmin) {
+		a.Sharing, err = h.store.resourceSharing(r.Context(), customerIDFromCtx(r.Context()), id, "assistant")
+		if err != nil {
+			writeError(w, 500, "permissions unavailable")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, a)
 }
@@ -50,8 +81,11 @@ func (h *Handler) createAssistant(w http.ResponseWriter, r *http.Request) {
 	if body.DefaultProvider == "" {
 		body.DefaultProvider = "openai"
 	}
+	if body.DefaultProvider == "google" {
+		body.DefaultProvider = "gemini"
+	}
 	if body.DefaultModel == "" {
-		body.DefaultModel = "gpt-5.6-terra"
+		body.DefaultModel = defaultWorkspaceModel(body.DefaultProvider)
 	}
 	// Security gate — the assistant's system prompt is replayed
 	// at the head of every chat with this assistant. A malicious
@@ -70,6 +104,9 @@ func (h *Handler) createAssistant(w http.ResponseWriter, r *http.Request) {
 	// default — users can opt into "always English" by passing "en".
 	created, err := h.store.CreateAssistant(r.Context(), body)
 	if err != nil {
+		if sharingError(w, err) {
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -121,6 +158,9 @@ func (h *Handler) updateAssistant(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := h.store.UpdateAssistant(r.Context(), cid, id, patch)
 	if err != nil {
+		if sharingError(w, err) {
+			return
+		}
 		notFoundOr500(w, err)
 		return
 	}
@@ -132,6 +172,13 @@ func (h *Handler) updateAssistant(w http.ResponseWriter, r *http.Request) {
 	h.audit(r, "assistant.updated",
 		AuditTarget{Type: "assistant", ID: a.ID.String(), Label: a.Name},
 		auditMeta)
+	if RoleFromCtx(r.Context()).AtLeast(RoleAdmin) {
+		a.Sharing, err = h.store.resourceSharing(r.Context(), customerIDFromCtx(r.Context()), id, "assistant")
+		if err != nil {
+			writeError(w, 500, "permissions unavailable")
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, a)
 }
 

@@ -3,6 +3,7 @@ package devmode
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,31 @@ import (
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/providers"
 )
+
+func TestDevNativeProviderAPIs(t *testing.T) {
+	var gotPath, gotAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "123-45-6789") {
+			t.Fatal("dev native route leaked PII")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"safe"}}]}`))
+	}))
+	defer upstream.Close()
+	t.Setenv("OPENROUTER_BASE_URL", upstream.URL)
+	t.Setenv("OPENROUTER_API_KEY", "dev-router-key")
+	s := NewServer(Config{Port: 4000, SecurityMode: "fail-open"})
+	r := httptest.NewRequest("POST", "/v1/openrouter/chat/completions", strings.NewReader(`{"model":"anthropic/claude-sonnet-4.5","messages":[{"role":"user","content":[{"type":"text","text":"SSN 123-45-6789"}]}]}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer sk-bastio-local")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, r)
+	if w.Code != 200 || gotPath != "/chat/completions" || gotAuth != "Bearer dev-router-key" {
+		t.Fatalf("dev route/credential contract: %d %s %s %s", w.Code, w.Body.String(), gotPath, gotAuth)
+	}
+}
 
 func TestTraceRingBuffer(t *testing.T) {
 	buf := NewTraceRingBuffer(3)

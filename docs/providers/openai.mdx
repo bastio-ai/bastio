@@ -19,9 +19,8 @@ unchanged — only the `baseURL` moves from
 2. Create a new secret key. Pick a project so usage is scoped.
 3. Copy the `sk-…` value — you can't retrieve it again.
 
-If your org uses **organization-scoped keys** (`sk-proj-…`), they
-work the same way. Bastio doesn't need the org ID separately —
-the key itself encodes it.
+Project-scoped keys work with their project permissions. When your client
+needs `OpenAI-Organization` or `OpenAI-Project`, Bastio forwards those headers.
 
 ## Create the proxy
 
@@ -55,10 +54,11 @@ curl http://localhost:4000/v1/chat/completions \
 ### Python
 
 ```python
+import os
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:4000/v1",
+    base_url="http://localhost:4000/v1/openai",
     api_key=os.environ["BASTIO_GATEWAY_KEY"],
 )
 
@@ -75,7 +75,7 @@ print(resp.choices[0].message.content)
 import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "http://localhost:4000/v1",
+  baseURL: "http://localhost:4000/v1/openai",
   apiKey: process.env.BASTIO_GATEWAY_KEY,
 });
 
@@ -87,13 +87,30 @@ const resp = await client.chat.completions.create({
 
 ## Supported features
 
-- **Chat completions** — Bastio forwards the JSON body to OpenAI's chat-completions endpoint.
-- **Streaming** — `stream: true` works without extra config.
-  Streaming secret masking applies to string deltas; other output detectors require a complete non-streaming response.
-- **Pass-through fields** — fields such as `tools`, `tool_choice`, `response_format`, and multimodal content are forwarded upstream. The current inbound detector extracts string content from user messages, so tool arguments and content-part arrays are not equivalent to scanned plain text.
-- **Image URL allowlist** — image URLs can be restricted by host. Bastio does not inspect image pixels.
+The `/v1/openai` SDK base forwards OpenAI's native API paths, including Chat
+Completions, Responses, embeddings, model discovery and multipart uploads.
+JSON fields such as reasoning, tools, structured outputs and content parts pass
+through without a fixed Bastio parameter allowlist. Native errors, request IDs,
+rate-limit headers and SSE event types are preserved. OpenAI project,
+organization and beta headers are forwarded when provided.
 
-Embeddings, audio/transcription, and Responses API routes are not exposed by the current gateway contract.
+Text inside user content parts, tool results and Responses input is scanned and
+masked or tokenized according to policy. Binary attachments are not decoded or
+inspected. Response PII scanning and token restoration buffer SSE events before
+release; see [Gateway streaming](/docs/gateway#streaming).
+
+### Responses API
+
+```python
+response = client.responses.create(
+    model=os.environ["OPENAI_MODEL"],
+    input="Hello",
+)
+print(response.output_text)
+```
+
+Choose a model supported by the requested API. Bastio preserves the provider's
+validation errors and does not silently substitute a model or API contract.
 
 ## Models
 
@@ -102,14 +119,8 @@ Pick any current OpenAI model — Bastio infers the family from the
 list and pricing, see
 [OpenAI's model docs](https://platform.openai.com/docs/models).
 
-Common picks:
-
-| Use case | Model |
-|---|---|
-| General chat | `gpt-4o` |
-| Cost-sensitive | `gpt-4o-mini` |
-| Reasoning | `o1`, `o3-mini` |
-| Latest flagship | `gpt-4.1` |
+Use `/v1/openai/models` to discover the models available to your credential.
+Model availability and supported parameters are determined by OpenAI.
 
 ## Gotchas
 
@@ -136,3 +147,14 @@ the trace anatomy.
 - [Anthropic](/docs/providers/anthropic) — same gateway, different
   key + endpoint shape.
 - [Threats](/docs/threats) — what gets scanned on the way through.
+
+
+### Provider-stored state and PII tokens
+
+Reversible PII mappings live only for the current request. Native requests use
+unique placeholders, so a token retained in `previous_response_id`, a stored
+response, a conversation, or a background job cannot resolve to another
+request's PII. Retrieving provider-stored output later leaves older placeholders
+intact. To restore all values, send the original conversation input with each
+request; use masking when you prefer permanent redaction in provider-side state.
+Bastio never persists the reversible mapping.

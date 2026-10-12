@@ -21,6 +21,10 @@ func (h *Handler) listConversations(w http.ResponseWriter, r *http.Request) {
 	uid := userIDFromCtx(r.Context())
 	role := RoleFromCtx(r.Context())
 	limit := intQuery(r, "limit", 50)
+	if len(r.URL.Query().Get("q")) > 200 {
+		writeError(w, 400, "search is limited to 200 characters")
+		return
+	}
 
 	// Members see only their own conversations — privacy from peers.
 	// Admins / viewers / owner see everything in the workspace —
@@ -30,7 +34,7 @@ func (h *Handler) listConversations(w http.ResponseWriter, r *http.Request) {
 		scopeUserID = ""
 	}
 
-	rows, err := h.store.ListConversations(r.Context(), cid, scopeUserID, limit)
+	rows, err := h.store.ListConversations(r.Context(), cid, scopeUserID, limit, r.URL.Query().Get("q"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -106,6 +110,17 @@ func (h *Handler) createConversation(w http.ResponseWriter, r *http.Request) {
 		UserID:      userIDFromCtx(r.Context()),
 		AssistantID: body.AssistantID,
 		Title:       body.Title,
+	}
+	if c.AssistantID != nil {
+		ok, err := h.store.canAccess(r.Context(), c.CustomerID, *c.AssistantID, "assistant")
+		if err != nil || !ok {
+			writeError(w, 404, "assistant unavailable to your account")
+			return
+		}
+	}
+	if _, err := h.store.EnsureSettings(r.Context(), c.CustomerID); err != nil {
+		writeError(w, 500, "workspace settings unavailable")
+		return
 	}
 	created, err := h.store.CreateConversation(r.Context(), c)
 	if err != nil {
@@ -241,9 +256,10 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 // SendMessageRequest is the POST body for /conversations/{id}/messages.
 // MVP non-streaming. Streaming SSE variant is a Phase 2 follow-up.
 type SendMessageRequest struct {
-	Content  string `json:"content"`
-	Provider string `json:"provider,omitempty"` // override assistant default
-	Model    string `json:"model,omitempty"`
+	Content  string           `json:"content"`
+	Provider string           `json:"provider,omitempty"` // override assistant default
+	Model    string           `json:"model,omitempty"`
+	History  []HistoryMessage `json:"history,omitempty"`
 }
 
 // SendMessageResponse returns both the user message and the assistant reply.
@@ -278,6 +294,11 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r, err = h.prepareChat(r, conv, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Resolve assistant config (system prompt + provider + model) and
 	// augment the prompt with RAG context drawn from the assistant's
 	// attached knowledge sources. Both ops are nil-safe.
@@ -313,7 +334,7 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build the LLM request from the full conversation history.
-	priorMsgs, err := h.store.ListMessages(r.Context(), cid, id)
+	priorMsgs, err := h.chatHistory(r.Context(), cid, id, body)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -431,7 +452,7 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 			FinishReason:   &finish,
 			Error:          &errStr,
 		})
-		h.recordChatTrace(chatTraceInput{
+		h.recordChatTrace(r.Context(), chatTraceInput{
 			customerID:     customerID,
 			conversationID: conversationID,
 			traceID:        traceID,
@@ -476,7 +497,7 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 			FinishReason:   &finish,
 			Error:          &errStr,
 		})
-		h.recordChatTrace(chatTraceInput{
+		h.recordChatTrace(r.Context(), chatTraceInput{
 			customerID:     customerID,
 			conversationID: conversationID,
 			traceID:        traceID,
@@ -527,14 +548,20 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		return nil, err
 	}
 
+	reservation, err := h.reserveSpend(r.Context(), customerID, model, msgs, prov)
+	if err != nil {
+		return nil, err
+	}
+	maxOutput := workspaceMaxOutputTokens
 	resp, err := client.Chat(r.Context(), &providers.ChatRequest{
-		Provider: prov,
-		Model:    model,
-		Messages: msgs,
+		Provider:  prov,
+		MaxTokens: &maxOutput,
+		Model:     model,
+		Messages:  msgs,
 	}, apiKey)
 	if err != nil {
 		// Record the failure-with-no-response so /traces sees it.
-		h.recordChatTrace(chatTraceInput{
+		h.recordChatTrace(r.Context(), chatTraceInput{
 			customerID:     customerID,
 			conversationID: conversationID,
 			traceID:        traceID,
@@ -550,6 +577,11 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 			scanResult:     scan,
 		})
 		return nil, err
+	}
+
+	accountMissingUsage(msgs, &resp.InputTokens, &resp.OutputTokens)
+	if err := h.settleSpend(customerID, reservation, estimateCostCentsFloat(string(prov), model, resp.InputTokens, resp.OutputTokens)); err != nil {
+		return nil, fmt.Errorf("spending settlement unavailable: %w", err)
 	}
 
 	// =========================================================
@@ -568,8 +600,10 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	//              raw text never reaches storage.
 	//   allow    → continue with the original.
 	// =========================================================
-	outDecision, _ := scanForIngest(r.Context(), h.secEngine, h.secProfiles,
-		customerID, resp.Content)
+	outDecision, outputScanErr := h.scanModelOutput(r.Context(), customerID, resp.Content)
+	if outputScanErr != nil {
+		return nil, fmt.Errorf("output security scan unavailable")
+	}
 	if outDecision != nil && outDecision.Action == "block" {
 		blockedMsg := "Bastio blocked the model's response — it contained " +
 			joinCategories(outDecision.Categories) + ". Try rephrasing or contact your workspace admin."
@@ -585,7 +619,7 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 			FinishReason:   &finishBlocked,
 			Error:          &errStr,
 		})
-		h.recordChatTrace(chatTraceInput{
+		h.recordChatTrace(r.Context(), chatTraceInput{
 			customerID:     customerID,
 			conversationID: conversationID,
 			traceID:        traceID,
@@ -621,13 +655,14 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		PromptTokens:     resp.InputTokens,
 		CompletionTokens: resp.OutputTokens,
 		CostCents:        estimateCostCents(string(prov), resp.Model, resp.InputTokens, resp.OutputTokens),
+		CostCentsExact:   estimateCostCentsFloat(string(prov), resp.Model, resp.InputTokens, resp.OutputTokens),
 		FinishReason:     &finish,
 		Metadata:         encodeCitationsMetadata(citations),
 	})
 	if err != nil {
 		return nil, err
 	}
-	h.recordChatTrace(chatTraceInput{
+	h.recordChatTrace(r.Context(), chatTraceInput{
 		customerID:     customerID,
 		conversationID: conversationID,
 		traceID:        traceID,
@@ -694,6 +729,10 @@ func (h *Handler) resolveAPIKeyCtx(ctx context.Context, customerID uuid.UUID, pr
 		}
 	}
 	switch prov {
+	case providers.ProviderOpenRouter:
+		return os.Getenv("OPENROUTER_API_KEY")
+	case providers.ProviderXAI:
+		return os.Getenv("XAI_API_KEY")
 	case providers.ProviderOpenAI:
 		return os.Getenv("OPENAI_API_KEY")
 	case providers.ProviderAnthropic:
@@ -720,13 +759,16 @@ func (h *Handler) resolveAPIKeyCtx(ctx context.Context, customerID uuid.UUID, pr
 // which is fine for the per-message audit row — the precise float
 // number lives in the trace record (float64 column). Both call into
 // the same llmpipeline rate table so the two surfaces never diverge.
-func estimateCostCents(_ /*provider*/, model string, inputTokens, outputTokens int) int {
-	return int(llmpipeline.EstimateCostCents(model, inputTokens, outputTokens))
+func estimateCostCents(provider, model string, inputTokens, outputTokens int) int {
+	return int(estimateCostCentsFloat(provider, model, inputTokens, outputTokens))
 }
 
 // estimateCostCentsFloat returns fractional cents for trace rows so a
 // $0.0001 charge isn't truncated to $0 in /traces.
-func estimateCostCentsFloat(_ /*provider*/, model string, inputTokens, outputTokens int) float64 {
+func estimateCostCentsFloat(provider, model string, inputTokens, outputTokens int) float64 {
+	if provider == string(providers.ProviderOllama) {
+		return 0
+	}
 	return llmpipeline.EstimateCostCents(model, inputTokens, outputTokens)
 }
 

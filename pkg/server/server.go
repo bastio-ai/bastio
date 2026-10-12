@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -50,6 +51,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/auth"
 	semcache "github.com/bastio-ai/bastio/internal/cache"
 	"github.com/bastio-ai/bastio/internal/gateway"
+	"github.com/bastio-ai/bastio/internal/mcp"
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/prompts"
 	"github.com/bastio-ai/bastio/internal/providers"
@@ -87,7 +89,8 @@ type Server struct {
 	// workspaceHandler is captured during V1 route registration so the
 	// root-level Host-intercept middleware can dispatch custom-domain
 	// requests to its HostRoutes() handler. Set by registerV1Routes.
-	workspaceHandler *workspace.Handler
+	workspaceHandler  *workspace.Handler
+	workspaceEmbedder EmbeddingClient
 
 	opts options
 }
@@ -365,7 +368,7 @@ func WithShutdownTimeout(d time.Duration) Option {
 func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, error) {
 	o := options{
 		readTimeout:     30 * time.Second,
-		writeTimeout:    90 * time.Second,
+		writeTimeout:    gatewayTimeout(cfg.GatewayRequestTimeout) + time.Minute,
 		idleTimeout:     120 * time.Second,
 		shutdownTimeout: 30 * time.Second,
 	}
@@ -373,6 +376,10 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, erro
 		opt(&o)
 	}
 
+	embedder, err := WorkspaceEmbeddingFromEnv(os.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("workspace embeddings: %w", err)
+	}
 	db, err := database.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
@@ -463,7 +470,7 @@ func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, erro
 		slog.Info("iplist enabled", "block", cfg.IPListBlock, "refresh", cfg.IPListRefresh)
 	}
 
-	return &Server{cfg: cfg, db: db, redis: redisClient, ch: ch, recorder: recorder, river: rc, ipList: ipListMgr, opts: o}, nil
+	return &Server{cfg: cfg, db: db, redis: redisClient, ch: ch, recorder: recorder, river: rc, ipList: ipListMgr, opts: o, workspaceEmbedder: embedder}, nil
 }
 
 // DB returns the shared PostgreSQL wrapper.
@@ -504,7 +511,17 @@ func (s *Server) Close() error {
 // Start builds the router, begins listening, and blocks until ctx is
 // cancelled or SIGINT/SIGTERM is received.
 func (s *Server) Start(ctx context.Context) error {
+	maintenance, stopMaintenance := context.WithCancel(ctx)
+	maintenanceDone := make(chan struct{})
+	go func() { defer close(maintenanceDone); mcp.NewStore(s.db.Pool).RunMaintenance(maintenance) }()
+	defer func() { stopMaintenance(); <-maintenanceDone }()
+
 	handler := s.Handler()
+	if s.workspaceHandler != nil {
+		indexingDone := make(chan struct{})
+		go func() { defer close(indexingDone); s.workspaceHandler.RunKnowledgeMaintenance(maintenance) }()
+		defer func() { stopMaintenance(); <-indexingDone }()
+	}
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
 	httpSrv := &http.Server{
@@ -552,16 +569,14 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(requestLimitsMiddleware(s.cfg.MaxRequestBodyBytes, s.cfg.GatewayMaxRequestBodyBytes, s.cfg.GatewayRequestTimeout))
 	r.Use(echoRequestIDMiddleware)
-	if s.cfg.MaxRequestBodyBytes > 0 {
-		r.Use(maxBodyBytesMiddleware(s.cfg.MaxRequestBodyBytes))
-	}
 	if len(s.cfg.CORSOrigins) > 0 {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.cfg.CORSOrigins,
-			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Authorization", "Content-Type", "X-End-User-Id"},
+			AllowedMethods:   []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Authorization", "Content-Type", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match"},
+			ExposedHeaders:   []string{"X-Bastio-Trace-Id", "X-Bastio-Request-Id", "X-Bastio-Stream-Buffered", "X-Request-Id", "Request-Id", "Retry-After"},
 			AllowCredentials: true,
 			MaxAge:           300,
 		}))
@@ -657,8 +672,12 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	// SDK) runs the same detector list. See BuildSecurityEngine.
 	secEngine, profileLookup, topicPolicy := BuildSecurityEngine(context.Background(), s.db.Pool, s.redis)
 
+	mcpHandler := mcp.NewHandler(mcp.NewStore(s.db.Pool), secEngine)
+
 	providerRegistry := providers.NewRegistry()
 	providerRegistry.Register(providers.NewOpenAIClient())
+	providerRegistry.Register(providers.NewOpenRouterClient())
+	providerRegistry.Register(providers.NewXAIClient())
 	providerRegistry.Register(providers.NewAnthropicClient())
 	providerRegistry.Register(providers.NewBedrockClient())
 	providerRegistry.Register(providers.NewOllamaClient())
@@ -785,12 +804,8 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	if s.river != nil {
 		workspaceHandler.SetRiverClient(s.river)
 	}
-	// OSS dev embedder: lazy OpenAI client when an API key is in env.
-	// Cloud will replace with a per-customer key resolver via the
-	// same setter.
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		workspaceHandler.SetEmbeddingClient(workspace.NewOpenAIEmbeddingClient(key))
-	}
+	workspaceHandler.SetEmbeddingClient(s.workspaceEmbedder)
+	workspaceHandler.SetMCPCredentialEncryption(s.opts.encryption)
 	// Workspace invitation flow (email + public + invite base URLs)
 	// moved to bastio-cloud/internal/workspace alongside the member
 	// management handlers — see Service.WithEmailer / WithPublicBaseURL
@@ -847,6 +862,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.Mount("/overlays", overlayHandler.Routes())
 			r.Mount("/overlay-templates", overlayHandler.TemplatesRoutes())
 			r.Mount("/detect", detectHandler.Routes())
+			r.Mount("/mcp", mcpHandler.Routes(workspace.RequireRole(workspace.RoleAdmin)))
 			r.Mount("/playground", playgroundHandler.Routes())
 			r.Mount("/proxies", proxySvc.Routes(providerKeyHandler))
 			r.Mount("/provider-keys", providerKeyHandler.Routes())
@@ -900,12 +916,15 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			}
 			r.Post("/chat/completions", gw.ChatCompletions)
 			r.Post("/guard/{proxyId}/v1/messages", gw.AnthropicMessages)
+			gw.RegisterNativeRoutes(r)
 
 			// OTLP/HTTP trace ingestion. POST is authenticated; GET
 			// /v1/traces (in the dashboard group above) lists traces.
 			otlp := observability.NewOTLPHandler(s.recorder)
 			r.Post("/traces", otlp.ServeHTTP)
 		})
+
+		r.Post("/mcp/runtime", mcpHandler.Runtime)
 
 		// Caller extensions (e.g. cloud billing, cloud analytics).
 		for _, fn := range s.opts.apiExtenders {
@@ -988,7 +1007,10 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 // SetupLogger configures the default slog handler for JSON output at the
 // requested level. Provided as a package helper so both OSS and cloud binaries
 // can share the same logger setup.
-func SetupLogger(level string) {
+func SetupLogger(level string) { SetupLoggerWriter(level, os.Stdout) }
+
+// SetupLoggerWriter lets stdio integrations keep protocol stdout free of logs.
+func SetupLoggerWriter(level string, output io.Writer) {
 	var logLevel slog.Level
 	switch level {
 	case "debug":
@@ -1000,7 +1022,7 @@ func SetupLogger(level string) {
 	default:
 		logLevel = slog.LevelInfo
 	}
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
+	handler := slog.NewJSONHandler(output, &slog.HandlerOptions{Level: logLevel})
 	slog.SetDefault(slog.New(handler))
 }
 

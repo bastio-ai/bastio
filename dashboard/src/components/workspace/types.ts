@@ -180,10 +180,11 @@ export const workspaceApi = {
   // Multipart upload — openapi-fetch supports `multipart/form-data` only
   // for shapes that JSON-stringify cleanly; for streaming a binary blob
   // we stick with raw fetch and hand the typed schema to the response.
-  uploadKnowledge: async (file: File, name?: string): Promise<KnowledgeSource> => {
+  uploadKnowledge: async (file: File, name?: string, sharing?: components["schemas"]["WorkspaceResourceSharing"]): Promise<KnowledgeSource> => {
     const form = new FormData();
     form.append("file", file);
     if (name) form.append("name", name);
+    if (sharing) form.append("sharing", JSON.stringify(sharing));
     const r = await fetch("/v1/workspace/knowledge/upload", {
       method: "POST",
       body: form,
@@ -226,9 +227,10 @@ export const workspaceApi = {
     unwrap(http.POST("/v1/workspace/knowledge/{id}/release", { params: { path: { id } } })),
 
   // conversations
-  listConversations: (limit = 50) =>
+  getEffectiveModels: () => unwrap(http.GET("/v1/workspace/me/effective-models")),
+  listConversations: (limit = 50, q = "") =>
     unwrap(
-      http.GET("/v1/workspace/conversations", { params: { query: { limit } } }),
+      http.GET("/v1/workspace/conversations", { params: { query: { limit, q } } }),
     ),
   getConversation: (id: string) =>
     unwrap(
@@ -285,7 +287,7 @@ export const workspaceApi = {
     ),
   sendMessage: (
     id: string,
-    body: { content: string; provider?: string; model?: string },
+    body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
   ) =>
     unwrap(
       http.POST("/v1/workspace/conversations/{id}/messages", {
@@ -297,7 +299,7 @@ export const workspaceApi = {
   // event-stream. Use the existing fetch-based reader.
   streamSendMessage: (
     id: string,
-    body: { content: string; provider?: string; model?: string },
+    body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
     onToken: (delta: string) => void,
     signal?: AbortSignal,
   ): Promise<Message> => streamSSE(id, body, onToken, signal),
@@ -459,7 +461,7 @@ async function rawJSON<T>(
 
 async function streamSSE(
   conversationID: string,
-  body: { content: string; provider?: string; model?: string },
+  body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
   onToken: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<Message> {

@@ -93,12 +93,13 @@ type ConversationAccess struct {
 // other members' conversation IDs).
 //
 // Rules:
-//   Read: caller is the owner, OR caller's role is admin/viewer/owner
-//         (i.e. anything but pure "member"). Members get privacy from
-//         peers; privileged roles get governance visibility.
-//   Write: caller is the owner. No exceptions — admins do NOT inject
-//         into someone else's thread, even for "support". Workspace
-//         feels like personal space to members.
+//
+//	Read: caller is the owner, OR caller's role is admin/viewer/owner
+//	      (i.e. anything but pure "member"). Members get privacy from
+//	      peers; privileged roles get governance visibility.
+//	Write: caller is the owner. No exceptions — admins do NOT inject
+//	      into someone else's thread, even for "support". Workspace
+//	      feels like personal space to members.
 func (h *Handler) resolveConversationAccess(
 	ctx context.Context,
 	conversationID uuid.UUID,

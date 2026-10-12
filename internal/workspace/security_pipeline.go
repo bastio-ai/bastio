@@ -145,7 +145,30 @@ type chatTraceInput struct {
 // llmpipeline. Conversation-as-session: every workspace turn in the
 // same conversation shares a SessionID so /sessions groups them the
 // same way the gateway groups by X-Session-Id.
-func (h *Handler) recordChatTrace(in chatTraceInput) {
+func (h *Handler) recordChatTrace(ctx context.Context, in chatTraceInput) {
+	if h.obsRecorder == nil {
+		return
+	}
+	// Fail closed on lookup failures. Findings may contain exact matched text.
+	st, err := h.store.GetSettings(ctx, in.customerID)
+	if privateChat(ctx) || err != nil || !st.StoreConversationContent {
+		in.requestBody = ""
+		in.responseBody = ""
+		if in.scanResult != nil {
+			safe := *in.scanResult
+			safe.SanitizedContent = ""
+			safe.TokenMap = nil
+			safe.Findings = make([]security.Finding, len(in.scanResult.Findings))
+			for i, f := range in.scanResult.Findings {
+				f.MatchedContent = ""
+				f.MatchedPattern = ""
+				f.Message = ""
+				f.Source = ""
+				safe.Findings[i] = f
+			}
+			in.scanResult = &safe
+		}
+	}
 	if h.obsRecorder == nil {
 		return
 	}

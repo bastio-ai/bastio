@@ -90,6 +90,271 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/openrouter/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["openRouterNativeGet"];
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["openRouterNativePut"];
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["openRouterNativePost"];
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["openRouterNativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native OpenRouter API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenRouter key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["openRouterNativePatch"];
+        trace?: never;
+    };
+    "/v1/xai/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["xaiNativeGet"];
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["xaiNativePut"];
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["xaiNativePost"];
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["xaiNativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native xAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored xAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["xaiNativePatch"];
+        trace?: never;
+    };
+    "/v1/openai/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["openAINativeGet"];
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["openAINativePut"];
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["openAINativePost"];
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["openAINativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native OpenAI API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored OpenAI key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["openAINativePatch"];
+        trace?: never;
+    };
+    "/v1/anthropic/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        get: operations["claudeNativeGet"];
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        put: operations["claudeNativePut"];
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        post: operations["claudeNativePost"];
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        delete: operations["claudeNativeDelete"];
+        options?: never;
+        head?: never;
+        /**
+         * Forward a native Claude API request
+         * @description Preserves provider fields, query parameters, SSE events, errors and API headers. Credentials come from the authenticated tenant's stored Claude key. Binary content is forwarded without OCR or speech decoding.
+         */
+        patch: operations["claudeNativePatch"];
+        trace?: never;
+    };
+    "/v1/responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** OpenAI or OpenRouter Responses API */
+        post: operations["createNativeResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/embeddings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** OpenAI or OpenRouter embeddings */
+        post: operations["createNativeEmbeddings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Native provider model discovery */
+        get: operations["listNativeModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claude Messages API */
+        post: operations["createClaudeMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/count_tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claude message token counting */
+        post: operations["countClaudeMessageTokens"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/guard/{proxyId}/v1/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /** Native API through a tenant-owned gateway proxy */
+        get: operations["proxyNativeGet"];
+        /** Native API through a tenant-owned gateway proxy */
+        put: operations["proxyNativePut"];
+        /** Native API through a tenant-owned gateway proxy */
+        post: operations["proxyNativePost"];
+        /** Native API through a tenant-owned gateway proxy */
+        delete: operations["proxyNativeDelete"];
+        options?: never;
+        head?: never;
+        /** Native API through a tenant-owned gateway proxy */
+        patch: operations["proxyNativePatch"];
+        trace?: never;
+    };
     "/v1/proxies": {
         parameters: {
             query?: never;
@@ -1041,6 +1306,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/knowledge/index-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceKnowledgeIndexStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspace/knowledge/upload": {
         parameters: {
             query?: never;
@@ -1300,10 +1581,468 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mcp/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List real enrolled MCP firewalls */
+        get: operations["listMCPServers"];
+        put?: never;
+        /** Enroll a server (admin) */
+        post: operations["createMCPServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{id}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update tool allow/block policy (admin) */
+        put: operations["updateMCPPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{id}/rotate-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace a server enrollment token (admin) */
+        post: operations["rotateMCPToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a firewall enrollment (admin) */
+        delete: operations["revokeMCPServer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List 30-day metadata-only MCP events */
+        get: operations["listMCPEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inspect tool arguments using the real local firewall engine; does not execute or persist input (admin) */
+        post: operations["inspectMCPTool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh enrollment policy and ingest metadata; enrollment token authorizes only its server */
+        post: operations["ingestMCPRuntime"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/provisioning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cloud-only SCIM Workspace provisioning status (administrator required) */
+        get: operations["getWorkspaceProvisioning"];
+        /** Cloud-only opt-in SCIM membership linking (administrator required) */
+        put: operations["setWorkspaceProvisioning"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/spending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWorkspaceSpending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportWorkspaceEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWorkspaceAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/access/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putWorkspaceAccessGroup"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/access/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putWorkspaceResourceAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/me/provider-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getWorkspaceProviderReadiness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceListMCP"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["workspaceSetMCPPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspaceCreateMCPConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["workspaceUpdateMCPConnection"];
+        post?: never;
+        delete: operations["workspaceRevokeMCPConnection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["workspaceListMCPTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspaceCallMCPTool"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        WorkspaceMCPPolicy: {
+            allow_personal: boolean;
+        };
+        WorkspaceMCPList: {
+            connections: components["schemas"]["WorkspaceMCPConnection"][];
+            allow_personal: boolean;
+            can_manage: boolean;
+        };
+        WorkspaceMCPConnection: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uri */
+            endpoint: string;
+            /** @enum {string} */
+            scope: "personal" | "workspace";
+            owner_user_id: string;
+            allowed_tools: string[];
+            has_credential: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        WorkspaceMCPInput: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
+            name: string;
+            /** Format: uri */
+            endpoint: string;
+            /** @enum {string} */
+            scope: "personal" | "workspace";
+            allowed_tools?: string[];
+            credential?: string;
+        };
+        WorkspaceMCPTool: {
+            name: string;
+            description?: string;
+            inputSchema: {
+                [key: string]: unknown;
+            };
+        };
+        MCPPolicy: {
+            allowed_tools: string[];
+            blocked_tools: string[];
+        };
+        MCPServer: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            client: "claude" | "cursor" | "cline" | "terminal" | "other";
+            policy: components["schemas"]["MCPPolicy"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_seen_at: string | null;
+            /** Format: date-time */
+            revoked_at: string | null;
+            calls: number;
+            blocked: number;
+            dropped_events: number;
+        };
+        MCPEvent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            server_id: string;
+            server_name?: string;
+            client?: string;
+            tool_name: string;
+            /** @enum {string} */
+            direction: "request" | "response" | "tool_description";
+            /** @enum {string} */
+            action: "allowed" | "blocked" | "sanitized" | "warned";
+            categories: string[];
+            duration_ms: number;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        MCPServerList: {
+            servers: components["schemas"]["MCPServer"][];
+        };
+        MCPEventList: {
+            events: components["schemas"]["MCPEvent"][];
+        };
+        MCPCreateServer: {
+            name: string;
+            /** @enum {string} */
+            client: "claude" | "cursor" | "cline" | "terminal" | "other";
+            policy: components["schemas"]["MCPPolicy"];
+        };
+        MCPEnrollment: {
+            server: components["schemas"]["MCPServer"];
+            enrollment_token: string;
+        };
+        MCPToken: {
+            enrollment_token: string;
+        };
+        MCPInspectRequest: {
+            tool_name: string;
+            arguments: {
+                [key: string]: unknown;
+            };
+            policy: components["schemas"]["MCPPolicy"];
+        };
+        MCPDecision: {
+            /** @enum {string} */
+            action: "allowed" | "blocked" | "sanitized" | "warned";
+            categories: string[];
+            arguments: {
+                [key: string]: unknown;
+            } | null;
+            duration_ms: number;
+        };
+        MCPRuntimeBatch: {
+            events: components["schemas"]["MCPEvent"][];
+            dropped_events: number;
+        };
+        MCPRuntimeResponse: {
+            /** Format: uuid */
+            server_id: string;
+            policy: components["schemas"]["MCPPolicy"];
+        };
         HealthResponse: {
             /** @enum {string} */
             status?: "healthy" | "unhealthy";
@@ -1344,7 +2083,7 @@ export interface components {
         CreateProxyRequest: {
             name: string;
             /** @enum {string} */
-            target_provider: "openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama";
+            target_provider: "openai" | "openrouter" | "xai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             target_model?: string;
             settings?: Record<string, never>;
         };
@@ -1500,7 +2239,7 @@ export interface components {
         };
         CreateProviderKeyRequest: {
             /** @enum {string} */
-            provider: "openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama";
+            provider: "openai" | "openrouter" | "xai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             /** @description Plaintext key. Stored encrypted at rest. */
             key: string;
             /**
@@ -1513,7 +2252,7 @@ export interface components {
         UpdateProxyRequest: {
             name: string;
             /** @enum {string} */
-            target_provider: "openai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama";
+            target_provider: "openai" | "openrouter" | "xai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             target_model: string;
             is_active?: boolean;
         };
@@ -2490,6 +3229,8 @@ export interface components {
             compliance_map: components["schemas"]["GovernanceArticleMap"][];
         };
         WorkspaceSettings: {
+            /** @description Store content for new chat writes; false retains only operational metadata. */
+            store_conversation_content?: boolean;
             /** Format: uuid */
             customer_id: string;
             branding: {
@@ -2530,6 +3271,8 @@ export interface components {
             model: string;
         };
         WorkspaceSettingsPatch: {
+            /** @description Store content for new chat writes; false retains only operational metadata. */
+            store_conversation_content?: boolean;
             branding?: {
                 [key: string]: unknown;
             };
@@ -2543,6 +3286,7 @@ export interface components {
             allowed_models?: components["schemas"]["WorkspaceAllowedModel"][] | null;
         };
         WorkspaceAssistant: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -2550,8 +3294,11 @@ export interface components {
             name: string;
             description?: string;
             system_prompt?: string;
-            /** @enum {string} */
-            default_provider: "openai" | "anthropic" | "bedrock" | "ollama" | "google";
+            /**
+             * @description google is a legacy alias for gemini
+             * @enum {string}
+             */
+            default_provider: "openai" | "openrouter" | "xai" | "anthropic" | "gemini" | "deepseek" | "groq" | "bedrock" | "ollama" | "google";
             default_model: string;
             language: string;
             suggested_prompts: string[];
@@ -2563,6 +3310,7 @@ export interface components {
             updated_at: string;
         };
         WorkspaceAssistantPatch: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             name?: string;
             description?: string;
             system_prompt?: string;
@@ -2585,6 +3333,7 @@ export interface components {
             knowledge_source_ids?: string[];
         };
         WorkspaceKnowledgeSource: {
+            sharing?: components["schemas"]["WorkspaceResourceSharing"];
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -2628,6 +3377,7 @@ export interface components {
             updated_at: string;
         };
         WorkspaceConversation: {
+            content_stored?: boolean;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -2650,6 +3400,8 @@ export interface components {
             last_message_peek?: string;
         };
         WorkspaceMessage: {
+            /** @description Content was returned to the caller but suppressed in durable storage */
+            temporary?: boolean;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -2664,6 +3416,8 @@ export interface components {
             prompt_tokens: number;
             completion_tokens: number;
             cost_cents: number;
+            /** @description Estimated fractional cents for this message */
+            cost_cents_exact?: number;
             finish_reason?: string | null;
             error?: string | null;
             metadata: {
@@ -2673,6 +3427,11 @@ export interface components {
             created_at: string;
         };
         WorkspaceSendMessageRequest: {
+            history?: {
+                /** @enum {string} */
+                role: "user" | "assistant";
+                content: string;
+            }[];
             content: string;
             provider?: string;
             model?: string;
@@ -2740,6 +3499,54 @@ export interface components {
         WorkspaceByModelCount: {
             model: string;
             count: number;
+        };
+        WorkspaceAccessGroup: {
+            /** Format: uuid */
+            id?: string;
+            name: string;
+            user_ids: string[];
+        };
+        /** @description Restricted access permits members of any selected group or individually selected people. Empty restricted recipients permit only owners/admins. Omission preserves existing sharing on updates; new resources default to everyone. */
+        WorkspaceResourceSharing: {
+            restricted: boolean;
+            group_ids: string[];
+            user_ids: string[];
+        };
+        WorkspaceResourceAccess: {
+            /** @enum {string} */
+            type: "knowledge" | "assistant" | "mcp";
+            /** Format: uuid */
+            id: string;
+            group_ids: string[];
+            user_ids?: string[];
+            /** @description Explicit restriction; true with no recipients remains admin-only. Omission preserves legacy inference from recipient arrays. */
+            restricted?: boolean;
+        };
+        WorkspaceAccess: {
+            groups?: components["schemas"]["WorkspaceAccessGroup"][];
+            resources?: components["schemas"]["WorkspaceResourceAccess"][];
+        };
+        WorkspaceEvidence: {
+            /** Format: date-time */
+            generated_at?: string;
+            /** Format: date-time */
+            period_start?: string;
+            /** Format: date-time */
+            period_end?: string;
+            scope?: string;
+            certification?: string;
+            settings?: components["schemas"]["WorkspaceSettings"];
+            counts?: {
+                messages?: number;
+                model_calls?: number;
+                policy_blocks?: number;
+                output_blocks?: number;
+                tokens?: number;
+                estimated_spend_cents?: number;
+            };
+            events?: Record<string, never>[];
+            events_total?: number;
+            events_truncated?: boolean;
         };
     };
     responses: never;
@@ -2921,6 +3728,768 @@ export interface operations {
             };
             /** @description Request blocked by security policy */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openRouterNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenRouter endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    xaiNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native xAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openAINativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native OpenAI endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    claudeNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Native Claude endpoint, including nested resource paths. */
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "multipart/form-data": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider status and response, or a Bastio security block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createNativeResponse: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createNativeEmbeddings: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listNativeModels: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createClaudeMessage: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    countClaudeMessageTokens: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Explicit upstream selection; use openrouter for OpenRouter model slugs. */
+                "X-Bastio-Provider"?: "openai" | "openrouter" | "xai" | "anthropic";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or security-policy block. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativePut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    proxyNativePatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxyId: string;
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native API response; inactive or cross-tenant proxies return 404. */
+            default: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4756,6 +6325,31 @@ export interface operations {
             };
         };
     };
+    workspaceKnowledgeIndexStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrator-visible embedding model and remaining background indexing work */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        model: string;
+                        dimensions: number;
+                        pending_sources: number;
+                    };
+                };
+            };
+        };
+    };
     workspaceUploadKnowledge: {
         parameters: {
             query?: never;
@@ -4769,6 +6363,8 @@ export interface operations {
                     /** Format: binary */
                     file: string;
                     name?: string;
+                    /** @description JSON-encoded WorkspaceResourceSharing applied atomically with source creation */
+                    sharing?: string;
                 };
             };
         };
@@ -4870,6 +6466,7 @@ export interface operations {
     workspaceListConversations: {
         parameters: {
             query?: {
+                q?: string;
                 limit?: number;
             };
             header?: never;
@@ -5216,6 +6813,867 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    listMCPServers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPServerList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createMCPServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPCreateServer"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPEnrollment"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateMCPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPPolicy"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        policy: components["schemas"]["MCPPolicy"];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rotateMCPToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPToken"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revokeMCPServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listMCPEvents: {
+        parameters: {
+            query?: {
+                server_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPEventList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    inspectMCPTool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPInspectRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPDecision"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ingestMCPRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPRuntimeBatch"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPRuntimeResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Reporting limit exceeded; retry after 30 seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Operation failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getWorkspaceProvisioning: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current directory linking status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        directory_users: number;
+                        linked_members: number;
+                    };
+                };
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cloud feature unavailable in OSS */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setWorkspaceProvisioning: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated provisioning status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cloud feature unavailable in OSS */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getWorkspaceSpending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current calendar month estimated spending, including reservations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        used_cents?: number;
+                        limit_cents?: number | null;
+                        near_limit?: boolean;
+                    };
+                };
+            };
+        };
+    };
+    exportWorkspaceEvidence: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tenant-scoped operational evidence, without compliance certification */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEvidence"];
+                };
+            };
+        };
+    };
+    getWorkspaceAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrative group and resource permissions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAccess"];
+                };
+            };
+        };
+    };
+    putWorkspaceAccessGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceAccessGroup"];
+            };
+        };
+        responses: {
+            /** @description Updated group */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceAccessGroup"];
+                };
+            };
+        };
+    };
+    putWorkspaceResourceAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceResourceAccess"];
+            };
+        };
+        responses: {
+            /** @description Updated permissions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResourceAccess"];
+                };
+            };
+        };
+    };
+    getWorkspaceProviderReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configured providers; does not guarantee upstream credential or model access */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        providers?: {
+                            provider?: string;
+                            configured?: boolean;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    workspaceListMCP: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Personal and workspace-shared MCP connections visible to the member */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPList"];
+                };
+            };
+        };
+    };
+    workspaceSetMCPPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceMCPPolicy"];
+            };
+        };
+        responses: {
+            /** @description Administrator updated personal integration policy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPPolicy"];
+                };
+            };
+        };
+    };
+    workspaceCreateMCPConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceMCPInput"];
+            };
+        };
+        responses: {
+            /** @description Created; credentials are never returned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPConnection"];
+                };
+            };
+        };
+    };
+    workspaceUpdateMCPConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceMCPInput"];
+            };
+        };
+        responses: {
+            /** @description Updated; only owners manage personal integrations and administrators manage shared integrations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPConnection"];
+                };
+            };
+        };
+    };
+    workspaceRevokeMCPConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Integration revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceListMCPTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discovered tools filtered by allowlist and inspected as untrusted content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        tools: components["schemas"]["WorkspaceMCPTool"][];
+                    };
+                };
+            };
+        };
+    };
+    workspaceCallMCPTool: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    arguments: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Security-processed textual result; raw arguments and results are not retained in audit records */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        text: string;
+                        is_error: boolean;
+                        categories: string[];
+                    };
                 };
             };
         };
