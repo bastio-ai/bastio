@@ -98,6 +98,7 @@ const EXTRA_TAB_ICONS: Record<string, LucideIcon> = {
 
 export function WorkspacePage() {
   const pageRef = useRef<HTMLDivElement>(null);
+  const navigationRef = useRef<HTMLElement>(null);
   const { extraTabs, openWorkspaceURL, hideUpsell } = useWorkspaceExtension();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as WorkspaceSearch;
@@ -139,6 +140,10 @@ export function WorkspacePage() {
     : "dashboard";
   useEffect(() => {
     pageRef.current?.scrollIntoView({ block: "start" });
+    navigationRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
   }, [tab, section]);
 
   useEffect(() => {
@@ -249,8 +254,9 @@ export function WorkspacePage() {
       />
 
       <nav
+        ref={navigationRef}
         aria-label="Workspace navigation"
-        className="mb-5 flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5"
+        className="mb-5 flex min-w-0 flex-nowrap gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1.5"
       >
         {allTabs.map((item) => (
           <button
@@ -259,7 +265,7 @@ export function WorkspacePage() {
             aria-current={tab === item.id ? "page" : undefined}
             onClick={() => changeTab(item.id)}
             className={cn(
-              "inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               tab === item.id
                 ? "bg-muted text-foreground"
                 : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
