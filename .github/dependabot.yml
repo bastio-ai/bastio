@@ -24,6 +24,11 @@ updates:
       timezone: Europe/Copenhagen
     open-pull-requests-limit: 5
     labels: ["dependencies", "javascript"]
+    # openapi-typescript currently requires TypeScript 5.x. Keep receiving
+    # compatible minor/patch updates until its TypeScript 7 support lands.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor:
         update-types: ["minor", "patch"]
