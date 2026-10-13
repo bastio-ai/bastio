@@ -84,6 +84,9 @@ jobs:
       - name: Artifact preview tests
         run: npm run test:artifacts
 
+      - name: Gateway setup tests
+        run: npm run test:gateways
+
       - name: Build
         run: npm run build
 
