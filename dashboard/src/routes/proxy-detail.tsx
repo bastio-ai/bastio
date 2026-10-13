@@ -2,12 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Activity } from "lucide-react";
 
+import { gatewayBasePath } from "@/components/gateway-setup";
 import { api } from "@/api/client";
 import type { Trace } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/card";
-import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
+import {
+  AdminPageHeader,
+  AdminSummaryStrip,
+} from "@/components/admin/admin-primitives";
 import {
   Table,
   TableBody,
@@ -33,19 +37,22 @@ export function ProxyDetailPage() {
   });
 
   if (proxy.isLoading) {
-    return <LoadingBlock label="Loading proxy..." />;
+    return <LoadingBlock label="Loading gateway…" />;
   }
   if (proxy.error || !proxy.data) {
     return (
       <div className="space-y-4">
-        <BackLink />
-        <EmptyStateCard title="Proxy not found" description="This id no longer exists, or belongs to another tenant." />
+        <BackLink id={id} />
+        <EmptyStateCard
+          title="Gateway not found"
+          description="This id no longer exists, or belongs to another tenant."
+        />
       </div>
     );
   }
 
   const p = proxy.data;
-  const nativeBasePath = ["openai", "openrouter", "xai", "anthropic"].includes(p.target_provider) ? `/v1/guard/${p.id}/v1` : "/v1";
+  const nativeBasePath = gatewayBasePath(p);
   const rows = traces.data ?? [];
 
   return (
@@ -53,17 +60,46 @@ export function ProxyDetailPage() {
       <AdminPageHeader
         eyebrow="LLM gateway"
         title={p.name}
-        description={<span>Requests entering <span className="font-mono text-foreground">{nativeBasePath}</span> are routed to {p.target_provider} with the controls configured for this gateway.</span>}
-        badge={<Badge variant={p.is_active ? "success" : "secondary"} className="px-1.5 py-0 text-[10px]">{p.is_active ? "active" : "disabled"}</Badge>}
-        actions={<BackLink />}
+        description={
+          <span>
+            Requests entering{" "}
+            <span className="font-mono text-foreground">{nativeBasePath}</span>{" "}
+            are routed to {p.target_provider} with the controls configured for
+            this gateway.
+          </span>
+        }
+        badge={
+          <Badge
+            variant={p.is_active ? "success" : "secondary"}
+            className="px-1.5 py-0 text-[10px]"
+          >
+            {p.is_active ? "active" : "disabled"}
+          </Badge>
+        }
+        actions={<BackLink id={id} />}
       />
 
-      <AdminSummaryStrip items={[
-        { label: "SDK base path", value: nativeBasePath, detail: p.slug },
-        { label: "Provider", value: p.target_provider, detail: "Upstream target" },
-        { label: "Default model", value: p.target_model || "Request supplied", detail: p.target_model ? "Gateway default" : "No forced model" },
-        { label: "Recent traces", value: rows.length, detail: `Created ${new Date(p.created_at).toLocaleDateString()}`, tone: rows.length ? "success" : "default" },
-      ]} />
+      <AdminSummaryStrip
+        items={[
+          { label: "SDK base path", value: nativeBasePath, detail: p.slug },
+          {
+            label: "Provider",
+            value: p.target_provider,
+            detail: "Upstream target",
+          },
+          {
+            label: "Default model",
+            value: p.target_model || "Request supplied",
+            detail: p.target_model ? "Gateway default" : "No forced model",
+          },
+          {
+            label: "Recent traces",
+            value: rows.length,
+            detail: `Created ${new Date(p.created_at).toLocaleDateString()}`,
+            tone: rows.length ? "success" : "default",
+          },
+        ]}
+      />
 
       <Card className="border-border/50">
         <div className="border-b border-border/50 p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
@@ -75,19 +111,31 @@ export function ProxyDetailPage() {
           ) : rows.length === 0 ? (
             <EmptyState
               icon={<Activity className="h-6 w-6" />}
-              title="No traces for this proxy"
-              description="Send a request through this proxy to see it appear here."
+              title="No requests through this gateway yet"
+              description="Use the connection example in gateway setup, then return here to inspect the result."
             />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent border-border/50">
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10">Status</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10">Model</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">Tokens</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">Cost</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">Latency</TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">Time</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10">
+                    Status
+                  </TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10">
+                    Model
+                  </TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                    Tokens
+                  </TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                    Cost
+                  </TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                    Latency
+                  </TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                    Time
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -95,17 +143,27 @@ export function ProxyDetailPage() {
                   <TableRow
                     key={t.id}
                     className="border-border/30 hover:bg-muted/30 cursor-pointer"
-                    onClick={() => navigate({ to: "/traces/$id", params: { id: t.id } })}
+                    onClick={() =>
+                      navigate({ to: "/traces/$id", params: { id: t.id } })
+                    }
                   >
                     <TableCell className="py-3">
                       <Badge
-                        variant={t.status === "ok" ? "success" : t.status === "blocked" ? "destructive" : "warning"}
+                        variant={
+                          t.status === "ok"
+                            ? "success"
+                            : t.status === "blocked"
+                              ? "destructive"
+                              : "warning"
+                        }
                         className="text-[10px] px-1.5 py-0"
                       >
                         {t.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-foreground/80">{t.model}</TableCell>
+                    <TableCell className="font-mono text-xs text-foreground/80">
+                      {t.model}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground font-mono tabular-nums text-right">
                       {(t.input_tokens + t.output_tokens).toLocaleString()}
                     </TableCell>
@@ -129,10 +187,14 @@ export function ProxyDetailPage() {
   );
 }
 
-function BackLink() {
+function BackLink({ id }: { id?: string }) {
   return (
-    <Link to="/proxies" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-      <ArrowLeft className="h-3.5 w-3.5" /> Back to proxies
+    <Link
+      to="/proxies"
+      search={{ gateway: id }}
+      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+    >
+      <ArrowLeft className="h-3.5 w-3.5" /> Back to gateway setup
     </Link>
   );
 }
@@ -148,7 +210,13 @@ function LoadingBlock({ label }: { label: string }) {
   );
 }
 
-function EmptyStateCard({ title, description }: { title: string; description: string }) {
+function EmptyStateCard({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   return (
     <Card className="border-border/50">
       <CardContent className="py-12 text-center">

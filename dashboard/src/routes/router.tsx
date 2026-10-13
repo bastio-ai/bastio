@@ -17,6 +17,7 @@ import { ThreatsPage, validateThreatsSearch } from "./threats";
 import { ThreatDetailPage } from "./threat-detail";
 import { AnalyticsPage } from "./analytics";
 import { ProxiesPage } from "./proxies";
+import { validateGatewaySearch } from "@/components/gateway-setup";
 import { ProxyDetailPage } from "./proxy-detail";
 import { SecurityPage } from "./security";
 import { PlaygroundPage } from "./playground";
@@ -167,6 +168,7 @@ const analyticsRoute = createRoute({
 const proxiesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/proxies",
+  validateSearch: validateGatewaySearch,
   component: ProxiesPage,
 });
 

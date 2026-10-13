@@ -593,6 +593,10 @@ paths:
       responses:
         "201":
           description: Proxy created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Proxy"
 
   /v1/api-keys:
     get:
