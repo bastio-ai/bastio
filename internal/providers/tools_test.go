@@ -11,7 +11,7 @@ import (
 )
 
 func TestNativeToolPlanningAndContinuation(t *testing.T) {
-	for _, name := range []Provider{ProviderOpenAI, ProviderAnthropic, ProviderGemini, ProviderOpenRouter} {
+	for _, name := range []Provider{ProviderOpenAI, ProviderAnthropic, ProviderGemini, ProviderOpenRouter, ProviderDeepSeek, ProviderGroq, ProviderXAI} {
 		t.Run(string(name), func(t *testing.T) {
 			calls := 0
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,20 +44,29 @@ func TestNativeToolPlanningAndContinuation(t *testing.T) {
 						io.WriteString(w, `{"id":"response2","model":"gpt-6.1-sol","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"Done"}]}],"usage":{"input_tokens":8,"output_tokens":4}}`)
 					}
 				case ProviderAnthropic:
+					if calls == 2 && !jsonContains(body["messages"], "signed-fixture") {
+						t.Error("Claude signed thinking state lost")
+					}
 					if !jsonContains(body["tool_choice"], "disable_parallel_tool_use") {
 						t.Error("parallel guard missing")
 					}
-					io.WriteString(w, `{"id":"reply","model":"claude","role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use","id":"call-test","name":"bastio_search","input":{"query":"hello"}}],"usage":{"input_tokens":8,"output_tokens":4}}`)
+					io.WriteString(w, `{"id":"reply","model":"claude","role":"assistant","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"opaque signed thought","signature":"signed-fixture"},{"type":"tool_use","id":"call-test","name":"bastio_search","input":{"query":"hello"}}],"usage":{"input_tokens":8,"output_tokens":4}}`)
 				case ProviderGemini:
 					io.WriteString(w, `{"modelVersion":"gemini","candidates":[{"content":{"role":"model","parts":[{"functionCall":{"id":"call-test","name":"bastio_search","args":{"query":"hello"}},"thoughtSignature":"opaque-gemini-signature"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":4}}`)
 					if calls == 2 && !jsonContains(body["contents"], "opaque-gemini-signature") {
 						t.Error("Gemini signature lost")
 					}
 				default:
+					if calls == 2 && name == ProviderDeepSeek && !jsonContains(body["messages"], "private-thinking-context") {
+						t.Error("DeepSeek reasoning missing from tool continuation")
+					}
+					if calls == 2 && name == ProviderOpenRouter && !jsonContains(body["messages"], "opaque-router-state") {
+						t.Error("OpenRouter reasoning details lost")
+					}
 					if string(body["parallel_tool_calls"]) != "false" {
 						t.Error("parallel guard missing")
 					}
-					io.WriteString(w, `{"id":"reply","model":"openai/gpt","choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call-test","type":"function","function":{"name":"bastio_search","arguments":"{\"query\":\"hello\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":8,"completion_tokens":4}}`)
+					io.WriteString(w, `{"id":"reply","model":"openai/gpt","choices":[{"message":{"role":"assistant","content":null,"reasoning_content":"private-thinking-context","reasoning_details":[{"type":"reasoning.encrypted","data":"opaque-router-state"}],"tool_calls":[{"id":"call-test","type":"function","function":{"name":"bastio_search","arguments":"{\"query\":\"hello\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":8,"completion_tokens":4}}`)
 				}
 			}))
 			defer ts.Close()
@@ -69,6 +78,12 @@ func TestNativeToolPlanningAndContinuation(t *testing.T) {
 				client = NewAnthropicClientWithBaseURL(ts.URL)
 			case ProviderGemini:
 				client = NewGeminiClientWithBaseURL(ts.URL)
+			case ProviderDeepSeek:
+				client = NewDeepSeekClientWithBaseURL(ts.URL)
+			case ProviderGroq:
+				client = NewGroqClientWithBaseURL(ts.URL)
+			case ProviderXAI:
+				client = NewXAIClientWithBaseURL(ts.URL)
 			default:
 				client = NewOpenRouterClientWithBaseURL(ts.URL)
 			}
@@ -78,7 +93,7 @@ func TestNativeToolPlanningAndContinuation(t *testing.T) {
 			if err != nil || len(first.ToolCalls) != 1 || first.ToolCalls[0].Name != "bastio_search" || first.InputTokens != 8 {
 				t.Fatalf("tool parse failed %v %+v", err, first)
 			}
-			req.Messages = append(req.Messages, Message{Role: "assistant", ToolCalls: first.ToolCalls, ProviderState: first.ProviderState}, Message{Role: "tool", ToolCallID: first.ToolCalls[0].ID, ToolName: first.ToolCalls[0].Name, Content: "protected result"})
+			req.Messages = append(req.Messages, Message{Role: "assistant", ReasoningContent: first.ReasoningContent, ToolCalls: first.ToolCalls, ProviderState: first.ProviderState}, Message{Role: "tool", ToolCallID: first.ToolCalls[0].ID, ToolName: first.ToolCalls[0].Name, Content: "protected result"})
 			if _, err = client.Chat(context.Background(), req, "fixture-key"); err != nil {
 				t.Fatal(err)
 			}

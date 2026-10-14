@@ -70,8 +70,15 @@ func workspaceToolsTestStore(t *testing.T) *Store {
 func (*assistantToolProvider) Name() providers.Provider { return providers.ProviderOpenAI }
 func (p *assistantToolProvider) Chat(_ context.Context, r *providers.ChatRequest, _ string) (*providers.ChatResponse, error) {
 	p.calls.Add(1)
+	hasReasoning := false
 	for _, m := range r.Messages {
+		if len(m.ToolCalls) > 0 && m.ReasoningContent == "private-model-thinking" {
+			hasReasoning = true
+		}
 		if m.Role == "tool" {
+			if !hasReasoning {
+				p.t.Error("tool continuation lost private model reasoning")
+			}
 			if strings.Contains(m.Content, "bob@example.test") || m.ToolCallID != "call-fixture" || m.ToolName == "" {
 				p.t.Error("unprotected result or invalid continuation")
 			}
@@ -82,7 +89,7 @@ func (p *assistantToolProvider) Chat(_ context.Context, r *providers.ChatRequest
 		p.t.Errorf("expected one permitted tool, got %d", len(r.Tools))
 		return nil, io.ErrUnexpectedEOF
 	}
-	return &providers.ChatResponse{Model: r.Model, ToolCalls: []providers.ToolCall{{ID: "call-fixture", Name: r.Tools[0].Name, Arguments: json.RawMessage(`{"query":"Search for bob@example.test"}`)}}, InputTokens: 20, OutputTokens: 5, FinishReason: "tool_calls"}, nil
+	return &providers.ChatResponse{ReasoningContent: "private-model-thinking", Model: r.Model, ToolCalls: []providers.ToolCall{{ID: "call-fixture", Name: r.Tools[0].Name, Arguments: json.RawMessage(`{"query":"Search for bob@example.test"}`)}}, InputTokens: 20, OutputTokens: 5, FinishReason: "tool_calls"}, nil
 }
 func (*assistantToolProvider) ChatStream(context.Context, *providers.ChatRequest, string) (<-chan providers.StreamChunk, error) {
 	return nil, io.ErrUnexpectedEOF
@@ -235,7 +242,7 @@ func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(messages)
-	if strings.Contains(string(raw), "bob@example.test") || !strings.Contains(string(raw), "tool_proposal") {
+	if strings.Contains(string(raw), "bob@example.test") || strings.Contains(string(raw), "private-model-thinking") || !strings.Contains(string(raw), "tool_proposal") {
 		t.Fatal("saved proposal privacy mismatch")
 	}
 	_, err = store.pool.Exec(ctx, `UPDATE workspace_mcp_connections SET allowed_tools=ARRAY['other'],updated_at=now() WHERE id=$1`, conn.ID)

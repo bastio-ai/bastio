@@ -35,13 +35,14 @@ const (
 // note like "[image attached]" into Content for those models so the
 // model is aware something was provided.
 type Message struct {
-	ProviderState []json.RawMessage `json:"provider_state,omitempty"`
-	Role          string            `json:"role"`
-	Content       string            `json:"content"`
-	Images        []Image           `json:"images,omitempty"`
-	ToolCalls     []ToolCall        `json:"tool_calls,omitempty"`
-	ToolCallID    string            `json:"tool_call_id,omitempty"`
-	ToolName      string            `json:"tool_name,omitempty"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"`
+	ProviderState    []json.RawMessage `json:"provider_state,omitempty"`
+	Role             string            `json:"role"`
+	Content          string            `json:"content"`
+	Images           []Image           `json:"images,omitempty"`
+	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
+	ToolCallID       string            `json:"tool_call_id,omitempty"`
+	ToolName         string            `json:"tool_name,omitempty"`
 }
 
 // Tool definitions describe capabilities; provider clients never execute them.
@@ -95,16 +96,17 @@ type ChatRequest struct {
 
 // ChatResponse is a normalized non-streaming response.
 type ChatResponse struct {
-	ProviderState []json.RawMessage `json:"provider_state,omitempty"`
-	ToolCalls     []ToolCall        `json:"tool_calls,omitempty"`
-	ID            string            `json:"id"`
-	Model         string            `json:"model"`
-	Content       string            `json:"content"`
-	Role          string            `json:"role"`
-	InputTokens   int               `json:"input_tokens"`
-	OutputTokens  int               `json:"output_tokens"`
-	FinishReason  string            `json:"finish_reason"`
-	Raw           []byte            `json:"-"` // Original provider response for pass-through
+	ReasoningContent string            `json:"reasoning_content,omitempty"`
+	ProviderState    []json.RawMessage `json:"provider_state,omitempty"`
+	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
+	ID               string            `json:"id"`
+	Model            string            `json:"model"`
+	Content          string            `json:"content"`
+	Role             string            `json:"role"`
+	InputTokens      int               `json:"input_tokens"`
+	OutputTokens     int               `json:"output_tokens"`
+	FinishReason     string            `json:"finish_reason"`
+	Raw              []byte            `json:"-"` // Original provider response for pass-through
 }
 
 // StreamChunk is a single chunk in a streaming response.
