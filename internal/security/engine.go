@@ -276,7 +276,7 @@ func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
 		mergeNormalizeIntoResult(r, normResult)
 		e.applySessionAware(ctx, req, r)
 		setWeightedScores(r.Findings)
-		e.finishURLDecodeScan(ctx, req, r, normResult)
+		e.finishEncodedScan(ctx, req, r, normResult)
 		r.ScanDuration = time.Since(start)
 		return r
 	}
@@ -329,7 +329,7 @@ func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
 	}
 
 	setWeightedScores(result.Findings)
-	e.finishURLDecodeScan(ctx, req, result, normResult)
+	e.finishEncodedScan(ctx, req, result, normResult)
 	result.ScanDuration = time.Since(start)
 
 	return result

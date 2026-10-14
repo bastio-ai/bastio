@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/internal/security/detection"
@@ -64,5 +65,25 @@ func TestMCPEncodedPIIMaskDoesNotLeakAndNormalURLsRemainUsable(t *testing.T) {
 	processed, _, err := inspectMCPPayload(context.Background(), engine, mcpProfileSnapshot{cid, &profile}, cid, raw, security.RoleRetrieval, 0)
 	if err != nil || strings.Contains(string(processed), "alice@example.test") || !strings.Contains(string(processed), "q=lampe%20til%20natbordet") {
 		t.Fatal("normal URL or plaintext PII rewrite changed")
+	}
+}
+
+func TestMCPEncodedSensitiveDataDoesNotSurviveMasking(t *testing.T) {
+	profile := security.DefaultProfile()
+	cid := uuid.New()
+	engine := security.NewEngine(detection.NewPIIDetector(), detection.NewInjectionDetector(), detection.NewJailbreakDetector(), detection.NewIndirectInjectionDetector(), detection.NewSecretsDetector())
+	text := base64.StdEncoding.EncodeToString([]byte("Contact alice@example.test about the appointment."))
+	raw, _ := json.Marshal(text)
+	_, cats, err := inspectMCPPayload(context.Background(), engine, mcpProfileSnapshot{cid, &profile}, cid, raw, security.RoleRetrieval, 0)
+	if err == nil || mcpSecurityFailure(err, cats, "result")["code"] != "encoded_rewrite" {
+		t.Fatalf("base64 personal data survived a mask policy: %v", err)
+	}
+	// Benign encoded data retains its exact representation; it is not given
+	// a detection-only decoded suffix or modified into a different tool value.
+	text = base64.StdEncoding.EncodeToString([]byte("An ordinary bedside lamp with an adjustable shade."))
+	raw, _ = json.Marshal(text)
+	out, _, err := inspectMCPPayload(context.Background(), engine, mcpProfileSnapshot{cid, &profile}, cid, raw, security.RoleRetrieval, 0)
+	if err != nil || string(out) != string(raw) {
+		t.Fatal("benign encoded value changed or blocked")
 	}
 }

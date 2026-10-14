@@ -124,6 +124,10 @@ func (d *InjectionDetector) initPatterns() {
 		// editing. Message/context overrides require operator-channel scope.
 		{regexp.MustCompile(`(?i)\b(?:ignore|disregard|forget|skip|bypass|override)\b[^.?!]{0,40}\b(?:system|developer|operator)\s+(?:messages?|context)\b`), "override", "override.operator_context", security.SeverityHigh, 0.90},
 
+		// A context reset paired with a request for the model's real/hidden
+		// operator purpose remains an attack, unlike editing a prior message.
+		{regexp.MustCompile(`(?i)\b(?:ignore|disregard|forget|override)\b[^.?!]{0,40}\b(?:prior|previous|above)\s+context\b[^.?!]{0,80}\b(?:tell|show|reveal|expose|give)\b[^.?!]{0,30}\byour\s+(?:real|actual|hidden|system|original)\s+(?:purpose|goal|instructions?|prompt|rules?)\b`), "override", "override.context_extraction", security.SeverityHigh, 0.90},
+
 		// Narrow override patterns — high confidence signatures kept for precision.
 		{regexp.MustCompile(`(?i)ignore\s+(all\s+)?previous\s+(instructions|prompts|rules)`), "override", "override.previous", security.SeverityCritical, 0.95},
 		{regexp.MustCompile(`(?i)disregard\s+(all\s+)?(previous|above|prior)\s+(instructions|context)`), "override", "override.previous", security.SeverityCritical, 0.95},

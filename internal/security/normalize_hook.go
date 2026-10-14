@@ -150,8 +150,8 @@ func flagToFinding(f normalize.Flag) (Finding, bool) {
 // Keep the detection-only decoded view out of forwarded data. Re-run the
 // declared rewrites on the original, then inspect decoded remaining content.
 // Withhold encoded sensitive data when rewriting it safely is unsupported.
-func (e *Engine) finishURLDecodeScan(ctx context.Context, req *ScanRequest, result *ScanResult, nr normalize.Result) {
-	if !nr.HasFlag(normalize.FlagURLDecoded) || result.ShouldBlock {
+func (e *Engine) finishEncodedScan(ctx context.Context, req *ScanRequest, result *ScanResult, nr normalize.Result) {
+	if !(nr.HasFlag(normalize.FlagURLDecoded) || nr.HasFlag(normalize.FlagBase64Decoded) || nr.HasFlag(normalize.FlagROT13Decoded) || nr.HasFlag(normalize.FlagLeetFolded)) || result.ShouldBlock {
 		return
 	}
 	if result.Action != ActionMask && result.Action != ActionTokenize {
@@ -173,8 +173,13 @@ func (e *Engine) finishURLDecodeScan(ctx context.Context, req *ScanRequest, resu
 		result.Action = ActionBlock
 		return
 	}
-	decoded, changed := normalize.DecodeURLText(raw.SanitizedContent)
-	if changed {
+	normalizeOpts := req.Normalize
+	if normalizeOpts == (normalize.Options{}) {
+		normalizeOpts = normalize.DefaultOptions()
+	}
+	remaining := normalize.Normalize(raw.SanitizedContent, normalizeOpts)
+	decoded := remaining.Normalized
+	if decoded != raw.SanitizedContent {
 		opts.Canonicalize = req.Canonicalize
 		checked := e.RunSteps(ctx, decoded, req.Steps, opts)
 		if checked.ShouldBlock || checked.SanitizedContent != decoded {

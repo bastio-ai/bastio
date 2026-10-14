@@ -27,7 +27,7 @@ func mcpBlockedInspection(decision *IngestScanDecision, code, reason string) err
 	if decision.Result != nil {
 		if decision.Result.RewriteUnavailable {
 			e.Code = "encoded_rewrite"
-			e.Reason = "Sensitive data uses URL encoding and could not be safely rewritten. The content was withheld."
+			e.Reason = "Sensitive data is encoded and could not be safely rewritten. The content was withheld."
 		}
 		e.BlockingDetectors = uniqueMCPDiagnostics(slices.Clone(decision.Result.BlockingDetectors))
 		if !decision.Result.RewriteUnavailable && code == "policy_block" && slices.Contains(e.BlockingDetectors, "pii") {
