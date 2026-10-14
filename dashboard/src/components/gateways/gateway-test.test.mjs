@@ -1,3 +1,8 @@
+import {
+  gatewayModelChoices,
+  defaultGatewayTestModel,
+  matchesGatewayModel,
+} from "./gateway-models.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -99,4 +104,33 @@ test("trace links accept only real trace UUIDs", () => {
     proxy.id,
   );
   assert.equal(gatewayTraceId("../../bad", {}), undefined);
+});
+
+test("the model picker scopes suggestions to the gateway provider and preserves configured defaults", () => {
+  const openRouter = gatewayModelChoices("openrouter", "tenant/special-model");
+  assert.ok(openRouter.length > 1);
+  assert.ok(openRouter.every((choice) => choice.provider === "openrouter"));
+  assert.equal(openRouter[0].model, "tenant/special-model");
+  const claude = gatewayModelChoices("anthropic");
+  assert.ok(claude.some((choice) => /Claude/.test(choice.label)));
+  assert.ok(!claude.some((choice) => choice.legacy));
+  assert.equal(
+    defaultGatewayTestModel("openrouter", " tenant/model "),
+    "tenant/model",
+  );
+  assert.ok(
+    gatewayModelChoices("openai").some(
+      (choice) => choice.model === defaultGatewayTestModel("openai"),
+    ),
+  );
+  assert.equal(defaultGatewayTestModel("unknown"), "");
+});
+
+test("model search accepts human names and IDs without mixing providers", () => {
+  const routerClaude = gatewayModelChoices("openrouter").find((choice) =>
+    choice.label.includes("Claude Sonnet"),
+  );
+  assert.ok(matchesGatewayModel(routerClaude, "  CLAUDE SONNET "));
+  assert.ok(matchesGatewayModel(routerClaude, routerClaude.model));
+  assert.ok(!matchesGatewayModel(routerClaude, "Gemini"));
 });

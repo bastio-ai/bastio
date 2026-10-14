@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/bastio-ai/bastio/internal/workspace"
 	"github.com/bastio-ai/bastio/pkg/encryption"
 )
 
@@ -50,6 +51,7 @@ func (h *ProviderKeyHandler) SetEncryptionService(s *encryption.Service) {
 // Routes returns the Chi router for top-level provider key endpoints.
 func (h *ProviderKeyHandler) Routes() chi.Router {
 	r := chi.NewRouter()
+	r.Use(workspace.RequireRole(workspace.RoleAdmin))
 	r.Get("/", h.List)
 	r.Post("/", h.Create)
 	r.Patch("/{id}", h.Rename)
