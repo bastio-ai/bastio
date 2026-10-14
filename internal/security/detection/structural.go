@@ -1,6 +1,7 @@
 package detection
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -35,7 +36,8 @@ var (
 	// metaImperatives are verbs in the meta-instruction space.
 	metaImperatives = []string{"ignore", "forget", "disregard", "override", "bypass", "skip", "discard", "wipe"}
 	// metaTargets are the nouns those verbs act on in a jailbreak.
-	metaTargets = []string{"instructions", "rules", "prompt", "guidelines", "restrictions", "policies", "constraints", "directives", "safeguards"}
+	metaTargets     = []string{"instructions", "rules", "prompt", "guidelines", "restrictions", "policies", "constraints", "directives", "safeguards"}
+	encodingHTTPURL = regexp.MustCompile(`(?i)\bhttps?://[^\s<>"']+`)
 )
 
 // structuralFindings runs the non-regex structural checks on content
@@ -136,6 +138,13 @@ func detectEncodingDensity(content string) *security.Finding {
 	if len(content) < 40 {
 		return nil
 	}
+	// URL separators and ordinary hyphenated slugs are syntax, not encoded
+	// payload. Inspect their individual components instead of concatenating
+	// host, directories and product titles into a false 80-character blob.
+	// Opaque values remain eligible, including long encoded query values.
+	// This view is used only by this heuristic; every other detector and the
+	// decoding pipeline continue to inspect the original URL content.
+	content = encodingHTTPURL.ReplaceAllStringFunc(content, encodingURLComponents)
 	longRun := 0
 	curRun := 0
 	for i := 0; i < len(content); i++ {
@@ -175,6 +184,56 @@ func detectEncodingDensity(content string) *security.Finding {
 		Message:        "High encoding density — likely smuggled payload or adversarial suffix",
 		Source:         "Zou et al. 2023 (GCG) + general encoding-smuggle taxonomy",
 	}
+}
+
+func encodingURLComponents(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	parts := strings.Split(u.Host, ".")
+	if u.User != nil {
+		parts = append(parts, u.User.String())
+	}
+	for _, part := range strings.Split(u.EscapedPath(), "/") {
+		if readableURLSlug(part) {
+			part = strings.NewReplacer("-", " ", "_", " ", ".", " ").Replace(part)
+		}
+		parts = append(parts, part)
+	}
+	for _, query := range strings.Split(u.RawQuery, "&") {
+		key, value, _ := strings.Cut(query, "=")
+		parts = append(parts, key, value)
+	}
+	parts = append(parts, u.EscapedFragment())
+	return strings.Join(parts, " ")
+}
+
+// Require several short words, with optional numeric or alphanumeric product
+// identifiers. This applies to URL components only, never standalone text.
+func readableURLSlug(s string) bool {
+	parts := strings.FieldsFunc(s, func(c rune) bool { return c == '-' || c == '_' || c == '.' })
+	if len(parts) < 3 {
+		return false
+	}
+	words := 0
+	for _, part := range parts {
+		if len(part) > 32 {
+			return false
+		}
+		letters := true
+		for i := range len(part) {
+			letter := part[i] >= 'a' && part[i] <= 'z' || part[i] >= 'A' && part[i] <= 'Z'
+			if !letter && !(part[i] >= '0' && part[i] <= '9') {
+				return false
+			}
+			letters = letters && letter
+		}
+		if letters && len(part) >= 2 {
+			words++
+		}
+	}
+	return words >= 3
 }
 
 // detectMetaInstructionCluster looks for co-occurrences of imperative
