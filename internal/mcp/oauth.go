@@ -39,6 +39,37 @@ type OAuthToken struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
+// A protected resource can represent the server root or a parent path (Notion
+// uses https://mcp.notion.com for its /mcp endpoint). Bind tokens to that declared
+// resource, but only accept the configured endpoint's HTTPS origin and a path
+// ancestor on a segment boundary. Credentials still go solely to the saved MCP
+// endpoint; this never enables forwarding to another host or sibling path.
+func OAuthResourceCoversEndpoint(resource, endpoint string) bool {
+	if ValidateRemoteURL(resource) != nil || ValidateRemoteURL(endpoint) != nil {
+		return false
+	}
+	r, _ := url.Parse(resource)
+	e, _ := url.Parse(endpoint)
+	for _, u := range []*url.URL{r, e} {
+		for _, part := range strings.Split(u.Path, "/") {
+			if part == "." || part == ".." {
+				return false
+			}
+		}
+	}
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			return p
+		}
+		return "443"
+	}
+	if !strings.EqualFold(r.Hostname(), e.Hostname()) || port(r) != port(e) {
+		return false
+	}
+	path := strings.TrimSuffix(r.EscapedPath(), "/")
+	return path == "" || e.EscapedPath() == path || strings.HasPrefix(e.EscapedPath(), path+"/")
+}
+
 func validateOAuthURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -143,7 +174,7 @@ func DiscoverOAuth(ctx context.Context, endpoint string, client *http.Client) (O
 			break
 		}
 	}
-	if !discovered || len(resource.AuthorizationServers) == 0 || len(resource.AuthorizationServers) > 8 || resource.Resource != endpoint {
+	if !discovered || len(resource.AuthorizationServers) == 0 || len(resource.AuthorizationServers) > 8 || !OAuthResourceCoversEndpoint(resource.Resource, endpoint) {
 		return out, errors.New("MCP OAuth resource metadata missing or resource mismatch")
 	}
 	issuer := resource.AuthorizationServers[0]
@@ -181,7 +212,7 @@ func DiscoverOAuth(ctx context.Context, endpoint string, client *http.Client) (O
 		return out, errors.New("authorization server must support authorization code and PKCE S256")
 	}
 	out = metadata.OAuthDiscovery
-	out.Resource = endpoint
+	out.Resource = resource.Resource
 	if validateOAuthURL(out.AuthorizationEndpoint) != nil || validateOAuthURL(out.TokenEndpoint) != nil || out.RegistrationEndpoint != "" && validateOAuthURL(out.RegistrationEndpoint) != nil {
 		return OAuthDiscovery{}, errors.New("invalid OAuth server endpoints")
 	}

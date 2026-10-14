@@ -1,3 +1,8 @@
+---
+title: Assistant MCP tools and OAuth
+description: Connect accounts, share integrations and review protected tool requests in Workspace chat.
+---
+
 # Assistant MCP tools and OAuth
 
 Admins add shared tools under **Workspace → Integrations**. Choose a public HTTPS Streamable HTTP MCP endpoint, an authentication method, an optional tool allowlist, and a sharing audience. Personal connections remain governed by the workspace's personal-integration policy. Local stdio and private-network endpoints are not supported by the hosted workspace.

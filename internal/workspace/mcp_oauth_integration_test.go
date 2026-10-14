@@ -42,14 +42,14 @@ func TestMCPOAuthStateIssuerTenantAndSerializedRefresh(t *testing.T) {
 			code = 401
 			headers.Set("WWW-Authenticate", `Bearer resource_metadata="https://tools.example.com/resource",scope="search:read"`)
 		case "https://tools.example.com/resource":
-			body = `{"resource":"https://tools.example.com/mcp","authorization_servers":["https://auth.example.com"]}`
+			body = `{"resource":"https://tools.example.com","authorization_servers":["https://auth.example.com"]}`
 		case "https://auth.example.com/.well-known/oauth-authorization-server":
 			body = `{"issuer":"https://auth.example.com","authorization_endpoint":"https://auth.example.com/authorize","token_endpoint":"https://auth.example.com/token","response_types_supported":["code"],"code_challenge_methods_supported":["S256"],"authorization_response_iss_parameter_supported":true,"client_id_metadata_document_supported":true}`
 		case "https://auth.example.com/token":
 			tokens.Add(1)
 			raw, _ := io.ReadAll(r.Body)
 			form, _ := url.ParseQuery(string(raw))
-			if form.Get("resource") != "https://tools.example.com/mcp" || r.Header.Get("Cookie") != "" {
+			if form.Get("resource") != "https://tools.example.com" || r.Header.Get("Cookie") != "" {
 				t.Error("resource binding missing or cookies forwarded")
 			}
 			if form.Get("grant_type") == "refresh_token" {
@@ -105,7 +105,7 @@ func TestMCPOAuthStateIssuerTenantAndSerializedRefresh(t *testing.T) {
 		u, _ := url.Parse(reply.URL)
 		q := u.Query()
 		expectedChallenge = q.Get("code_challenge")
-		if q.Get("code_challenge_method") != "S256" || q.Get("resource") != "https://tools.example.com/mcp" || q.Get("scope") != "search:read" {
+		if q.Get("code_challenge_method") != "S256" || q.Get("resource") != "https://tools.example.com" || q.Get("scope") != "search:read" {
 			t.Fatal("invalid authorize request")
 		}
 		return q
