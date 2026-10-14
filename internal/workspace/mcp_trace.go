@@ -130,14 +130,18 @@ func (t *mcpToolTrace) captureScan(cid uuid.UUID, result *security.ScanResult) {
 		}
 		rule := ""
 		switch f.DetectorName {
-		case "pii", "jailbreak", "injection", "indirect_injection", "secrets", "output_exfil":
-			if safeMCPRule.MatchString(f.SubCategory) {
-				rule = f.SubCategory
+		case "pii", "jailbreak", "injection", "indirect_injection", "secrets", "exfil", "output_exfil":
+			candidate := f.SubCategory
+			if candidate == "" {
+				candidate = f.MatchedPattern
+			}
+			if safeMCPRule.MatchString(candidate) {
+				rule = candidate
 			}
 		}
 		detector := category
 		switch f.DetectorName {
-		case "pii", "jailbreak", "injection", "indirect_injection", "secrets", "output_exfil", "topic", "rate_anomaly":
+		case "pii", "jailbreak", "injection", "indirect_injection", "secrets", "exfil", "output_exfil", "topic", "rate_anomaly":
 			detector = f.DetectorName
 		}
 		action := f.Action
