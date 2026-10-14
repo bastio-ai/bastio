@@ -109,6 +109,7 @@ func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
 	registry := providers.NewRegistry()
 	registry.Register(client)
 	h := NewHandler(store, registry, &readinessKeys{key: "fixture-key"})
+	checkTrace := workspaceMCPTraceTestRecorder(t, h, cid)
 	cipher, _ := encryption.New("")
 	h.SetMCPCredentialEncryption(cipher)
 	profile := security.DefaultProfile()
@@ -146,6 +147,7 @@ func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		out := httptest.NewRecorder()
 		routes.ServeHTTP(out, req)
+		checkTrace(out)
 		return out
 	}
 	saved := request("POST", "/mcp/connections", map[string]any{"name": "Handbook", "endpoint": "https://tools.example.com/mcp", "scope": "workspace", "allowed_tools": []string{"search"}}, testIdentity(cid, "manager", RoleAdmin))

@@ -396,8 +396,12 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "integration access or configuration changed; send a new request")
 		return
 	}
+	r, trace := h.beginMCPTrace(w, r, c, cont.Target.Tool.Name, "assistant", convID)
+	defer trace.complete()
+	trace.startStage("span", "mcp.preparation")
 	_, client, err := h.mcpClientFor(r.Context(), cid, c)
 	if err != nil {
+		trace.outcome("error", "connection_unavailable", 403, "integration needs reconnection")
 		writeError(w, 403, "integration needs reconnection")
 		return
 	}
@@ -405,19 +409,26 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 	tools, err := h.protectedMCPTools(r.Context(), cid, c, client)
 	index := slices.IndexFunc(tools, func(t mcp.RemoteTool) bool { return t.Name == cont.Target.Tool.Name })
 	if err != nil || index < 0 || !bytes.Equal(tools[index].InputSchema, cont.Target.Tool.InputSchema) {
+		trace.outcome("error", "tool_changed", 403, "tool permissions or schema changed; send a new request")
 		writeError(w, 403, "tool permissions or schema changed; send a new request")
 		return
 	}
+	trace.startStage("guardrail", "mcp.arguments")
 	arguments, categories, err := h.protectProposedArguments(r.Context(), cid, cont.Target, cont.Call)
 	if err != nil {
+		trace.inspectionFailure(err, categories, "arguments", 403)
 		writeError(w, 403, "request blocked by current security policy")
 		return
 	}
+	trace.inspected(categories)
 	if !equalJSON(arguments, cont.Call.Arguments) {
+		trace.outcome("blocked", "arguments_changed", 409, "Privacy protection changed the arguments; review a new proposal.")
 		writeError(w, 409, "privacy protection changed these arguments; send a new request to review them")
 		return
 	}
+	trace.startStage("span", "mcp.authorization")
 	if err = h.enforceMemberBudget(r.Context(), cid, uid); err != nil {
+		trace.outcome("error", "budget_denied", 403, "The workspace usage budget did not authorize this request.")
 		writeError(w, 403, err.Error())
 		return
 	}
@@ -428,6 +439,7 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 	estimateMsgs := append(slices.Clone(cont.Messages), providers.Message{Role: "tool", Content: strings.Repeat(" ", 32<<10)})
 	reservation, err := h.reserveSpend(budgetCtx, cid, cont.Plan.Model, estimateMsgs, cont.Plan.Provider)
 	if err != nil {
+		trace.outcome("error", "budget_denied", 403, "The workspace usage budget did not authorize this request.")
 		writeError(w, 403, err.Error())
 		return
 	}
@@ -440,10 +452,11 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 	// Atomic one-use claim. Newer user turns invalidate the old proposal.
 	tag, err := h.store.pool.Exec(r.Context(), `UPDATE workspace_tool_approvals a SET status='running' WHERE id=$1 AND customer_id=$2 AND user_id=$3 AND conversation_id=$4 AND status='pending' AND expires_at>now() AND message_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM workspace_messages m WHERE m.customer_id=a.customer_id AND m.conversation_id=a.conversation_id AND m.id<>a.message_id AND m.created_at>a.created_at)`, approvalID, cid, uid, convID)
 	if err != nil || tag.RowsAffected() != 1 {
+		trace.outcome("error", "approval_unavailable", 409, "approval expired, already handled, or conversation moved on")
 		writeError(w, 409, "approval expired, already handled, or conversation moved on")
 		return
 	}
-	h.audit(r, "mcp.tool_approved", AuditTarget{Type: "tool_approval", ID: approvalID.String()}, map[string]any{"connection_id": c.ID.String(), "tool": cont.Target.Tool.Name})
+	h.audit(r, "mcp.tool_approved", AuditTarget{Type: "tool_approval", ID: approvalID.String()}, map[string]any{"connection_id": c.ID.String(), "tool": cont.Target.Tool.Name, "trace_id": mcpAuditTraceID(r)})
 	status := "failed"
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -453,30 +466,48 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 	// Access was checked immediately before claim; check once more before side effect.
 	current, err := h.loadMCPConnection(r.Context(), cid, c.ID, uid)
 	if err != nil || !current.UpdatedAt.Equal(c.UpdatedAt) {
+		trace.outcome("error", "access_changed", 403, "integration permissions changed")
 		writeError(w, 403, "integration permissions changed")
 		return
 	}
+	trace.startStage("tool", "mcp."+cont.Target.Tool.Name)
+	trace.trace.Tags["remote_action"] = "unknown"
 	raw, err := client.CallTool(r.Context(), cont.Target.Tool.Name, arguments)
 	if err != nil {
+		trace.outcome("error", "remote_error", 200, "MCP request failed; the remote action may have completed.")
 		h.auditMCP(r, c, cont.Target.Tool.Name, "error", categories)
 		writeJSON(w, 200, map[string]any{"status": "failed", "error": "The remote action may already have completed. Check the service before making a new request."})
 		return
 	}
 	status = "completed"
+	trace.trace.Tags["remote_action"] = "completed"
+	trace.startStage("guardrail", "mcp.result")
 	processed, resultCategories, err := h.inspectMCPJSON(r.Context(), cid, raw, security.RoleRetrieval, 0)
 	categories = append(categories, resultCategories...)
 	if err != nil {
+		trace.inspectionFailure(err, resultCategories, "result", 200)
 		h.auditMCPInspection(r, c, cont.Target.Tool.Name, "result_blocked", resultCategories, err, "result")
 		failure := mcpSecurityFailure(err, resultCategories, "result")
 		failure["status"] = status
 		writeJSON(w, 200, failure)
 		return
 	}
+	trace.inspected(resultCategories)
 	text, err := supportedToolText(processed)
 	if err != nil {
+		trace.outcome("error", "unsupported_result", 200, "Tool text was empty, unsupported or larger than 32 KB.")
 		writeJSON(w, 200, map[string]any{"status": status, "error": "The tool ran, but its text result was empty, unsupported or larger than 32 KB. Narrow the request before trying again."})
 		return
 	}
+	trace.outcome("ok", "completed", 200, "")
+	var resultStatus struct {
+		IsError bool `json:"isError"`
+	}
+	_ = json.Unmarshal(processed, &resultStatus)
+	if resultStatus.IsError {
+		trace.outcome("error", "tool_error", 200, "The remote tool returned isError=true.")
+	}
+	trace.complete() // Tool timing excludes the subsequent LLM continuation.
 	h.auditMCP(r, c, cont.Target.Tool.Name, "completed", categories)
 	// Rebuild current RAG rather than replaying potentially revoked documents.
 	system, _, _ := h.resolveAssistantConfig(r.Context(), cid, conv, SendMessageRequest{Provider: string(cont.Plan.Provider), Model: cont.Plan.Model})

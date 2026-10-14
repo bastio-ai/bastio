@@ -8,7 +8,7 @@ import {
 import { useState } from "react";
 import { MCPSecurityError, mcpRuleLabel, mcpCategoryLabel } from "./mcp-security";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plug, ShieldCheck, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Plug, ShieldCheck, Loader2, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { http, unwrap } from "@/api/typed";
 import type { components } from "@/api/schema";
 import { workspaceApi } from "./types";
@@ -131,7 +131,8 @@ export function MCPIntegrations({
         Workspace policies inspect arguments before forwarding and inspect
         returned text before you see or use it. Mask and Tokenize rewrite
         detected values; Warn and Log only allow originals through. Tool
-        arguments and results are not stored in the integration audit log.
+        arguments and results are not stored in traces or the integration audit log.
+        Tool runs appear in Observe → Traces with timing and security decisions.
       </div>
       {data.can_manage && (
         <label className="flex items-center gap-2 text-xs">
@@ -551,6 +552,7 @@ function ToolRunner({
   const [argumentsText, setArgumentsText] = useState("{}");
   const [advanced, setAdvanced] = useState(false);
   const [inputError, setInputError] = useState("");
+  const [traceID, setTraceID] = useState("");
   const tools = useQuery({
     queryKey: ["workspace-mcp-tools", connection.id],
     queryFn: () =>
@@ -567,6 +569,7 @@ function ToolRunner({
         params: { path: { id: connection.id } },
         body: { name: tool!.name, arguments: argumentsObject },
       });
+      setTraceID(response.headers.get("X-Bastio-Trace-Id") ?? "");
       if (!response.ok) {
         const failure = MCPSecurityError.from(error);
         if (failure) throw failure;
@@ -596,6 +599,7 @@ function ToolRunner({
       setInputError("Arguments must be a JSON object.");
       return;
     }
+    setTraceID("");
     call.mutate(args);
   };
   return (
@@ -631,6 +635,7 @@ function ToolRunner({
               setArgumentsText(defaultArguments(next));
               setAdvanced(false);
               call.reset();
+              setTraceID("");
               setInputError("");
             }}
           >
@@ -732,6 +737,16 @@ function ToolRunner({
             {call.isPending ? "Running tool…" : "Run tool"}
           </Button>
         </>
+      )}
+      {traceID && !call.isPending && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {canManage ? (
+            <a href={`${import.meta.env.VITE_DASHBOARD_URL ?? ""}/traces/${encodeURIComponent(traceID)}`} target="_blank" rel="noreferrer" className="inline-flex cursor-pointer items-center gap-1 underline underline-offset-4 hover:text-foreground">
+              View trace <ExternalLink className="size-3" />
+            </a>
+          ) : <span>Trace recorded · your administrator can review this run.</span>}
+          <span className="font-mono text-[10px]">{traceID}</span>
+        </div>
       )}
       {call.isError && (
         call.error instanceof MCPSecurityError ? (

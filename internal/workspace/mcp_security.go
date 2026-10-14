@@ -101,5 +101,5 @@ func mcpSecurityFailure(err error, categories []string, stage string) map[string
 
 func (h *Handler) auditMCPInspection(r *http.Request, c MCPConnection, tool, action string, categories []string, err error, stage string) {
 	failure := mcpSecurityFailure(err, categories, stage)
-	h.audit(r, "mcp.tool_"+action, AuditTarget{Type: "mcp_connection", ID: c.ID.String()}, map[string]any{"tool": tool, "categories": failure["categories"], "stage": stage, "code": failure["code"], "rules": failure["rules"], "blocking_detectors": failure["blocking_detectors"]})
+	h.audit(r, "mcp.tool_"+action, AuditTarget{Type: "mcp_connection", ID: c.ID.String()}, map[string]any{"trace_id": mcpAuditTraceID(r), "tool": tool, "categories": failure["categories"], "stage": stage, "code": failure["code"], "rules": failure["rules"], "blocking_detectors": failure["blocking_detectors"]})
 }

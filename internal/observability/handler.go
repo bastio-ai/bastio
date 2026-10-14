@@ -130,11 +130,10 @@ func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
 		args = append(args, v)
 	}
 
-	// Free-text search on path (ClickHouse doesn't have ILIKE; use
-	// positionCaseInsensitive which is indexed-friendly).
+	// Search operational names as well as paths so tool runs are discoverable.
 	if v := q.Get("search"); v != "" {
-		query += " AND positionCaseInsensitive(path, ?) > 0"
-		args = append(args, v)
+		query += " AND (positionCaseInsensitive(path, ?) > 0 OR positionCaseInsensitive(trace_name, ?) > 0 OR toString(id) = ?)"
+		args = append(args, v, v, v)
 	}
 
 	query += " ORDER BY started_at DESC LIMIT ? OFFSET ?"
