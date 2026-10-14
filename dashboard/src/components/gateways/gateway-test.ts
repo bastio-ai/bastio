@@ -15,6 +15,7 @@ export function buildGatewayTestRequest(
     url: `${origin.replace(/\/$/, "")}${gatewayBasePath(proxy)}/${anthropic ? "messages" : "chat/completions"}`,
     headers: {
       "Content-Type": "application/json",
+      "Cache-Control": "no-store",
       ...(anthropic ? { "anthropic-version": "2023-06-01" } : {}),
       ...(native
         ? {}

@@ -21,6 +21,7 @@ test("hello goes through the real scoped route with a bounded non-streaming requ
     request.url,
     `https://cloud.bastio.com/v1/guard/${proxy.id}/v1/chat/completions`,
   );
+  assert.equal(request.headers["Cache-Control"], "no-store");
   const body = JSON.parse(request.body);
   assert.equal(body.max_completion_tokens, 128);
   assert.equal(body.stream, false);

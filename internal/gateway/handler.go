@@ -371,8 +371,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			status = "error"
 		}
 	} else {
+		// Connection tests must reach the provider rather than reuse a cached reply.
+		bypassCache := requestBypassesResponseCache(r)
 		var cacheKey string
-		if h.cache != nil {
+		if h.cache != nil && !bypassCache {
 			cacheKey = fmt.Sprintf("llm_resp:%s:%x", info.CustomerID.String(), sha256.Sum256(body))
 			var cached []byte
 			if found, _ := h.cache.Get(r.Context(), cacheKey, &cached); found && len(cached) > 0 {
@@ -401,7 +403,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 		// Semantic Cache lookup if exact cache missed
 		reqEmbedding := extractRequestEmbedding(body, r.Header)
-		if h.semanticCache != nil && len(reqEmbedding) > 0 {
+		if h.semanticCache != nil && !bypassCache && len(reqEmbedding) > 0 {
 			threshold := extractCacheThreshold(r.Header, 0.95)
 			if entry, sim, hit := h.semanticCache.Query(r.Context(), info.CustomerID.String(), chatReq.Model, reqEmbedding, threshold); hit && entry != nil {
 				w.Header().Set("Content-Type", "application/json")
@@ -475,7 +477,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Bastio-Cache", "MISS")
 			_ = h.cache.Set(r.Context(), cacheKey, respBody, 1*time.Hour)
 		}
-		if h.semanticCache != nil && status == "ok" && respBody != nil && len(reqEmbedding) > 0 {
+		if h.semanticCache != nil && !bypassCache && status == "ok" && respBody != nil && len(reqEmbedding) > 0 {
 			h.semanticCache.Store(r.Context(), info.CustomerID.String(), selectedModel, userContent, reqEmbedding, respBody, 1*time.Hour)
 		}
 	}
@@ -498,6 +500,18 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		IPAddress:    r.RemoteAddr,
 		UserAgent:    r.UserAgent(),
 	})
+}
+
+func requestBypassesResponseCache(r *http.Request) bool {
+	for _, value := range r.Header.Values("Cache-Control") {
+		for _, directive := range strings.Split(value, ",") {
+			name := strings.ToLower(strings.TrimSpace(strings.SplitN(directive, "=", 2)[0]))
+			if name == "no-store" || name == "no-cache" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AnthropicMessages handles Anthropic-compatible /v1/guard/{proxyId}/v1/messages requests.

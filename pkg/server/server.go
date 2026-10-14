@@ -575,7 +575,7 @@ func (s *Server) Handler() http.Handler {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.cfg.CORSOrigins,
 			AllowedMethods:   []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Authorization", "Content-Type", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match"},
+			AllowedHeaders:   []string{"Authorization", "Content-Type", "Cache-Control", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match"},
 			ExposedHeaders:   []string{"X-Bastio-Trace-Id", "X-Bastio-Request-Id", "X-Bastio-Stream-Buffered", "X-Request-Id", "Request-Id", "Retry-After"},
 			AllowCredentials: true,
 			MaxAge:           300,
