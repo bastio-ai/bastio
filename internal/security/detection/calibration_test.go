@@ -2,6 +2,9 @@ package detection
 
 import (
 	"context"
+	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -11,6 +14,8 @@ import (
 func TestDetectorBenignBusinessControls(t *testing.T) {
 	controls := []string{
 		"lampe til natbordet",
+		"SkandinaviskDesignerLampe",
+		"secretgardenlightingcollection",
 		"Please ignore the previous message; the corrected figures are attached.",
 		"Can you stay in character as Sherlock Holmes for our murder-mystery party game?",
 		"A bedside lamp with a dimmer. The fan runs quietly while you sleep.",
@@ -205,4 +210,96 @@ func FuzzDetectorRewriteConsistency(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestIBANCaseInsensitiveProtection(t *testing.T) {
+	d := NewPIIDetector()
+	for _, value := range []string{"DE89 3704 0044 0532 0130 00", "de89 3704 0044 0532 0130 00", "gB82wEsT12345698765432"} {
+		fs, _ := d.Detect(context.Background(), "Wire to "+value+" by Friday.")
+		found := false
+		for _, f := range fs {
+			found = found || f.MatchedPattern == "iban"
+		}
+		if !found {
+			t.Fatal("valid mixed/lower-case IBAN missed")
+		}
+		if d.Mask(value) == value {
+			t.Fatal("IBAN not masked")
+		}
+		tok, tm := d.Tokenize(value, security.TokenStyleAngle)
+		restored, _ := tm.Restore(tok)
+		if tok == value || restored != value {
+			t.Fatal("IBAN tokenization did not protect and preserve original value")
+		}
+	}
+}
+
+func TestIBANMaskKeepsProseAndCoversMultipleAccounts(t *testing.T) {
+	d := NewPIIDetector()
+	text := "Transfer to de89 3704 0044 0532 0130 00 by Friday; use GB82WEST12345698765432 instead on Monday."
+	out := d.Mask(text)
+	if !strings.Contains(out, "by Friday") || !strings.Contains(out, "instead on Monday") || strings.Contains(out, "3704") || strings.Contains(out, "WEST123456") {
+		t.Fatal("IBAN masking changed prose or leaked account data")
+	}
+	tok, tm := d.Tokenize(text, security.TokenStyleAngle)
+	restored, _ := tm.Restore(tok)
+	if tm.Size() != 2 || restored != text {
+		t.Fatal("multiple IBAN tokenization lost exact spans")
+	}
+}
+
+func TestIBANRegisteredFormatsAndInvalidBoundaries(t *testing.T) {
+	if len(ibanFormats) != 89 {
+		t.Fatal("national-format registry unexpectedly changed")
+	}
+	for _, text := range []string{"DE893704004405320130001", "DE89370400440532013000Z", "GB82WES112345698765432", "ZZ89370400440532013000"} {
+		fs, _ := NewPIIDetector().Detect(context.Background(), text)
+		for _, f := range fs {
+			if f.MatchedPattern == "iban" {
+				t.Fatalf("invalid country, national shape or boundary accepted: %s", text)
+			}
+		}
+	}
+}
+
+func TestAllRegisteredIBANFormatsProtectTheCompleteValue(t *testing.T) {
+	parts := regexp.MustCompile(`\[([A-Z0-9-]+)\]\{([0-9]+)\}`)
+	d := NewPIIDetector()
+	for code, format := range ibanFormats {
+		var body strings.Builder
+		groups := parts.FindAllStringSubmatch(format.shape.String(), -1)
+		for _, g := range groups[1:] {
+			n, _ := strconv.Atoi(g[2])
+			c := "1"
+			if g[1] == "A-Z" {
+				c = "A"
+			}
+			body.WriteString(strings.Repeat(c, n))
+		}
+		value := ""
+		for check := 2; check <= 98; check++ {
+			candidate := fmt.Sprintf("%s%02d%s", code, check, body.String())
+			if ibanValid(candidate) {
+				value = candidate
+				break
+			}
+		}
+		if len(value) != format.length {
+			t.Fatalf("cannot construct a valid %s registry example", code)
+		}
+		text := "Wire to " + strings.ToLower(value) + " by Friday."
+		fs, _ := d.Detect(context.Background(), text)
+		found := false
+		for _, f := range fs {
+			found = found || f.MatchedPattern == "iban"
+		}
+		if !found {
+			t.Fatalf("missed %s", code)
+		}
+		tok, tm := d.Tokenize(text, security.TokenStyleAngle)
+		restored, _ := tm.Restore(tok)
+		if tm.Size() != 1 || !strings.Contains(tok, "by Friday.") || restored != text {
+			t.Fatalf("incorrect complete-value rewrite for %s", code)
+		}
+	}
 }

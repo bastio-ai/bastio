@@ -49,6 +49,10 @@ func ibanValid(s string) bool {
 	if len(clean) < 15 || len(clean) > 34 {
 		return false
 	}
+	format, known := ibanFormats[clean[:2]]
+	if !known || len(clean) != format.length || !format.shape.MatchString(clean) {
+		return false
+	}
 	// Move first 4 chars to the end, then letters → A=10, B=11, …
 	rearranged := clean[4:] + clean[:4]
 	var digits strings.Builder
@@ -92,7 +96,8 @@ type piiPattern struct {
 	// validate runs after regex match. Return false to suppress a
 	// match — used for checksummed types (credit card, IBAN) to drop
 	// look-alike strings that can't be real. Nil = always accept.
-	validate func(string) bool
+	validate    func(string) bool
+	findIndices func(string) [][]int
 }
 
 // NewPIIDetector creates a PII detector with standard patterns.
@@ -108,11 +113,8 @@ func (d *PIIDetector) Detect(ctx context.Context, content string) ([]security.Fi
 	var findings []security.Finding
 
 	for _, p := range d.patterns {
-		matches := p.regex.FindAllString(content, -1)
-		for _, match := range matches {
-			if p.validate != nil && !p.validate(match) {
-				continue
-			}
+		for _, span := range p.matches(content) {
+			match := content[span[0]:span[1]]
 			masked := match
 			if p.maskFn != nil {
 				masked = p.maskFn(match)
@@ -143,16 +145,12 @@ func (d *PIIDetector) Detect(ctx context.Context, content string) ([]security.Fi
 func (d *PIIDetector) Mask(content string) string {
 	result := content
 	for _, p := range d.patterns {
-		replace := func(match string) string {
-			if p.validate != nil && !p.validate(match) {
-				return match
-			}
+		result = p.replaceMatches(result, func(match string) string {
 			if p.maskFn != nil {
 				return p.maskFn(match)
 			}
 			return "[REDACTED]"
-		}
-		result = p.regex.ReplaceAllStringFunc(result, replace)
+		})
 	}
 	return result
 }
@@ -173,13 +171,7 @@ func (d *PIIDetector) TokenizeInto(content string, tm *security.TokenMap) string
 	result := content
 	for _, p := range d.patterns {
 		piiType := p.piiType
-		validate := p.validate
-		result = p.regex.ReplaceAllStringFunc(result, func(match string) string {
-			if validate != nil && !validate(match) {
-				return match
-			}
-			return tm.Add(piiType, match)
-		})
+		result = p.replaceMatches(result, func(match string) string { return tm.Add(piiType, match) })
 	}
 	return result
 }
@@ -276,7 +268,7 @@ func (d *PIIDetector) initPatterns() {
 		// lives in the dedicated SecretsDetector which has per-provider
 		// prefixes and entropy gating.
 		{
-			regex:    regexp.MustCompile(`(?i)\b(?:sk|pk|api[_-]?key|token|secret)[_-]?[a-zA-Z0-9]{20,}\b`),
+			regex:    regexp.MustCompile(`(?i)\b(?:sk|pk|api[_-]?key|token|secret)[_-][a-zA-Z0-9]{20,}\b`),
 			piiType:  "api_key",
 			severity: security.SeverityHigh,
 			maskFn: func(s string) string {
@@ -291,10 +283,11 @@ func (d *PIIDetector) initPatterns() {
 		// 2 letters country code + 2 check digits + up to 30 BBAN
 		// characters. mod-97 validation eliminates look-alikes.
 		{
-			regex:    regexp.MustCompile(`\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]){11,30}\b`),
-			piiType:  "iban",
-			severity: security.SeverityHigh,
-			validate: ibanValid,
+			regex:       regexp.MustCompile(`(?i)\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]){11,30}\b`),
+			piiType:     "iban",
+			findIndices: findIBANIndices,
+			severity:    security.SeverityHigh,
+			validate:    ibanValid,
 			maskFn: func(s string) string {
 				clean := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(s, " ", ""), "-", ""))
 				if len(clean) < 4 {
@@ -393,4 +386,84 @@ func (d *PIIDetector) initPatterns() {
 			},
 		},
 	}
+	for i, p := range d.patterns {
+		if p.piiType == "iban" {
+			copy(d.patterns[1:i+1], d.patterns[:i])
+			d.patterns[0] = p
+			break
+		}
+	}
+
+}
+
+func (p piiPattern) matches(content string) [][]int {
+	if p.findIndices != nil {
+		return p.findIndices(content)
+	}
+	matches := p.regex.FindAllStringIndex(content, -1)
+	out := matches[:0]
+	for _, span := range matches {
+		if p.validate == nil || p.validate(content[span[0]:span[1]]) {
+			out = append(out, span)
+		}
+	}
+	return out
+}
+func (p piiPattern) replaceMatches(content string, replace func(string) string) string {
+	spans := p.matches(content)
+	if len(spans) == 0 {
+		return content
+	}
+	var out strings.Builder
+	offset := 0
+	for _, span := range spans {
+		out.WriteString(content[offset:span[0]])
+		out.WriteString(replace(content[span[0]:span[1]]))
+		offset = span[1]
+	}
+	out.WriteString(content[offset:])
+	return out.String()
+}
+
+var ibanStart = regexp.MustCompile(`(?i)\b[A-Z]{2}[0-9]{2}`)
+
+// Match exactly the registered national length, with optional printing
+// separators. This prevents following prose from becoming part of an account,
+// and stops shorter checksum-valid fragments from leaking the remaining BBAN.
+func findIBANIndices(content string) [][]int {
+	var out [][]int
+	for _, start := range ibanStart.FindAllStringIndex(content, -1) {
+		if len(out) > 0 && start[0] < out[len(out)-1][1] {
+			continue
+		}
+		format, known := ibanFormats[strings.ToUpper(content[start[0]:start[0]+2])]
+		if !known {
+			continue
+		}
+		count, separator := 0, false
+		for i := start[0]; i < len(content); i++ {
+			c := content[i]
+			alphaNum := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+			if !alphaNum {
+				if (c == ' ' || c == '-') && !separator {
+					separator = true
+					continue
+				}
+				break
+			}
+			separator = false
+			count++
+			if count == format.length {
+				boundary := i+1 == len(content) || !ibanWordByte(content[i+1])
+				if boundary && ibanValid(content[start[0]:i+1]) {
+					out = append(out, []int{start[0], i + 1})
+				}
+				break
+			}
+		}
+	}
+	return out
+}
+func ibanWordByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
 }
