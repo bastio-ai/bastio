@@ -50,7 +50,7 @@ func (h *Handler) reserveSpend(ctx context.Context, cid uuid.UUID, model string,
 	if len(provider) > 0 {
 		prov = provider[0]
 	}
-	estimate := estimateCostCentsFloat(string(prov), model, input, workspaceMaxOutputTokens)
+	estimate := estimateCostCentsFloat(string(prov), model, input, callMaxOutput(ctx))
 	tx, err := h.store.pool.Begin(ctx)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("spending limit unavailable")
@@ -84,7 +84,7 @@ func (h *Handler) reserveSpend(ctx context.Context, cid uuid.UUID, model string,
 
 // When a provider omits usage, retain the conservative allowance instead of
 // undercounting hidden reasoning or image input from visible response text.
-func accountMissingUsage(msgs []providers.Message, input, output *int) {
+func accountMissingUsage(msgs []providers.Message, input, output *int, maximum ...int) {
 	if *input == 0 {
 		*input = 1024
 		for _, m := range msgs {
@@ -96,6 +96,9 @@ func accountMissingUsage(msgs []providers.Message, input, output *int) {
 	}
 	if *output == 0 {
 		*output = workspaceMaxOutputTokens
+		if len(maximum) > 0 && maximum[0] > 0 && maximum[0] <= workspaceMaxOutputTokens {
+			*output = maximum[0]
+		}
 	}
 }
 func (h *Handler) settleSpend(cid, id uuid.UUID, cost float64) error {

@@ -708,7 +708,7 @@ LEFT JOIN LATERAL (
   WHERE customer_id = $1 AND conversation_id = c.id
   ORDER BY created_at DESC LIMIT 1
 ) lm ON TRUE
-WHERE c.customer_id = $1 AND c.archived_at IS NULL`
+WHERE c.customer_id = $1 AND c.archived_at IS NULL AND NOT c.is_setup_test`
 	args := []any{customerID}
 	if userID != "" {
 		q += ` AND c.user_id = $2`

@@ -1,3 +1,5 @@
+import { ModelConnections } from "./model-connections";
+import { workspaceModelChoices } from "./workspace-models";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker } from "@tanstack/react-router";
@@ -82,8 +84,10 @@ export function SettingsTab({
   useEffect(() => {
     const next = settings.data;
     if (!next) return;
-    const previous = previousSettings.current?.customer_id === next.customer_id
-      ? previousSettings.current : undefined;
+    const previous =
+      previousSettings.current?.customer_id === next.customer_id
+        ? previousSettings.current
+        : undefined;
     // Refresh untouched fields while preserving edits, even if another admin saves.
     setStoreContent((current) =>
       !previous || current === (previous.store_conversation_content ?? true)
@@ -486,50 +490,55 @@ export function SettingsTab({
         )}
 
         {section === "models" && (
-          <section className="rounded-xl border border-border/70 bg-card">
-            <div className="flex items-start justify-between gap-4 border-b border-border/60 px-4 py-3.5">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-                  <LockKeyhole className="h-3.5 w-3.5" />
+          <div className="space-y-4">
+            <ModelConnections />
+            <section className="rounded-xl border border-border/70 bg-card">
+              <div className="flex items-start justify-between gap-4 border-b border-border/60 px-4 py-3.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
+                    <LockKeyhole className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <h2 className="text-[13px] font-semibold text-foreground">
+                      Choose models
+                    </h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Control the models employees can select at chat time.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-[13px] font-semibold text-foreground">
-                    Choose models
-                  </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Control the models employees can select at chat time.
-                  </p>
-                </div>
+                <Badge variant={strictModelPolicy ? "success" : "warning"}>
+                  {strictModelPolicy ? "Restricted" : "Catalog default"}
+                </Badge>
               </div>
-              <Badge variant={strictModelPolicy ? "success" : "warning"}>
-                {strictModelPolicy ? "Restricted" : "Catalog default"}
-              </Badge>
-            </div>
-            <div className="space-y-4 p-4">
-              {!strictModelPolicy ? (
-                <SecurityNotice
-                  title="All curated models are currently available"
-                  tone="warning"
-                >
-                  With no models selected, employees can use the full curated
-                  catalog. Select approved models below to enforce a strict
-                  allowlist in both the portal UI and chat send path.
-                </SecurityNotice>
-              ) : (
-                <SecurityNotice
-                  title="Only approved models are available"
-                  tone="success"
-                >
-                  Only the selected provider and model pairs are available to
-                  employees. Bastio checks this policy on every chat request.
-                </SecurityNotice>
-              )}
-              <ModelWhitelistEditor
-                value={allowedModels}
-                onChange={setAllowedModels}
-              />
-            </div>
-          </section>
+              <div className="space-y-4 p-4">
+                {!strictModelPolicy ? (
+                  <SecurityNotice
+                    title="Connected provider models are currently allowed"
+                    tone="warning"
+                  >
+                    With no models selected, employees can choose models
+                    reported by connected providers, or suggestions where
+                    discovery is unavailable. Select approved models below to
+                    enforce a strict allowlist in both the portal UI and chat
+                    send path.
+                  </SecurityNotice>
+                ) : (
+                  <SecurityNotice
+                    title="Only approved models are available"
+                    tone="success"
+                  >
+                    Only the selected provider and model pairs are available to
+                    employees. Bastio checks this policy on every chat request.
+                  </SecurityNotice>
+                )}
+                <ModelWhitelistEditor
+                  value={allowedModels}
+                  onChange={setAllowedModels}
+                />
+              </div>
+            </section>
+          </div>
         )}
       </div>
 
@@ -597,10 +606,15 @@ function ModelWhitelistEditor({
   onChange: (next: AllowedModelEntry[]) => void;
 }) {
   const [search, setSearch] = useState("");
+  const inventory = useQuery({
+    queryKey: ["workspace", "models", true],
+    queryFn: () => workspaceApi.modelInventory(true),
+  });
+  const catalog = workspaceModelChoices(inventory.data);
   const allowedKey = (entry: AllowedModelEntry) =>
     `${entry.provider}/${entry.model}`;
   const allowSet = new Set(value.map(allowedKey));
-  const byProvider = MODEL_CATALOG.reduce<Record<string, typeof MODEL_CATALOG>>(
+  const byProvider = catalog.reduce<Record<string, typeof MODEL_CATALOG>>(
     (result, model) => {
       (result[model.provider] ??= []).push(model);
       return result;
@@ -642,7 +656,7 @@ function ModelWhitelistEditor({
       <p className="text-xs text-muted-foreground">
         {value.length
           ? `${value.length} approved models selected`
-          : "All curated models allowed"}
+          : "Connected provider models allowed"}
         . Expand a provider to choose models.
       </p>
       {Object.entries(byProvider).map(([provider, models]) => {
@@ -728,7 +742,7 @@ function ModelWhitelistEditor({
         );
       })}
       {search &&
-        !MODEL_CATALOG.some((model) =>
+        !catalog.some((model) =>
           `${model.provider} ${model.label} ${model.model}`
             .toLowerCase()
             .includes(search.toLowerCase()),
@@ -739,7 +753,7 @@ function ModelWhitelistEditor({
         )}
       {value.length > 0 ? (
         <Button size="xs" variant="ghost" onClick={() => onChange([])}>
-          Use the full curated catalog
+          Allow connected provider models
         </Button>
       ) : null}
     </div>

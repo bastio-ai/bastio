@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { WorkspaceSetupGuide } from "./setup-guide";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -8,8 +8,6 @@ import {
   MessageSquarePlus,
   Settings2,
   ShieldCheck,
-  Users,
-  Plug,
 } from "lucide-react";
 
 import {
@@ -57,18 +55,6 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
     queryFn: workspaceApi.getSettings,
   });
 
-  const readiness = useQuery({
-    queryKey: ["workspace", "provider-readiness"],
-    queryFn: async () => {
-      const r = await fetch("/v1/workspace/me/provider-readiness", {
-        credentials: "include",
-      });
-      if (!r.ok) throw new Error("Provider readiness unavailable");
-      return r.json() as Promise<{
-        providers: { provider: string; configured: boolean }[];
-      }>;
-    },
-  });
   const spending = useQuery({
     queryKey: ["workspace", "spending"],
     queryFn: async () => {
@@ -83,8 +69,6 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
       }>;
     },
   });
-  const connected =
-    readiness.data?.providers.filter((p) => p.configured).length ?? 0;
   const assistantCount = assistants.data?.assistants.length ?? 0;
   const readySources =
     knowledge.data?.sources.filter((item) => item.status === "ready").length ??
@@ -98,200 +82,11 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
 
   return (
     <div>
-      <section className="mb-5 rounded-xl border border-border bg-card p-5 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold tracking-tight">
-              Set up your workspace
-            </h2>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              A clear path from your first settings to your team’s first
-              conversation. Return to any step as your workspace grows.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenTab?.("settings")}
-          >
-            Workspace settings
-            <Settings2 data-icon="inline-end" />
-          </Button>
-        </div>
-        <ol className="mt-5 grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-          <SetupStep
-            number={1}
-            icon={Settings2}
-            title="Choose your AI models"
-            description="Decide which models employees can use. Configure provider keys if you bring your own."
-            detail={
-              readiness.isPending
-                ? "Checking providers…"
-                : readiness.error
-                  ? "Provider status unavailable"
-                  : `${connected} provider${connected === 1 ? "" : "s"} configured`
-            }
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenTab?.("settings", "models")}
-              >
-                Choose models
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            }
-            secondary={
-              <Link
-                to="/proxies"
-                className="text-xs text-muted-foreground underline underline-offset-4"
-              >
-                Manage provider keys
-              </Link>
-            }
-          />
-          <SetupStep
-            number={2}
-            icon={ShieldCheck}
-            title="Set privacy and limits"
-            description="Choose whether chats are saved and set a monthly spending limit for your workspace."
-            detail={
-              settings.isPending
-                ? "Checking privacy…"
-                : settings.error
-                  ? "Privacy status unavailable"
-                  : settings.data?.store_conversation_content === false
-                    ? "Temporary chats enabled"
-                    : "Chat history is saved"
-            }
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenTab?.("settings", "privacy")}
-              >
-                Review privacy
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            }
-            secondary={
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline underline-offset-4"
-                onClick={() => onOpenTab?.("settings", "usage")}
-              >
-                Set spending limit
-              </button>
-            }
-          />
-          <SetupStep
-            number={3}
-            icon={Users}
-            title="Organize your team"
-            description="Create team groups, then share resources with everyone, a group, or selected people."
-            detail="Groups work across assistants, knowledge, and tools"
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  onOpenTab?.(
-                    ext.extraTabs.some((t) => t.id === "team")
-                      ? "team"
-                      : "groups",
-                  )
-                }
-              >
-                {ext.extraTabs.some((t) => t.id === "team")
-                  ? "Invite members"
-                  : "Manage groups"}
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            }
-            secondary={
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline underline-offset-4"
-                onClick={() => onOpenTab?.("groups")}
-              >
-                Create groups & set sharing
-              </button>
-            }
-          />
-          <SetupStep
-            number={4}
-            icon={MessageSquarePlus}
-            title="Try the employee experience"
-            description="Open the workspace and send a sample prompt. Check the answer and security outcome before rollout."
-            detail="Use a harmless example for your first test"
-            action={
-              <Button size="sm" onClick={() => onOpenChat()}>
-                Try a conversation
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            }
-          />
-        </ol>
-      </section>
-      <section
-        className="mb-5 grid gap-3 lg:grid-cols-3"
-        aria-label="Add workspace resources"
-      >
-        {[
-          {
-            id: "assistants",
-            icon: Bot,
-            title: "Assistants",
-            detail: assistants.isPending
-              ? "Loading…"
-              : assistants.error
-                ? "Status unavailable"
-                : `${assistantCount} configured`,
-            description: "Create helpful AI roles for your team.",
-          },
-          {
-            id: "knowledge",
-            icon: BookOpen,
-            title: "Knowledge",
-            detail: knowledge.isPending
-              ? "Loading…"
-              : knowledge.error
-                ? "Status unavailable"
-                : `${readySources} ready sources`,
-            description: "Upload documents and choose who can use them.",
-          },
-          {
-            id: "integrations",
-            icon: Plug,
-            title: "Tool integrations",
-            detail: "MCP connections",
-            description: "Connect business tools and share them securely.",
-          },
-        ].map((item) => (
-          <button
-            type="button"
-            key={item.id}
-            onClick={() => onOpenTab?.(item.id)}
-            className="group flex min-h-24 items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <item.icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-bold tracking-tight">
-                  {item.title}
-                </h2>
-                <span className="text-xs text-muted-foreground">
-                  {item.detail}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {item.description}
-              </p>
-            </div>
-            <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-          </button>
-        ))}
-      </section>
+      <WorkspaceSetupGuide
+        onOpenChat={() => onOpenChat()}
+        onOpenTab={onOpenTab}
+      />
+
       <AdminSummaryStrip
         items={[
           {
@@ -430,7 +225,7 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
                     ? "Checking…"
                     : allowedModelCount
                       ? `${allowedModelCount} approved`
-                      : "All curated models"
+                      : "Connected provider models"
                 }
                 ready={allowedModelCount > 0}
                 neutral={allowedModelCount === 0}
@@ -549,43 +344,5 @@ function RecentConversationRow({
         <ArrowRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
     </button>
-  );
-}
-
-function SetupStep({
-  number,
-  icon: Icon,
-  title,
-  description,
-  detail,
-  action,
-  secondary,
-}: {
-  number: number;
-  icon: typeof Bot;
-  title: string;
-  description: string;
-  detail: string;
-  action: import("react").ReactNode;
-  secondary?: import("react").ReactNode;
-}) {
-  return (
-    <li className="flex flex-col rounded-xl border border-border bg-muted/10 p-4">
-      <div className="flex items-center justify-between">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border text-xs font-mono text-muted-foreground">
-          {number}
-        </span>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <h3 className="mt-3 text-sm font-bold tracking-tight">{title}</h3>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        {description}
-      </p>
-      <p className="mt-3 text-xs font-medium">{detail}</p>
-      <div className="mt-auto flex flex-wrap items-center gap-3 pt-4">
-        {action}
-        {secondary}
-      </div>
-    </li>
   );
 }

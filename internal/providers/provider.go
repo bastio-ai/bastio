@@ -52,14 +52,15 @@ type Image struct {
 
 // ChatRequest is a normalized chat completion request.
 type ChatRequest struct {
-	Provider       Provider  `json:"-"`
-	Model          string    `json:"model"`
-	FallbackModels []string  `json:"fallback_models,omitempty"`
-	Messages       []Message `json:"messages"`
-	MaxTokens      *int      `json:"max_tokens,omitempty"`
-	Temperature    *float64  `json:"temperature,omitempty"`
-	TopP           *float64  `json:"top_p,omitempty"`
-	Stream         bool      `json:"stream"`
+	Provider        Provider  `json:"-"`
+	Model           string    `json:"model"`
+	FallbackModels  []string  `json:"fallback_models,omitempty"`
+	Messages        []Message `json:"messages"`
+	MaxTokens       *int      `json:"max_tokens,omitempty"`
+	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
+	Temperature     *float64  `json:"temperature,omitempty"`
+	TopP            *float64  `json:"top_p,omitempty"`
+	Stream          bool      `json:"stream"`
 	// Raw holds the original request body for pass-through proxying.
 	Raw     []byte      `json:"-"`
 	Headers http.Header `json:"-"`

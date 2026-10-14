@@ -1958,10 +1958,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/me/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Models reported by current workspace credentials, filtered by member policy */
+        get: operations["listWorkspaceModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/models/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh a provider's model inventory using the workspace credential */
+        post: operations["discoverWorkspaceModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/models/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a bounded hello through the normal workspace security and spending pipeline
+         * @description Owner/admin only. Provider charges apply. Tests do not retain content or appear in conversation lists. Usage accounting and traces remain. Rotating the provider key invalidates past evidence.
+         */
+        post: operations["testWorkspaceModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace setup progress derived from real configuration and usage */
+        get: operations["getWorkspaceSetup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/setup/review-privacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge the current storage and spending policy */
+        post: operations["reviewWorkspacePrivacy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/setup/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read-only preview of a current member's permitted shared resources
+         * @description Does not create an employee session, run models/tools, or reveal another user's personal integrations or credentials.
+         */
+        get: operations["previewWorkspaceMember"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        WorkspacePreviewItems: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        }[];
+        WorkspaceModelInventory: {
+            restricted: boolean;
+            providers: components["schemas"]["WorkspaceProviderModels"][];
+        };
+        WorkspaceProviderModels: {
+            provider: string;
+            configured: boolean;
+            /** @enum {string} */
+            source: "provider" | "catalog";
+            /** Format: date-time */
+            discovered_at?: string;
+            error_code?: string;
+            models: {
+                id: string;
+                name?: string;
+                /** Format: date-time */
+                checked_at?: string;
+                /** @enum {string} */
+                check_status?: "untested" | "passed" | "failed";
+                error_code?: string;
+            }[];
+        };
         WorkspaceMCPPolicy: {
             allow_personal: boolean;
         };
@@ -7954,6 +8089,286 @@ export interface operations {
                         categories: string[];
                     };
                 };
+            };
+        };
+    };
+    listWorkspaceModels: {
+        parameters: {
+            query?: {
+                /** @description Owner/admin only; show models before applying the member allowlist */
+                manage?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider discovery and dated model test evidence; neither guarantees future inference access */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceModelInventory"];
+                };
+            };
+            /** @description Admin role required for manage mode */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Model policy unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discoverWorkspaceModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    provider: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Refreshed provider inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceProviderModels"];
+                };
+            };
+            /** @description Invalid provider */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Owner/admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testWorkspaceModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    provider: string;
+                    model: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Test outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: boolean;
+                        reply: string;
+                        error_code?: string;
+                        /** Format: date-time */
+                        checked_at: string;
+                    };
+                };
+            };
+            /** @description Invalid model or missing provider connection */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Owner/admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Model test rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Test or evidence storage unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getWorkspaceSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Setup progress */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        steps: {
+                            id: string;
+                            complete: boolean;
+                            detail: string;
+                        }[];
+                        multi_user: boolean;
+                        completed: number;
+                        total: number;
+                        ready: boolean;
+                        members: number;
+                        pending_invitations: number;
+                        ready_knowledge: number;
+                        employee_conversations: number;
+                    };
+                };
+            };
+            /** @description Owner/admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Setup evidence unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reviewWorkspacePrivacy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    store_conversation_content: boolean;
+                    retention_days: number;
+                    spend_cap_cents: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Current policy reviewed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        reviewed: boolean;
+                    };
+                };
+            };
+            /** @description Owner/admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy changed; refresh before reviewing */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    previewWorkspaceMember: {
+        parameters: {
+            query: {
+                user_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Employee permission preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        user_id: string;
+                        email: string;
+                        role: string;
+                        assistants: components["schemas"]["WorkspacePreviewItems"];
+                        knowledge: components["schemas"]["WorkspacePreviewItems"];
+                        integrations: components["schemas"]["WorkspacePreviewItems"];
+                        allowed_models: {
+                            provider: string;
+                            model: string;
+                        }[];
+                        store_conversation_content: boolean;
+                        /** Format: date-time */
+                        previewed_at: string;
+                    };
+                };
+            };
+            /** @description Owner/admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a current workspace member */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

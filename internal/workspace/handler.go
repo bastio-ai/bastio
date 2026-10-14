@@ -241,6 +241,12 @@ func (h *Handler) Routes() chi.Router {
 	// even though they can't send.
 	r.With(RequireRole(RoleViewer)).Get("/me/effective-models", h.getEffectiveModels)
 	r.With(RequireRole(RoleViewer)).Get("/me/provider-readiness", h.providerReadiness)
+	r.With(RequireRole(RoleViewer)).Get("/me/models", h.listWorkspaceModels)
+	r.With(RequireRole(RoleAdmin), requireJSONContent).Post("/models/discover", h.discoverWorkspaceModels)
+	r.With(RequireRole(RoleAdmin), requireJSONContent).Post("/models/test", h.testWorkspaceModel)
+	r.With(RequireRole(RoleAdmin)).Get("/setup", h.workspaceSetupStatus)
+	r.With(RequireRole(RoleAdmin), requireJSONContent).Post("/setup/review-privacy", h.reviewWorkspacePrivacy)
+	r.With(RequireRole(RoleAdmin)).Get("/setup/preview", h.previewWorkspaceMember)
 
 	r.With(RequireRole(RoleMember)).Get("/mcp", h.listMCPConnections)
 	r.With(RequireRole(RoleAdmin)).Put("/mcp/policy", h.putMCPPolicy)

@@ -20,7 +20,7 @@ export function OnboardingCard({
       <div className="space-y-3">
         <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/5 px-3 py-1 text-xs text-cyan-500">
           <Sparkles className="h-3 w-3" />
-          Workspace is ready
+          Protected workspace
         </div>
         <h1 className="text-3xl font-semibold tracking-tight">
           Welcome to your AI workspace.
@@ -40,12 +40,12 @@ export function OnboardingCard({
         <InfoCard
           icon={<Bot className="h-4 w-4" />}
           title="Assistants are pre-configured"
-          body="Your admin curated team-specific personas with system prompts and default models."
+          body="Choose an assistant your admin has shared with you."
         />
         <InfoCard
           icon={<BookOpen className="h-4 w-4" />}
           title="Knowledge runs automatically"
-          body="Your company's docs are linked to assistants — relevant chunks cite themselves in answers."
+          body="Assistants can use shared company documents and cite the permitted sources they retrieve."
         />
       </div>
 

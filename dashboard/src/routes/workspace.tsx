@@ -22,7 +22,10 @@ import {
 import { PageHeader } from "@/components/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useWorkspaceSidebar, useWorkspaceSidebarState } from "@/components/workspace-sidebar-context";
+import {
+  useWorkspaceSidebar,
+  useWorkspaceSidebarState,
+} from "@/components/workspace-sidebar-context";
 import { DashboardTab } from "@/components/workspace/dashboard-tab";
 import { AssistantsTab } from "@/components/workspace/assistants-tab";
 import { MCPIntegrations } from "@/components/workspace/mcp-integrations";
@@ -250,16 +253,32 @@ export function WorkspacePage() {
       />
 
       <div className={cn("mb-5 max-w-sm", navigationVisible && "md:hidden")}>
-        <label htmlFor="workspace-page" className="sr-only">Workspace page</label>
+        <label htmlFor="workspace-page" className="sr-only">
+          Workspace page
+        </label>
         <select
           id="workspace-page"
           value={tab}
           onChange={(event) => changeTab(event.target.value)}
           className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {allTabs.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          {allTabs.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
         </select>
       </div>
+      {tab !== "dashboard" ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-4 cursor-pointer px-0"
+          onClick={() => changeTab("dashboard")}
+        >
+          ← Back to workspace setup
+        </Button>
+      ) : null}
       {tab === "dashboard" ? (
         <>
           <DashboardTab

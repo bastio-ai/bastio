@@ -87,6 +87,9 @@ jobs:
       - name: Gateway setup tests
         run: npm run test:gateways
 
+      - name: Workspace model discovery tests
+        run: npm run test:workspace-models
+
       - name: Build
         run: npm run build
 
