@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "generate:api": "openapi-typescript ../cmd/server/openapi.yaml -o src/api/schema.ts",
-    "test:workspace-models": "node --experimental-strip-types --test src/components/workspace/workspace-models.test.mjs"
+    "test:workspace-models": "node --experimental-strip-types --test src/components/workspace/workspace-models.test.mjs",
+    "test:workspace-mcp": "node --experimental-strip-types --test src/components/workspace/mcp-security.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

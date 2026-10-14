@@ -466,8 +466,10 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 	processed, resultCategories, err := h.inspectMCPJSON(r.Context(), cid, raw, security.RoleRetrieval, 0)
 	categories = append(categories, resultCategories...)
 	if err != nil {
-		h.auditMCP(r, c, cont.Target.Tool.Name, "result_blocked", categories)
-		writeJSON(w, 200, map[string]any{"status": status, "error": "The tool ran, but its result was withheld by security policy. The remote action was not undone."})
+		h.auditMCPInspection(r, c, cont.Target.Tool.Name, "result_blocked", resultCategories, err, "result")
+		failure := mcpSecurityFailure(err, resultCategories, "result")
+		failure["status"] = status
+		writeJSON(w, 200, failure)
 		return
 	}
 	text, err := supportedToolText(processed)

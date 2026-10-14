@@ -170,12 +170,13 @@ type ScanRequest struct {
 
 // ScanResult is the output of a full security scan.
 type ScanResult struct {
-	Findings     []Finding     `json:"findings"`
-	ThreatScore  float64       `json:"threat_score"` // Aggregate 0.0-1.0
-	Action       Action        `json:"action"`       // Final recommended action
-	ShouldBlock  bool          `json:"should_block"`
-	ThreatTypes  []ThreatType  `json:"threat_types"`
-	ScanDuration time.Duration `json:"scan_duration"`
+	Findings          []Finding     `json:"findings"`
+	BlockingDetectors []string      `json:"blocking_detectors,omitempty"`
+	ThreatScore       float64       `json:"threat_score"` // Aggregate 0.0-1.0
+	Action            Action        `json:"action"`       // Final recommended action
+	ShouldBlock       bool          `json:"should_block"`
+	ThreatTypes       []ThreatType  `json:"threat_types"`
+	ScanDuration      time.Duration `json:"scan_duration"`
 	// SanitizedContent holds the content with PII masked or tokenized.
 	// Only populated when PIIAction is ActionMask or ActionTokenize.
 	SanitizedContent string `json:"sanitized_content,omitempty"`
@@ -378,6 +379,9 @@ func (e *Engine) scanViaSteps(ctx context.Context, req *ScanRequest, start time.
 	maxScore := 0.0
 	typesSeen := map[ThreatType]bool{}
 	for _, s := range stepsRes.Steps {
+		if s.Fired && s.Action == ActionBlock {
+			result.BlockingDetectors = append(result.BlockingDetectors, s.Detector)
+		}
 		if s.Skipped {
 			continue
 		}
