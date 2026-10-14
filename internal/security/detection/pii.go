@@ -10,10 +10,38 @@ import (
 )
 
 // luhnValid runs the Luhn checksum over the digits in s. Used to
-// filter false-positive credit-card matches: any 13–19 digit string
-// can look like a card, but real cards pass Luhn — tracking numbers,
-// order IDs, and UUIDs almost never do.
+// validate card-shaped numbers. A checksum does not establish the kind
+// of identifier: paymentCardValid also distinguishes valid ISBNs.
 func luhnValid(s string) bool { return luhnValidLength(s, 13, 19) }
+
+// An ISBN-13 is a public book identifier, not a payment card. Some ISBNs
+// happen to satisfy Luhn too: Luhn alone accepts roughly one in ten numeric
+// identifiers. Require both the allocated ISBN prefix and its own checksum
+// before distinguishing one from a card-shaped number.
+// https://www.isbn-international.org/content/what-isbn/10
+func paymentCardValid(s string) bool {
+	if !luhnValid(s) {
+		return false
+	}
+	var digits []byte
+	for i := range len(s) {
+		if s[i] >= '0' && s[i] <= '9' {
+			digits = append(digits, s[i])
+		}
+	}
+	if len(digits) != 13 || !(strings.HasPrefix(string(digits), "978") || strings.HasPrefix(string(digits), "979")) {
+		return true
+	}
+	sum := 0
+	for i, digit := range digits {
+		weight := 1
+		if i%2 == 1 {
+			weight = 3
+		}
+		sum += int(digit-'0') * weight
+	}
+	return sum%10 != 0
+}
 
 func luhnValidLength(s string, minDigits, maxDigits int) bool {
 	var sum, count int
@@ -204,15 +232,13 @@ func (d *PIIDetector) initPatterns() {
 			},
 		},
 		// Credit card numbers (critical) — 13-19 digits with optional
-		// separators. Luhn-validated to suppress look-alikes: order
-		// IDs, UUID fragments, and arbitrary numeric strings are
-		// overwhelmingly likely to fail the checksum while real cards
-		// always pass.
+		// separators. Require Luhn and distinguish valid ISBN-13 book
+		// identifiers that coincidentally pass both checksums.
 		{
 			regex:    regexp.MustCompile(`\b(?:\d{4}[-\s]?){3,4}\d{1,4}\b`),
 			piiType:  "credit_card",
 			severity: security.SeverityCritical,
-			validate: luhnValid,
+			validate: paymentCardValid,
 			maskFn: func(s string) string {
 				digits := regexp.MustCompile(`\d`).FindAllString(s, -1)
 				if len(digits) >= 4 {

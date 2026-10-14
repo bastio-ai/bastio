@@ -13,6 +13,13 @@ import (
 
 func TestDetectorBenignBusinessControls(t *testing.T) {
 	controls := []string{
+		"yellow hats",
+		"A warm jacket",
+		"https://example.test/wp-content/uploads/2025/04/9788743604457-scaled.jpg",
+		"https://plendio.dk/products/vinterjacka-balaklava-elastisk-halsvaermare-vindtaet-och-varm-unisex-laemplig-38446887?src=ai",
+		"https://cdn.shopify.com/s/files/1/0754/4039/0442/products/mpEMUPDJEeiP76FW2lS0Vg-4nFml1H5EeyMh14C5xm23w__53011.png",
+		"https://example.test/wp-content/uploads/2021/03/pho_pw_pers_vs_361583_3pw21003120x_rain_jacket_transparent_front__sall__awsg__v1.png",
+
 		"lampe til natbordet",
 		"SkandinaviskDesignerLampe",
 		"secretgardenlightingcollection",
@@ -189,7 +196,7 @@ func TestPrivateKeyMaskRejectsMismatchedFooter(t *testing.T) {
 }
 
 func FuzzDetectorRewriteConsistency(f *testing.F) {
-	for _, seed := range []string{"lampe til natbordet", "https://cdn.example.test/lamp.png?v=1763400017", "Call +1 (202) 555-0143", "SSN 123-45-6789", "secret=" + strings.Repeat("a", 24), "-----BEGIN RSA PRIVATE KEY-----\nAQIDBAUG\n-----END RSA PRIVATE KEY-----"} {
+	for _, seed := range []string{"9788743604457", "https://example.test/images/9788743604457-scaled.jpg", "lampe til natbordet", "https://cdn.example.test/lamp.png?v=1763400017", "Call +1 (202) 555-0143", "SSN 123-45-6789", "secret=" + strings.Repeat("a", 24), "-----BEGIN RSA PRIVATE KEY-----\nAQIDBAUG\n-----END RSA PRIVATE KEY-----"} {
 		f.Add(seed)
 	}
 	pii, secrets := NewPIIDetector(), NewSecretsDetector()
