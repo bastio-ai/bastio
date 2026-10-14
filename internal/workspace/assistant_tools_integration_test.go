@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,13 +15,56 @@ import (
 	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/internal/security/detection"
+	"github.com/bastio-ai/bastio/pkg/database"
 	"github.com/bastio-ai/bastio/pkg/encryption"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type assistantToolProvider struct {
 	calls atomic.Int64
 	t     *testing.T
+}
+
+// CI supplies an explicitly disposable PostgreSQL service. Give each new
+// approval/OAuth test its own database so extension/migration lifecycles cannot
+// interfere with the existing MCP tests running in another Go package.
+func workspaceToolsTestStore(t *testing.T) *Store {
+	if os.Getenv("WORKSPACE_TEST_DATABASE_URL") != "" {
+		return workspaceTestStore(t)
+	}
+	databaseURL := os.Getenv("MCP_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("a disposable WORKSPACE_TEST_DATABASE_URL or MCP_TEST_DATABASE_URL is required")
+	}
+	ctx := context.Background()
+	root, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(root.Close)
+	name := "workspace_tools_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	identifier := pgx.Identifier{name}.Sanitize()
+	if _, err = root.Exec(ctx, "CREATE DATABASE "+identifier); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = root.Exec(context.Background(), "DROP DATABASE "+identifier+" WITH (FORCE)") })
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.Database = name
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := &database.DB{Pool: pool}
+	if err = db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return NewStore(pool)
 }
 
 func (*assistantToolProvider) Name() providers.Provider { return providers.ProviderOpenAI }
@@ -45,7 +89,7 @@ func (*assistantToolProvider) ChatStream(context.Context, *providers.ChatRequest
 }
 
 func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
-	store := workspaceTestStore(t)
+	store := workspaceToolsTestStore(t)
 	cid := uuid.New()
 	ctx := testIdentity(cid, "employee", RoleMember)
 	if _, err := store.pool.Exec(ctx, `INSERT INTO customers(id,name,slug) VALUES($1,'Tools test',$2)`, cid, cid.String()); err != nil {

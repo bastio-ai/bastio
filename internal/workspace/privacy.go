@@ -54,6 +54,9 @@ func (h *Handler) chatHistory(ctx context.Context, cid, id uuid.UUID, b SendMess
 	if !privateChat(ctx) {
 		return h.store.ListMessages(ctx, cid, id)
 	}
+	if len(b.History) > 100 {
+		return nil, fmt.Errorf("history is limited to 100 messages")
+	}
 	out := make([]Message, 0, len(b.History)+1)
 	for _, m := range b.History {
 		text, images := extractImagesForProvider(m.Content)

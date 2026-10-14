@@ -21,7 +21,7 @@ import (
 )
 
 func TestMCPOAuthStateIssuerTenantAndSerializedRefresh(t *testing.T) {
-	store := workspaceTestStore(t)
+	store := workspaceToolsTestStore(t)
 	cid := uuid.New()
 	admin := testIdentity(cid, "manager", RoleAdmin)
 	if _, err := store.pool.Exec(admin, `INSERT INTO customers(id,name,slug) VALUES($1,'OAuth test',$2)`, cid, cid.String()); err != nil {
