@@ -1,3 +1,4 @@
+import { workspaceModelChoices } from "./workspace-models";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMutation } from "@tanstack/react-query";
@@ -37,7 +38,6 @@ import {
   ModelPicker,
   DEFAULT_MODEL,
   DEFAULT_MODELS,
-  pickModelChoices,
   type ModelChoice,
 } from "./model-picker";
 
@@ -93,7 +93,10 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
   const composeRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const textarea = composeRef.current;
-    if (textarea) { textarea.style.height = "auto"; textarea.style.height = Math.min(textarea.scrollHeight, 240) + "px"; }
+    if (textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(textarea.scrollHeight, 240) + "px";
+    }
   }, [draft]);
   const [streamingDraft, setStreamingDraft] = useState<string | null>(null);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
@@ -212,20 +215,14 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
       }>;
     },
   });
-  const effectiveModels = useQuery({
-    queryKey: ["workspace", "effective-models"],
-    queryFn: workspaceApi.getEffectiveModels,
+
+  const modelInventory = useQuery({
+    queryKey: ["workspace", "models", false],
+    queryFn: () => workspaceApi.modelInventory(false),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
   });
-  const availableModels = (
-    effectiveModels.data?.allowed_models?.length
-      ? pickModelChoices(effectiveModels.data.allowed_models)
-      : DEFAULT_MODELS
-  ).filter(
-    (m) =>
-      readiness.data?.providers.some(
-        (p) => p.provider === m.provider && p.configured,
-      ) ?? false,
-  );
+  const availableModels = workspaceModelChoices(modelInventory.data);
 
   // Auto-correct the active model when it's not in the allowed list
   // (admin changed the whitelist while the user was on a now-banned
@@ -472,7 +469,11 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
   // from the form submit so regenerate + edit can reuse it without
   // reading from the draft state.
   const sendContent = async (composed: string, optimisticUserText?: string) => {
-    if (!settings.data || !readiness.data || availableModels.length === 0) {
+    if (
+      !settings.data ||
+      !modelInventory.data ||
+      availableModels.length === 0
+    ) {
       setError(
         "No approved model is ready yet. Ask your admin to connect a provider, or wait for Workspace settings to load.",
       );
@@ -563,7 +564,11 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     const trimmed = draft.trim();
     if (!trimmed && attachments.length === 0) return;
     if (sending) return;
-    if (!settings.data || !readiness.data || availableModels.length === 0) {
+    if (
+      !settings.data ||
+      !modelInventory.data ||
+      availableModels.length === 0
+    ) {
       setError(
         "No approved model is ready yet. Ask your admin to connect a provider, or wait for Workspace settings to load.",
       );
@@ -1054,7 +1059,14 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     >
                       <Plus className="h-4 w-4" />
                     </button>
-                    <MCPIntegrationsButton disabled={sending} onUseResult={(text) => setDraft((previous) => previous ? `${previous}\n\n${text}` : text)} />
+                    <MCPIntegrationsButton
+                      disabled={sending}
+                      onUseResult={(text) =>
+                        setDraft((previous) =>
+                          previous ? `${previous}\n\n${text}` : text,
+                        )
+                      }
+                    />
                     <ModelPicker
                       value={model}
                       onChange={setModel}

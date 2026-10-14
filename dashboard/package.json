@@ -11,7 +11,8 @@
     "test:gateways": "node --experimental-strip-types --test src/components/gateway-setup.test.mjs src/components/gateways/gateway-test.test.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "generate:api": "openapi-typescript ../cmd/server/openapi.yaml -o src/api/schema.ts"
+    "generate:api": "openapi-typescript ../cmd/server/openapi.yaml -o src/api/schema.ts",
+    "test:workspace-models": "node --experimental-strip-types --test src/components/workspace/workspace-models.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

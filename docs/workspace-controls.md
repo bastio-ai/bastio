@@ -56,3 +56,11 @@ Evidence exports contain current settings, dated PostgreSQL usage counts, estima
 ## Verification
 
 Go integration tests use `WORKSPACE_TEST_DATABASE_URL` pointing to a disposable PostgreSQL 18 database with OSS and Cloud migrations. Trace privacy additionally uses `WORKSPACE_TEST_CLICKHOUSE_URL` pointing to isolated migrated ClickHouse. Tests skip these integrations when those variables are absent. No customer data or paid model credentials are required.
+
+## Model discovery and guided setup
+
+Workspace settings now discover chat models using the same customer-scoped provider credential as workspace inference. Employees receive a filtered inventory based on their effective approved-model policy. Providers without a native discovery endpoint use clearly labelled catalogue suggestions; explicitly approved custom IDs remain selectable. Provider listings do not guarantee inference access.
+
+Admins can run a bounded hello in **Workspace settings → Models & AI**, then explicitly approve that model for employees. Creating an initial allowlist restricts access to the selected models. Test evidence includes its date and is tied to the current credential; replacing credentials invalidates old evidence. Confirmed model-access/authentication failures are withheld from the employee picker, while content-specific policy failures do not remove the model globally. Setup readiness requires a successful check within seven days. Test content and titles are suppressed; hidden operational conversations preserve member usage, spending and trace accounting without appearing in chat history.
+
+The overview guides admins through model approval, privacy review, joined employees, groups, assistant sharing and the first employee response. Pending invitations do not count as joined employees, and an admin-only assistant does not complete the sharing step. Changing storage, retention or spending invalidates the recorded privacy review. Employee previews use the recipient’s actual role and current resource grants and show resource names only. They never create an employee session, reveal personal integration credentials, or run tools/models. Single-tenant OSS installations omit unavailable member-management steps.

@@ -194,6 +194,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey 
 // OpenAI-specific types
 
 type openAIChatRequest struct {
+	ReasoningEffort     string               `json:"reasoning_effort,omitempty"`
 	Model               string               `json:"model"`
 	Messages            []openAIMessage      `json:"messages"`
 	MaxCompletionTokens *int                 `json:"max_completion_tokens,omitempty"`
@@ -277,10 +278,11 @@ func toOpenAIRequest(req *ChatRequest) *openAIChatRequest {
 		msgs[i] = openAIMessage{Role: m.Role, Content: parts}
 	}
 	return &openAIChatRequest{
-		Model:       req.Model,
-		Messages:    msgs,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
+		Model:           req.Model,
+		ReasoningEffort: req.ReasoningEffort,
+		Messages:        msgs,
+		MaxTokens:       req.MaxTokens,
+		Temperature:     req.Temperature,
+		TopP:            req.TopP,
 	}
 }

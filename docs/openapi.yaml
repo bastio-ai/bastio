@@ -270,6 +270,176 @@ paths:
         "502": { description: Provider request failed }
         "503": { description: Temporary gateway credentials unavailable }
 
+  /v1/workspace/me/models:
+    get:
+      operationId: listWorkspaceModels
+      tags: [Workspace]
+      summary: Models reported by current workspace credentials, filtered by member policy
+      parameters:
+        - { name: manage, in: query, schema: { type: boolean }, description: Owner/admin only; show models before applying the member allowlist }
+      responses:
+        "200":
+          description: Provider discovery and dated model test evidence; neither guarantees future inference access
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceModelInventory" }
+        "403": { description: Admin role required for manage mode }
+        "503": { description: Model policy unavailable }
+  /v1/workspace/models/discover:
+    post:
+      operationId: discoverWorkspaceModels
+      tags: [Workspace]
+      summary: Refresh a provider's model inventory using the workspace credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider]
+              properties:
+                provider: { type: string }
+      responses:
+        "200":
+          description: Refreshed provider inventory
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceProviderModels" }
+        "400": { description: Invalid provider }
+        "403": { description: Owner/admin role required }
+  /v1/workspace/models/test:
+    post:
+      operationId: testWorkspaceModel
+      tags: [Workspace]
+      summary: Send a bounded hello through the normal workspace security and spending pipeline
+      description: Owner/admin only. Provider charges apply. Tests do not retain content or appear in conversation lists. Usage accounting and traces remain. Rotating the provider key invalidates past evidence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, model]
+              properties:
+                provider: { type: string }
+                model: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        "200":
+          description: Test outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, reply, checked_at]
+                properties:
+                  success: { type: boolean }
+                  reply: { type: string }
+                  error_code: { type: string }
+                  checked_at: { type: string, format: date-time }
+        "400": { description: Invalid model or missing provider connection }
+        "403": { description: Owner/admin role required }
+        "429": { description: Model test rate limit exceeded }
+        "503": { description: Test or evidence storage unavailable }
+  /v1/workspace/setup:
+    get:
+      operationId: getWorkspaceSetup
+      tags: [Workspace]
+      summary: Workspace setup progress derived from real configuration and usage
+      responses:
+        "200":
+          description: Setup progress
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [steps, completed, total, ready, multi_user, members, pending_invitations, ready_knowledge, employee_conversations]
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, complete, detail]
+                      properties:
+                        id: { type: string }
+                        complete: { type: boolean }
+                        detail: { type: string }
+                  multi_user: { type: boolean }
+                  completed: { type: integer }
+                  total: { type: integer }
+                  ready: { type: boolean }
+                  members: { type: integer }
+                  pending_invitations: { type: integer }
+                  ready_knowledge: { type: integer }
+                  employee_conversations: { type: integer }
+        "403": { description: Owner/admin role required }
+        "503": { description: Setup evidence unavailable }
+  /v1/workspace/setup/review-privacy:
+    post:
+      operationId: reviewWorkspacePrivacy
+      tags: [Workspace]
+      summary: Acknowledge the current storage and spending policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [store_conversation_content, retention_days, spend_cap_cents]
+              properties:
+                store_conversation_content: { type: boolean }
+                retention_days: { type: integer }
+                spend_cap_cents: { type: [integer, "null"] }
+      responses:
+        "200":
+          description: Current policy reviewed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reviewed]
+                properties:
+                  reviewed: { type: boolean }
+        "403": { description: Owner/admin role required }
+        "409": { description: Policy changed; refresh before reviewing }
+  /v1/workspace/setup/preview:
+    get:
+      operationId: previewWorkspaceMember
+      tags: [Workspace]
+      summary: Read-only preview of a current member's permitted shared resources
+      description: Does not create an employee session, run models/tools, or reveal another user's personal integrations or credentials.
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Employee permission preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user_id, email, role, assistants, knowledge, integrations, allowed_models, store_conversation_content, previewed_at]
+                properties:
+                  user_id: { type: string }
+                  email: { type: string }
+                  role: { type: string }
+                  assistants: { $ref: "#/components/schemas/WorkspacePreviewItems" }
+                  knowledge: { $ref: "#/components/schemas/WorkspacePreviewItems" }
+                  integrations: { $ref: "#/components/schemas/WorkspacePreviewItems" }
+                  allowed_models:
+                    type: array
+                    items:
+                      type: object
+                      required: [provider, model]
+                      properties:
+                        provider: { type: string }
+                        model: { type: string }
+                  store_conversation_content: { type: boolean }
+                  previewed_at: { type: string, format: date-time }
+        "403": { description: Owner/admin role required }
+        "404": { description: Not a current workspace member }
+
 components:
   securitySchemes:
     DashboardSession:
@@ -284,6 +454,42 @@ components:
       description: "Bearer sk-bastio-..."
 
   schemas:
+    WorkspacePreviewItems:
+      type: array
+      items:
+        type: object
+        required: [id, name]
+        properties:
+          id: { type: string, format: uuid }
+          name: { type: string }
+    WorkspaceModelInventory:
+      type: object
+      required: [providers, restricted]
+      properties:
+        restricted: { type: boolean }
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/WorkspaceProviderModels" }
+    WorkspaceProviderModels:
+      type: object
+      required: [provider, configured, source, models]
+      properties:
+        provider: { type: string }
+        configured: { type: boolean }
+        source: { type: string, enum: [provider, catalog] }
+        discovered_at: { type: string, format: date-time }
+        error_code: { type: string }
+        models:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              checked_at: { type: string, format: date-time }
+              check_status: { type: string, enum: [untested, passed, failed] }
+              error_code: { type: string }
     HealthResponse:
       type: object
       properties:

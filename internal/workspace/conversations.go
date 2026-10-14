@@ -547,17 +547,21 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	if err != nil {
 		return nil, err
 	}
+	if options := callOptions(r.Context()); options.keyResolved {
+		apiKey = options.resolvedKey
+	}
 
 	reservation, err := h.reserveSpend(r.Context(), customerID, model, msgs, prov)
 	if err != nil {
 		return nil, err
 	}
-	maxOutput := workspaceMaxOutputTokens
+	maxOutput := callMaxOutput(r.Context())
 	resp, err := client.Chat(r.Context(), &providers.ChatRequest{
-		Provider:  prov,
-		MaxTokens: &maxOutput,
-		Model:     model,
-		Messages:  msgs,
+		Provider:        prov,
+		MaxTokens:       &maxOutput,
+		ReasoningEffort: callOptions(r.Context()).reasoningEffort,
+		Model:           model,
+		Messages:        msgs,
 	}, apiKey)
 	if err != nil {
 		// Record the failure-with-no-response so /traces sees it.
@@ -579,7 +583,7 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		return nil, err
 	}
 
-	accountMissingUsage(msgs, &resp.InputTokens, &resp.OutputTokens)
+	accountMissingUsage(msgs, &resp.InputTokens, &resp.OutputTokens, callMaxOutput(r.Context()))
 	if err := h.settleSpend(customerID, reservation, estimateCostCentsFloat(string(prov), model, resp.InputTokens, resp.OutputTokens)); err != nil {
 		return nil, fmt.Errorf("spending settlement unavailable: %w", err)
 	}

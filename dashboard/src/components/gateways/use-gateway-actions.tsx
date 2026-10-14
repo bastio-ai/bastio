@@ -63,6 +63,8 @@ export function useGatewayActions(onCreated: (id: string) => void) {
         qc.invalidateQueries({ queryKey: ["provider-keys"] }),
         qc.invalidateQueries({ queryKey: ["proxy-provider-keys"] }),
         qc.invalidateQueries({ queryKey: ["workspace", "provider-readiness"] }),
+        qc.invalidateQueries({ queryKey: ["workspace", "models"] }),
+        qc.invalidateQueries({ queryKey: ["workspace", "setup"] }),
       ]);
       setProviderDialog(null);
       setProviderSecret("");
@@ -75,6 +77,8 @@ export function useGatewayActions(onCreated: (id: string) => void) {
         qc.invalidateQueries({ queryKey: ["provider-keys"] }),
         qc.invalidateQueries({ queryKey: ["proxy-provider-keys"] }),
         qc.invalidateQueries({ queryKey: ["workspace", "provider-readiness"] }),
+        qc.invalidateQueries({ queryKey: ["workspace", "models"] }),
+        qc.invalidateQueries({ queryKey: ["workspace", "setup"] }),
       ]);
       setDeleteKey(null);
     },

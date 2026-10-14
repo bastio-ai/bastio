@@ -134,6 +134,34 @@ function normalizeAssistant(
 export const workspaceApi = {
   status: () => unwrap(http.GET("/v1/workspace/status")),
 
+  modelInventory: (manage = false) =>
+    unwrap(
+      http.GET("/v1/workspace/me/models", { params: { query: { manage } } }),
+    ),
+  discoverModels: (provider: string) =>
+    unwrap(http.POST("/v1/workspace/models/discover", { body: { provider } })),
+  testModel: (provider: string, model: string) =>
+    unwrap(
+      http.POST("/v1/workspace/models/test", { body: { provider, model } }),
+    ),
+  setupStatus: () => unwrap(http.GET("/v1/workspace/setup")),
+  reviewPrivacy: (settings: Settings) =>
+    unwrap(
+      http.POST("/v1/workspace/setup/review-privacy", {
+        body: {
+          store_conversation_content: settings.store_conversation_content !== false,
+          retention_days: settings.retention_days,
+          spend_cap_cents: settings.spend_cap_cents ?? null,
+        },
+      }),
+    ),
+  previewMember: (user_id: string) =>
+    unwrap(
+      http.GET("/v1/workspace/setup/preview", {
+        params: { query: { user_id } },
+      }),
+    ),
+
   // settings
   getSettings: async (): Promise<Settings> =>
     (await unwrap(http.GET("/v1/workspace/settings"))) as Settings,
