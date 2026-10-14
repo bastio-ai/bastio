@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"github.com/bastio-ai/bastio/internal/security/normalize"
 )
 
@@ -144,4 +145,47 @@ func flagToFinding(f normalize.Flag) (Finding, bool) {
 		}, true
 	}
 	return Finding{}, false
+}
+
+// Keep the detection-only decoded view out of forwarded data. Re-run the
+// declared rewrites on the original, then inspect decoded remaining content.
+// Withhold encoded sensitive data when rewriting it safely is unsupported.
+func (e *Engine) finishURLDecodeScan(ctx context.Context, req *ScanRequest, result *ScanResult, nr normalize.Result) {
+	if !nr.HasFlag(normalize.FlagURLDecoded) || result.ShouldBlock {
+		return
+	}
+	if result.Action != ActionMask && result.Action != ActionTokenize {
+		if !req.SkipSanitization {
+			result.SanitizedContent = nr.Original
+		}
+		return
+	}
+	if len(req.Steps) == 0 {
+		result.ShouldBlock = true
+		result.Action = ActionBlock
+		result.RewriteUnavailable = true
+		return
+	}
+	opts := &RunOptions{Role: req.Role, Suppressions: req.Suppressions}
+	raw := e.RunSteps(ctx, nr.Original, req.Steps, opts)
+	if raw.ShouldBlock {
+		result.ShouldBlock = true
+		result.Action = ActionBlock
+		return
+	}
+	decoded, changed := normalize.DecodeURLText(raw.SanitizedContent)
+	if changed {
+		opts.Canonicalize = req.Canonicalize
+		checked := e.RunSteps(ctx, decoded, req.Steps, opts)
+		if checked.ShouldBlock || checked.SanitizedContent != decoded {
+			result.ShouldBlock = true
+			result.Action = ActionBlock
+			result.RewriteUnavailable = true
+			return
+		}
+	}
+	result.TokenMap = raw.TokenMap
+	if !req.SkipSanitization {
+		result.SanitizedContent = raw.SanitizedContent
+	}
 }

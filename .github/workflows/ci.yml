@@ -46,6 +46,9 @@ jobs:
       - name: Test
         run: go test ./... -race -count=1
 
+      - name: Detector accuracy and business controls report
+        run: go test ./internal/security/detection -run '^(TestEvalCorpus|TestDetector.*Controls)$' -v -count=1
+
       - name: Build
         run: go build ./...
 

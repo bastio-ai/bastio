@@ -52,26 +52,17 @@ type evalSample struct {
 	KnownGap bool     `json:"known_gap,omitempty"`
 }
 
-// evalFloors holds the regression floors per detector, derived from
-// the observed run on 2026-06-11 (see table in test log).
-// Observed on 2026-06-11 (Go 1.x, corpus v1):
-//
-//	injection  p=0.846 r=1.000 (3 known gaps: [INST] delimiter escape,
-//	           keyword-free "repeat the text above", role-hijack phrasing
-//	           below the 0.72 weighted threshold)
-//	jailbreak  p=0.818 r=1.000 (2 known gaps: grandma fiction framing,
-//	           payload splitting — both score below the 0.6 threshold)
-//	pii        p=1.000 r=1.000
-//	secrets    p=0.938 r=1.000 (1 benign FP: snake_case token value that
-//	           clears the 3.5-bit entropy gate)
-//
-// Floors sit one regression below observed: a single new miss or new
-// benign FP on the current corpus trips the corresponding gate.
+// Floors were raised on 2026-10-14 after adding business controls and
+// correcting phone, conversation-editing and character-lock false positives.
+// Observed precision: injection .917, jailbreak .857, PII 1.000, secrets .947.
+// Recall is 1.000 on required labeled samples; the existing three injection
+// and two jailbreak known-gap samples remain reported separately, not hidden.
+// These scores measure this small curated corpus, not real-world accuracy.
 var evalFloors = map[string]struct{ precision, recall float64 }{
-	"injection": {precision: 0.84, recall: 0.95},
-	"jailbreak": {precision: 0.80, recall: 0.95},
-	"pii":       {precision: 0.95, recall: 0.95},
-	"secrets":   {precision: 0.90, recall: 0.95},
+	"injection": {precision: 0.91, recall: 0.95},
+	"jailbreak": {precision: 0.85, recall: 0.95},
+	"pii":       {precision: 0.99, recall: 0.95},
+	"secrets":   {precision: 0.94, recall: 0.95},
 }
 
 func loadEvalCorpus(t testing.TB) []evalSample {

@@ -64,13 +64,12 @@ func (d *ExfilDetector) Detect(_ context.Context, content string) ([]security.Fi
 func (d *ExfilDetector) initPatterns() {
 	d.patterns = []exfilPattern{
 		// Model confirming it has / is revealing its system prompt.
-		{regexp.MustCompile(`(?i)\bhere\s+(?:is|are)\s+(?:my|the)\s+(?:system\s+)?(?:prompt|instructions|rules|guidelines)\b`), "prompt_reveal", security.SeverityCritical, 0.95},
-		{regexp.MustCompile(`(?i)\bmy\s+(?:system\s+)?(?:prompt|instructions)\s+(?:is|are|says|states)\b`), "prompt_reveal", security.SeverityCritical, 0.92},
-		{regexp.MustCompile(`(?i)\b(?:I\s+was|I\s+am|you\s+are)\s+(?:instructed|told|programmed|trained)\s+to\b`), "instruction_reveal", security.SeverityHigh, 0.8},
+		{regexp.MustCompile(`(?i)\bhere\s+(?:is|are)\s+(?:my|the)\s+(?:system|hidden|internal|developer|original)\s+(?:prompt|instructions|rules|guidelines)\b`), "prompt_reveal", security.SeverityCritical, 0.95},
+		{regexp.MustCompile(`(?i)\bmy\s+(?:system|hidden|internal|developer|original)\s+(?:prompt|instructions)\s+(?:is|are|says?|states?)\b`), "prompt_reveal", security.SeverityCritical, 0.92},
+		{regexp.MustCompile(`(?i)\b(?:I\s+was|I\s+am|you\s+are)\s+(?:instructed|told|programmed|trained)\b[^.?!]{0,80}\b(?:system|hidden|internal|developer)\s+(?:prompt|instructions?|directives?)\b`), "instruction_reveal", security.SeverityHigh, 0.8},
 
 		// Classic leaked-prompt openers.
 		{regexp.MustCompile(`(?i)^\s*you\s+are\s+(?:a|an)\s+(?:helpful|harmless|honest)\s+(?:AI|assistant)\b`), "canonical_sysprompt", security.SeverityHigh, 0.85},
-		{regexp.MustCompile(`(?i)^\s*I\s+am\s+(?:claude|gpt|gemini|llama)[,.]`), "model_self_id", security.SeverityMedium, 0.6},
 
 		// Echoing API keys / secrets in the response. Light touch —
 		// the secrets detector catches the actual values; this rule
@@ -80,10 +79,9 @@ func (d *ExfilDetector) initPatterns() {
 		// Internal tool / function names the user shouldn't see. Real
 		// values come from per-customer config; this default catches
 		// common conventions.
-		{regexp.MustCompile(`(?i)\b(?:internal|admin|debug|staging)_(?:endpoint|url|token|key|path|route)\b`), "internal_reference", security.SeverityHigh, 0.7},
+		{regexp.MustCompile(`(?i)\b(?:internal|admin|debug|staging)_(?:endpoint|url|token|key|path|route)\b\s*(?:[:=]|is\b)\s*[\x27\x22]?(?:https?://[^\s\x27\x22<>]+|[A-Za-z0-9_-]{16,})`), "internal_reference", security.SeverityHigh, 0.7},
 
-		// Training-data regurgitation signatures. Not exhaustive; the
-		// cloud tier adds semantic matching against a corpus.
-		{regexp.MustCompile(`(?i)\bas\s+(?:a\s+)?(?:language\s+model|AI\s+assistant)\s+trained\s+by\b`), "training_boilerplate", security.SeverityLow, 0.5},
+		// Model names and generic training disclaimers are public facts,
+		// not evidence of private-data disclosure.
 	}
 }

@@ -13,7 +13,9 @@ import (
 // filter false-positive credit-card matches: any 13–19 digit string
 // can look like a card, but real cards pass Luhn — tracking numbers,
 // order IDs, and UUIDs almost never do.
-func luhnValid(s string) bool {
+func luhnValid(s string) bool { return luhnValidLength(s, 13, 19) }
+
+func luhnValidLength(s string, minDigits, maxDigits int) bool {
 	var sum, count int
 	alt := false
 	for i := len(s) - 1; i >= 0; i-- {
@@ -32,7 +34,7 @@ func luhnValid(s string) bool {
 		sum += n
 		alt = !alt
 	}
-	if count < 13 || count > 19 {
+	if count < minDigits || count > maxDigits {
 		return false
 	}
 	return sum%10 == 0
@@ -70,9 +72,9 @@ func ibanValid(s string) bool {
 			end = len(src)
 		}
 		chunk := fmt.Sprintf("%d%s", rem, src[i:end])
-		var v int
+		var v int64
 		fmt.Sscanf(chunk, "%d", &v)
-		rem = v % 97
+		rem = int(v % 97)
 	}
 	return rem == 1
 }
@@ -241,9 +243,11 @@ func (d *PIIDetector) initPatterns() {
 				return "[EMAIL]"
 			},
 		},
-		// Phone numbers (high) — US format
+		// Phone numbers (high) — US format. Both area and exchange codes begin with 2–9 (NXX-NXX-XXXX).
+		// Accepting 0/1 made ten-digit cache timestamps look like phones.
+		// Keep scanning URLs: real phone numbers in query strings still count.
 		{
-			regex:    regexp.MustCompile(`\b(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b`),
+			regex:    regexp.MustCompile(`\b(?:\+?1[-.\s]?)?\(?[2-9][0-9]{2}\)?[-.\s]?[2-9][0-9]{2}[-.\s]?[0-9]{4}\b`),
 			piiType:  "phone",
 			severity: security.SeverityHigh,
 			maskFn: func(s string) string {
@@ -322,7 +326,7 @@ func (d *PIIDetector) initPatterns() {
 			regex:    regexp.MustCompile(`\b\d{3}[- ]?\d{3}[- ]?\d{3}\b`),
 			piiType:  "canadian_sin",
 			severity: security.SeverityHigh,
-			validate: luhnValid,
+			validate: func(s string) bool { return luhnValidLength(s, 9, 9) },
 			maskFn: func(s string) string {
 				digits := regexp.MustCompile(`\d`).FindAllString(s, -1)
 				if len(digits) >= 3 {

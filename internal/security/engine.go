@@ -170,13 +170,14 @@ type ScanRequest struct {
 
 // ScanResult is the output of a full security scan.
 type ScanResult struct {
-	Findings          []Finding     `json:"findings"`
-	BlockingDetectors []string      `json:"blocking_detectors,omitempty"`
-	ThreatScore       float64       `json:"threat_score"` // Aggregate 0.0-1.0
-	Action            Action        `json:"action"`       // Final recommended action
-	ShouldBlock       bool          `json:"should_block"`
-	ThreatTypes       []ThreatType  `json:"threat_types"`
-	ScanDuration      time.Duration `json:"scan_duration"`
+	Findings           []Finding     `json:"findings"`
+	BlockingDetectors  []string      `json:"blocking_detectors,omitempty"`
+	RewriteUnavailable bool          `json:"rewrite_unavailable,omitempty"`
+	ThreatScore        float64       `json:"threat_score"` // Aggregate 0.0-1.0
+	Action             Action        `json:"action"`       // Final recommended action
+	ShouldBlock        bool          `json:"should_block"`
+	ThreatTypes        []ThreatType  `json:"threat_types"`
+	ScanDuration       time.Duration `json:"scan_duration"`
 	// SanitizedContent holds the content with PII masked or tokenized.
 	// Only populated when PIIAction is ActionMask or ActionTokenize.
 	SanitizedContent string `json:"sanitized_content,omitempty"`
@@ -275,6 +276,8 @@ func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
 		mergeNormalizeIntoResult(r, normResult)
 		e.applySessionAware(ctx, req, r)
 		setWeightedScores(r.Findings)
+		e.finishURLDecodeScan(ctx, req, r, normResult)
+		r.ScanDuration = time.Since(start)
 		return r
 	}
 
@@ -326,6 +329,7 @@ func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
 	}
 
 	setWeightedScores(result.Findings)
+	e.finishURLDecodeScan(ctx, req, result, normResult)
 	result.ScanDuration = time.Since(start)
 
 	return result
