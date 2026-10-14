@@ -6,6 +6,7 @@ import {
   type ResourceSharing,
 } from "./sharing-controls";
 import { useState } from "react";
+import { MCPSecurityError, mcpRuleLabel, mcpCategoryLabel } from "./mcp-security";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plug, ShieldCheck, Loader2, Pencil, Trash2 } from "lucide-react";
 import { http, unwrap } from "@/api/typed";
@@ -287,6 +288,7 @@ export function MCPIntegrations({
         <ToolRunner
           key={selected.id}
           connection={selected}
+          canManage={data.can_manage}
           onUseResult={onUseResult}
         />
       )}
@@ -538,9 +540,11 @@ function ConnectionForm({
 
 function ToolRunner({
   connection,
+  canManage,
   onUseResult,
 }: {
   connection: Connection;
+  canManage: boolean;
   onUseResult?: (text: string) => void;
 }) {
   const [tool, setTool] = useState<Tool | null>(null);
@@ -558,13 +562,18 @@ function ToolRunner({
     gcTime: 0,
   });
   const call = useMutation({
-    mutationFn: (argumentsObject: Record<string, unknown>) =>
-      unwrap(
-        http.POST("/v1/workspace/mcp/connections/{id}/call", {
-          params: { path: { id: connection.id } },
-          body: { name: tool!.name, arguments: argumentsObject },
-        }),
-      ),
+    mutationFn: async (argumentsObject: Record<string, unknown>) => {
+      const { data, error, response } = await http.POST("/v1/workspace/mcp/connections/{id}/call", {
+        params: { path: { id: connection.id } },
+        body: { name: tool!.name, arguments: argumentsObject },
+      });
+      if (!response.ok) {
+        const failure = MCPSecurityError.from(error);
+        if (failure) throw failure;
+        throw new Error(typeof error === "object" && error !== null && "error" in error ? String(error.error) : "Integration request failed.");
+      }
+      return data!;
+    },
   });
   const properties = objectValue(tool?.inputSchema.properties) ?? {};
   const simpleFields = Object.values(properties).every((v) =>
@@ -725,9 +734,28 @@ function ToolRunner({
         </>
       )}
       {call.isError && (
-        <p role="alert" className="text-xs text-destructive">
-          {errorMessage(call.error)}
-        </p>
+        call.error instanceof MCPSecurityError ? (
+          <div role="alert" className="space-y-2 rounded-lg border border-border bg-muted/20 p-3 text-xs">
+            <p className="font-medium text-destructive">
+              {call.error.stage === "result" ? "Tool ran · result withheld" : "Request withheld · tool did not run"}
+            </p>
+            <p className="leading-relaxed">{call.error.reason}</p>
+            {call.error.blockingDetectors.length > 0 && <p className="font-medium">Blocked by: {call.error.blockingDetectors.map(mcpCategoryLabel).join(", ")}</p>}
+            {call.error.categories.length > 0 && (
+              <p>Security findings: {call.error.categories.map(mcpCategoryLabel).join(", ")}</p>
+            )}
+            {call.error.rules.length > 0 && (
+              <ul className="space-y-1 pl-4 list-disc text-muted-foreground">
+                {call.error.rules.map((rule) => <li key={rule}>{mcpRuleLabel(rule)}</li>)}
+              </ul>
+            )}
+            <p className="leading-relaxed text-muted-foreground">
+              {call.error.stage === "result" ? "The remote action was not undone. Check the service before running the tool again." : "These arguments were not sent to the connected service."}
+              {canManage ? " Review the active policy in Security Center if you suspect a false positive." : " Ask your workspace administrator to review the active security policy if you suspect a false positive."}
+            </p>
+            {canManage && <a href={`${import.meta.env.VITE_DASHBOARD_URL ?? ""}/security-settings`} className="inline-flex cursor-pointer underline underline-offset-4 hover:text-foreground">Review security policy</a>}
+          </div>
+        ) : <p role="alert" className="text-xs text-destructive">{errorMessage(call.error)}</p>
       )}
       {call.data && (
         <div className="space-y-2 border-t border-border pt-3">

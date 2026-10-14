@@ -8210,6 +8210,27 @@ export interface operations {
                     };
                 };
             };
+            /** @description Arguments or result withheld; only safe category/rule identifiers are returned */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: string;
+                        reason?: string;
+                        code?: string;
+                        /** @enum {string} */
+                        stage?: "arguments" | "result";
+                        categories?: string[];
+                        rules?: string[];
+                        /** @enum {string} */
+                        remote_action?: "not_run" | "completed";
+                        /** @description Detectors whose configured strategy actually blocked; other findings can be warnings */
+                        blocking_detectors?: string[];
+                    };
+                };
+            };
         };
     };
     listWorkspaceModels: {

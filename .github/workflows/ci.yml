@@ -90,6 +90,9 @@ jobs:
       - name: Workspace model discovery tests
         run: npm run test:workspace-models
 
+      - name: Workspace MCP diagnostics tests
+        run: npm run test:workspace-mcp
+
       - name: Build
         run: npm run build
 

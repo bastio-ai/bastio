@@ -447,8 +447,8 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 	}
 	arguments, categories, err := h.inspectMCPJSON(r.Context(), cid, b.Arguments, security.RoleUser, 0)
 	if err != nil {
-		h.auditMCP(r, c, "", "blocked", categories)
-		writeError(w, 403, "tool arguments blocked or security evaluation unavailable")
+		h.auditMCPInspection(r, c, b.Name, "blocked", categories, err, "arguments")
+		writeJSON(w, 403, mcpSecurityFailure(err, categories, "arguments"))
 		return
 	}
 	tools, err := h.protectedMCPTools(r.Context(), cid, c, client)
@@ -476,8 +476,8 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 	processed, resultCategories, err := h.inspectMCPJSON(r.Context(), cid, raw, security.RoleRetrieval, 0)
 	categories = append(categories, resultCategories...)
 	if err != nil {
-		h.auditMCP(r, c, b.Name, "result_blocked", categories)
-		writeError(w, 403, "tool result withheld by security policy; the remote action was not undone")
+		h.auditMCPInspection(r, c, b.Name, "result_blocked", resultCategories, err, "result")
+		writeJSON(w, 403, mcpSecurityFailure(err, resultCategories, "result"))
 		return
 	}
 	// Return text/structured content only. Text inspection cannot protect
@@ -575,7 +575,7 @@ func inspectMCPPayload(ctx context.Context, engine *security.Engine, profiles se
 			return nil, nil, errors.New("mcp security unavailable")
 		}
 		if decision.Action == "block" {
-			return nil, decision.Categories, errors.New("mcp content blocked")
+			return nil, decision.Categories, mcpBlockedInspection(decision, "policy_block", "The workspace security policy blocks this content.")
 		}
 		if decision.Action == "sanitize" {
 			text = decision.SanitizedContent
@@ -587,10 +587,19 @@ func inspectMCPPayload(ctx context.Context, engine *security.Engine, profiles se
 		if json.Unmarshal(raw, &fields) != nil {
 			return nil, nil, errors.New("invalid MCP object")
 		}
-		for key, value := range fields {
+		keys := make([]string, 0, len(fields))
+		for key := range fields {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			value := fields[key]
 			protectedKey, cats, err := inspectMCPPayload(ctx, engine, profiles, cid, mustJSONString(key), role, depth+1)
 			categories = append(categories, cats...)
-			if err != nil || !bytes.Equal(protectedKey, mustJSONString(key)) {
+			if err != nil {
+				return nil, categories, err
+			}
+			if !bytes.Equal(protectedKey, mustJSONString(key)) {
 				return nil, categories, errors.New("mcp field name blocked")
 			}
 			processed, cats, err := inspectMCPPayload(ctx, engine, profiles, cid, value, role, depth+1)
@@ -630,8 +639,11 @@ func inspectMCPPayload(ctx context.Context, engine *security.Engine, profiles se
 		if err != nil || decision == nil {
 			return nil, nil, errors.New("mcp security unavailable")
 		}
-		if decision.Action == "block" || decision.Action == "sanitize" {
-			return nil, decision.Categories, errors.New("numeric MCP content blocked")
+		if decision.Action == "block" {
+			return nil, decision.Categories, mcpBlockedInspection(decision, "policy_block", "The workspace security policy blocks this content.")
+		}
+		if decision.Action == "sanitize" {
+			return nil, decision.Categories, mcpBlockedInspection(decision, "numeric_rewrite", "A detected value is a JSON number. Masking or tokenizing it would change its data type, so it was withheld.")
 		}
 		return raw, decision.Categories, nil
 	}

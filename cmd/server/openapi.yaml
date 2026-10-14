@@ -3071,6 +3071,23 @@ paths:
                   is_error: { type: boolean }
                   categories: { type: array, items: { type: string } }
 
+        "403":
+          description: Arguments or result withheld; only safe category/rule identifiers are returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
+                  reason: { type: string }
+                  code: { type: string }
+                  stage: { type: string, enum: [arguments, result] }
+                  categories: { type: array, items: { type: string } }
+                  rules: { type: array, items: { type: string } }
+                  remote_action: { type: string, enum: [not_run, completed] }
+                  blocking_detectors: { type: array, items: { type: string }, description: Detectors whose configured strategy actually blocked; other findings can be warnings }
+
   /v1/workspace/me/models:
     get:
       operationId: listWorkspaceModels
