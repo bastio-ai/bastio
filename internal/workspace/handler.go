@@ -74,15 +74,17 @@ type KeyResolver interface {
 
 // Handler exposes all workspace HTTP routes.
 type Handler struct {
-	store       *Store
-	registry    *providers.Registry
-	keys        KeyResolver
-	blobs       BlobStore
-	river       *river.Client[pgx.Tx]
-	txtResolver TXTResolver     // nil → defaultTXTResolver
-	embedder    EmbeddingClient // nil → keyword-only RAG
-	mcpCipher   *encryption.Service
-	mcpHTTP     *http.Client
+	store                *Store
+	registry             *providers.Registry
+	keys                 KeyResolver
+	blobs                BlobStore
+	river                *river.Client[pgx.Tx]
+	txtResolver          TXTResolver     // nil → defaultTXTResolver
+	embedder             EmbeddingClient // nil → keyword-only RAG
+	mcpCipher            *encryption.Service
+	mcpHTTP              *http.Client
+	mcpOAuthBase         string
+	mcpOAuthEmployeeBase string
 	// Security pipeline — same engine/profile/recorder the gateway uses.
 	// All optional: when nil the workspace falls back to its pre-pipeline
 	// behavior (direct provider call, no policy enforcement, no
@@ -249,6 +251,7 @@ func (h *Handler) Routes() chi.Router {
 	r.With(RequireRole(RoleAdmin)).Get("/setup/preview", h.previewWorkspaceMember)
 
 	r.With(RequireRole(RoleMember)).Get("/mcp", h.listMCPConnections)
+	r.With(RequireRole(RoleMember)).Get("/mcp/oauth/callback", h.mcpOAuthCallback)
 	r.With(RequireRole(RoleAdmin)).Put("/mcp/policy", h.putMCPPolicy)
 	r.Route("/mcp/connections", func(r chi.Router) {
 		r.Use(RequireRole(RoleMember))
@@ -257,6 +260,9 @@ func (h *Handler) Routes() chi.Router {
 		r.Delete("/{id}", h.revokeMCPConnection)
 		r.Get("/{id}/tools", h.listMCPTools)
 		r.Post("/{id}/call", h.callMCPTool)
+		r.With(requireJSONContent).Post("/{id}/oauth/discover", h.discoverMCPOAuth)
+		r.With(requireJSONContent).Post("/{id}/oauth/start", h.startMCPOAuth)
+		r.With(requireJSONContent).Post("/{id}/oauth/disconnect", h.disconnectMCPOAuth)
 	})
 
 	r.Route("/assistants", func(r chi.Router) {
@@ -296,6 +302,8 @@ func (h *Handler) Routes() chi.Router {
 		r.With(RequireRole(RoleViewer)).Get("/{id}/messages", h.listMessages)
 		r.With(RequireRole(RoleMember)).Post("/{id}/messages", h.sendMessage)
 		r.With(RequireRole(RoleMember)).Post("/{id}/messages/stream", h.streamSendMessage)
+		r.With(RequireRole(RoleMember)).Get("/{id}/tool-approvals/{approvalID}", h.toolApprovalStatus)
+		r.With(RequireRole(RoleMember), requireJSONContent).Post("/{id}/tool-approvals/{approvalID}", h.approveAssistantTool)
 		r.With(RequireRole(RoleMember)).Delete("/{id}/messages/{messageID}", h.deleteFromMessage)
 	})
 

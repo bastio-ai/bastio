@@ -3241,6 +3241,133 @@ paths:
         "403": { description: Owner/admin role required }
         "404": { description: Not a current workspace member }
 
+  /v1/mcp/oauth/client-metadata:
+    get:
+      operationId: mcpOAuthClientMetadata
+      summary: Public OAuth client metadata for Bastio Workspace
+      responses:
+        '200':
+          description: Fixed operator-configured client metadata
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /v1/workspace/mcp/oauth/callback:
+    get:
+      operationId: workspaceMCPOAuthCallback
+      summary: Complete a session-bound, one-use PKCE OAuth flow
+      responses:
+        '303': { description: Redirect to the configured workspace after validating issuer and state }
+        '403': { description: Invalid or expired flow }
+
+  /v1/workspace/mcp/connections/{id}/oauth/discover:
+    post:
+      operationId: workspaceMCPOAuthDiscover
+      summary: Discover an OAuth integration account (owner or administrator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: OAuth connection result; credentials are never returned
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '403': { description: Integration permission denied }
+
+  /v1/workspace/mcp/connections/{id}/oauth/start:
+    post:
+      operationId: workspaceMCPOAuthStart
+      summary: Start an OAuth integration account (owner or administrator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: OAuth connection result; credentials are never returned
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '403': { description: Integration permission denied }
+
+  /v1/workspace/mcp/connections/{id}/oauth/disconnect:
+    post:
+      operationId: workspaceMCPOAuthDisconnect
+      summary: Disconnect an OAuth integration account (owner or administrator)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: OAuth connection result; credentials are never returned
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '403': { description: Integration permission denied }
+
+  /v1/workspace/conversations/{id}/tool-approvals/{approvalID}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: approvalID
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: workspaceToolApprovalStatus
+      summary: Read an owned conversation's tool approval status
+      responses:
+        '200':
+          description: Operational approval state only
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string } } }
+    post:
+      operationId: workspaceToolApprovalAction
+      summary: Explicitly approve or decline one protected tool call
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [approve, decline] }
+                token: { type: object, additionalProperties: true, description: Tenant-bound encrypted continuation returned with the proposal }
+      responses:
+        '200':
+          description: Completion or protected result; a failed continuation never retries a tool
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  message: { $ref: '#/components/schemas/WorkspaceMessage' }
+                  result: { type: string }
+                  error: { type: string }
+        '409': { description: Approval already consumed, expired, or conversation changed }
+
 components:
   securitySchemes:
     DashboardSession:
@@ -3311,6 +3438,9 @@ components:
       type: object
       required: [id, name, endpoint, scope, owner_user_id, allowed_tools, has_credential, created_at]
       properties:
+        auth_type: { type: string, enum: [none, bearer, oauth] }
+        oauth_connected: { type: boolean }
+        updated_at: { type: string, format: date-time }
         sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }
         name: { type: string }
@@ -3324,6 +3454,9 @@ components:
       type: object
       required: [name, endpoint, scope]
       properties:
+        auth_type: { type: string, enum: [none, bearer, oauth] }
+        oauth_client_id: { type: string, maxLength: 4096 }
+        oauth_client_secret: { type: string, maxLength: 8192, writeOnly: true }
         sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         name: { type: string, minLength: 1, maxLength: 100 }
         endpoint: { type: string, format: uri, maxLength: 2048 }
@@ -5984,6 +6117,7 @@ components:
       type: object
       required: [id, customer_id, name, default_provider, default_model, language, suggested_prompts, is_default, created_at, updated_at]
       properties:
+        mcp_connection_ids: { type: array, maxItems: 10, items: { type: string, format: uuid } }
         sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }
         customer_id: { type: string, format: uuid }
@@ -6006,6 +6140,7 @@ components:
     WorkspaceAssistantPatch:
       type: object
       properties:
+        mcp_connection_ids: { type: array, maxItems: 10, items: { type: string, format: uuid } }
         sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         name: { type: string }
         description: { type: string }
@@ -6122,6 +6257,8 @@ components:
       type: object
       required: [content]
       properties:
+        tool_mode: { type: boolean, description: Allow proposals from attached and explicitly selected accessible MCP tools; every call requires approval }
+        mcp_connection_ids: { type: array, maxItems: 10, items: { type: string, format: uuid } }
         history:
           type: array
           maxItems: 100

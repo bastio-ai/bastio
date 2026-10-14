@@ -2,12 +2,18 @@ package workspace
 
 import (
 	"context"
+	"github.com/bastio-ai/bastio/internal/providers"
+	"github.com/google/uuid"
 	"mime"
 	"net/http"
 )
 
 type callOptionsKey struct{}
 type providerCallOptions struct {
+	reservation     uuid.UUID
+	hasReservation  bool
+	toolPlan        *assistantToolPlan
+	tools           []providers.ToolDefinition
 	maxOutput       int
 	reasoningEffort string
 	resolvedKey     string

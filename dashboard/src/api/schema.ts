@@ -2066,6 +2066,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mcp/oauth/client-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public OAuth client metadata for Bastio Workspace */
+        get: operations["mcpOAuthClientMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Complete a session-bound, one-use PKCE OAuth flow */
+        get: operations["workspaceMCPOAuthCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}/oauth/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover an OAuth integration account (owner or administrator) */
+        post: operations["workspaceMCPOAuthDiscover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start an OAuth integration account (owner or administrator) */
+        post: operations["workspaceMCPOAuthStart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/connections/{id}/oauth/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disconnect an OAuth integration account (owner or administrator) */
+        post: operations["workspaceMCPOAuthDisconnect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/conversations/{id}/tool-approvals/{approvalID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                approvalID: string;
+            };
+            cookie?: never;
+        };
+        /** Read an owned conversation's tool approval status */
+        get: operations["workspaceToolApprovalStatus"];
+        put?: never;
+        /** Explicitly approve or decline one protected tool call */
+        post: operations["workspaceToolApprovalAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2106,6 +2212,11 @@ export interface components {
             can_manage: boolean;
         };
         WorkspaceMCPConnection: {
+            /** @enum {string} */
+            auth_type?: "none" | "bearer" | "oauth";
+            oauth_connected?: boolean;
+            /** Format: date-time */
+            updated_at?: string;
             sharing?: components["schemas"]["WorkspaceResourceSharing"];
             /** Format: uuid */
             id: string;
@@ -2121,6 +2232,10 @@ export interface components {
             created_at: string;
         };
         WorkspaceMCPInput: {
+            /** @enum {string} */
+            auth_type?: "none" | "bearer" | "oauth";
+            oauth_client_id?: string;
+            oauth_client_secret?: string;
             sharing?: components["schemas"]["WorkspaceResourceSharing"];
             name: string;
             /** Format: uri */
@@ -3466,6 +3581,7 @@ export interface components {
             allowed_models?: components["schemas"]["WorkspaceAllowedModel"][] | null;
         };
         WorkspaceAssistant: {
+            mcp_connection_ids?: string[];
             sharing?: components["schemas"]["WorkspaceResourceSharing"];
             /** Format: uuid */
             id: string;
@@ -3490,6 +3606,7 @@ export interface components {
             updated_at: string;
         };
         WorkspaceAssistantPatch: {
+            mcp_connection_ids?: string[];
             sharing?: components["schemas"]["WorkspaceResourceSharing"];
             name?: string;
             description?: string;
@@ -3607,6 +3724,9 @@ export interface components {
             created_at: string;
         };
         WorkspaceSendMessageRequest: {
+            /** @description Allow proposals from attached and explicitly selected accessible MCP tools; every call requires approval */
+            tool_mode?: boolean;
+            mcp_connection_ids?: string[];
             history?: {
                 /** @enum {string} */
                 role: "user" | "assistant";
@@ -8365,6 +8485,235 @@ export interface operations {
             };
             /** @description Not a current workspace member */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mcpOAuthClientMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fixed operator-configured client metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    workspaceMCPOAuthCallback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the configured workspace after validating issuer and state */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid or expired flow */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceMCPOAuthDiscover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description OAuth connection result; credentials are never returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Integration permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceMCPOAuthStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description OAuth connection result; credentials are never returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Integration permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceMCPOAuthDisconnect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description OAuth connection result; credentials are never returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Integration permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceToolApprovalStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                approvalID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operational approval state only */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                    };
+                };
+            };
+        };
+    };
+    workspaceToolApprovalAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                approvalID: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    action: "approve" | "decline";
+                    /** @description Tenant-bound encrypted continuation returned with the proposal */
+                    token?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Completion or protected result; a failed continuation never retries a tool */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                        message?: components["schemas"]["WorkspaceMessage"];
+                        result?: string;
+                        error?: string;
+                    };
+                };
+            };
+            /** @description Approval already consumed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

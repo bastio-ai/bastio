@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -44,6 +45,15 @@ func (h *Handler) reserveSpend(ctx context.Context, cid uuid.UUID, model string,
 		input += len(m.Content) + 32
 		for _, image := range m.Images {
 			input += len(image.Data)
+		}
+	}
+	if tools := callOptions(ctx).tools; len(tools) > 0 {
+		raw, _ := json.Marshal(tools)
+		input += len(raw)
+	}
+	for _, m := range msgs {
+		for _, c := range m.ToolCalls {
+			input += len(c.Arguments) + len(c.Name) + 32
 		}
 	}
 	var prov providers.Provider

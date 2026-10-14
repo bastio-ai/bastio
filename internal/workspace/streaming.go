@@ -1,10 +1,12 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -36,6 +38,33 @@ func (h *Handler) streamSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(body.Content) == "" {
 		writeError(w, http.StatusBadRequest, "content is required")
+		return
+	}
+	// Tool planning is buffered until output and arguments pass security.
+	// Keep the same SSE done/error contract without leaking partial proposals.
+	if body.ToolMode {
+		raw, _ := json.Marshal(body)
+		r.Body = io.NopCloser(bytes.NewReader(raw))
+		r.Header.Set("Cache-Control", "no-store")
+		buffer := &chatResponseBuffer{Code: 200, headers: make(http.Header)}
+		h.sendMessage(buffer, r)
+		if buffer.Code != 200 {
+			for k, v := range buffer.Header() {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(buffer.Code)
+			_, _ = w.Write(buffer.Body.Bytes())
+			return
+		}
+		var reply SendMessageResponse
+		if json.Unmarshal(buffer.Body.Bytes(), &reply) != nil || reply.AssistantMessage == nil {
+			writeError(w, 502, "tool planning failed")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-store, no-transform")
+		flusher, _ := w.(http.Flusher)
+		sseEmit(w, flusher, "done", map[string]any{"message": reply.AssistantMessage})
 		return
 	}
 	if h.requireConversationWrite(w, r, id) == nil {
@@ -693,3 +722,14 @@ func sseEmit(w http.ResponseWriter, flusher http.Flusher, event string, payload 
 		flusher.Flush()
 	}
 }
+
+// A tool turn returns one inspected JSON reply, adapted to the SSE done event.
+type chatResponseBuffer struct {
+	Body    bytes.Buffer
+	Code    int
+	headers http.Header
+}
+
+func (b *chatResponseBuffer) Header() http.Header           { return b.headers }
+func (b *chatResponseBuffer) WriteHeader(code int)          { b.Code = code }
+func (b *chatResponseBuffer) Write(raw []byte) (int, error) { return b.Body.Write(raw) }

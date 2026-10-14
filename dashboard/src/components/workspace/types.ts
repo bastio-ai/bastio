@@ -24,20 +24,47 @@ export type SettingsPatch = components["schemas"]["WorkspaceSettingsPatch"] & {
   ai_persona_personality?: string | null;
   ai_persona_tone?: string | null;
 };
-export type Assistant = Omit<components["schemas"]["WorkspaceAssistant"], "language" | "default_provider"> & {
+export type Assistant = Omit<
+  components["schemas"]["WorkspaceAssistant"],
+  "language" | "default_provider"
+> & {
   language?: string | null; // null/undefined = auto-detect
   default_provider: ModelProvider;
 };
-export type AssistantPatch = Omit<components["schemas"]["WorkspaceAssistantPatch"], "language" | "default_provider"> & {
+export type AssistantPatch = Omit<
+  components["schemas"]["WorkspaceAssistantPatch"],
+  "language" | "default_provider"
+> & {
   language?: string | null;
   default_provider?: ModelProvider;
 };
-export type KnowledgeSource = components["schemas"]["WorkspaceKnowledgeSource"] & {
-  character_count?: number;
-  last_synced_at?: string | null;
-};
+export type KnowledgeSource =
+  components["schemas"]["WorkspaceKnowledgeSource"] & {
+    character_count?: number;
+    last_synced_at?: string | null;
+  };
 export type Conversation = components["schemas"]["WorkspaceConversation"];
-export type ConversationListItem = components["schemas"]["WorkspaceConversationListItem"];
+export type ConversationListItem =
+  components["schemas"]["WorkspaceConversationListItem"];
+export type ToolProposal = {
+  id: string;
+  token: { ciphertext: string; nonce: string; version: number };
+  connection_name: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  categories: string[];
+  expires_at: string;
+};
+export function messageToolProposal(message: Message): ToolProposal | null {
+  const value = message.metadata?.tool_proposal as ToolProposal | undefined;
+  return value &&
+    typeof value.id === "string" &&
+    value.token &&
+    value.arguments &&
+    Array.isArray(value.categories)
+    ? value
+    : null;
+}
 export type Message = components["schemas"]["WorkspaceMessage"];
 export type Member = components["schemas"]["WorkspaceMember"] & {
   monthly_token_limit?: number | null;
@@ -45,7 +72,8 @@ export type Member = components["schemas"]["WorkspaceMember"] & {
 };
 export type Invitation = components["schemas"]["WorkspaceInvitation"];
 export type Domain = components["schemas"]["WorkspaceDomain"];
-export type AnalyticsSummary = components["schemas"]["WorkspaceAnalyticsSummary"];
+export type AnalyticsSummary =
+  components["schemas"]["WorkspaceAnalyticsSummary"];
 export type DailyUsagePoint = components["schemas"]["WorkspaceDailyUsagePoint"];
 export type ByModelCount = components["schemas"]["WorkspaceByModelCount"];
 
@@ -125,9 +153,10 @@ function normalizeAssistant(
     // Older dashboard builds wrote "google" even though the backend
     // provider is named "gemini". Normalize those existing rows when
     // they enter the current client without changing the API contract.
-    default_provider: assistant.default_provider === "google"
-      ? "gemini"
-      : assistant.default_provider as ModelProvider,
+    default_provider:
+      assistant.default_provider === "google"
+        ? "gemini"
+        : (assistant.default_provider as ModelProvider),
   };
 }
 
@@ -149,7 +178,8 @@ export const workspaceApi = {
     unwrap(
       http.POST("/v1/workspace/setup/review-privacy", {
         body: {
-          store_conversation_content: settings.store_conversation_content !== false,
+          store_conversation_content:
+            settings.store_conversation_content !== false,
           retention_days: settings.retention_days,
           spend_cap_cents: settings.spend_cap_cents ?? null,
         },
@@ -166,17 +196,25 @@ export const workspaceApi = {
   getSettings: async (): Promise<Settings> =>
     (await unwrap(http.GET("/v1/workspace/settings"))) as Settings,
   patchSettings: (patch: SettingsPatch) =>
-    unwrap(http.PATCH("/v1/workspace/settings", { body: patch as components["schemas"]["WorkspaceSettingsPatch"] })),
+    unwrap(
+      http.PATCH("/v1/workspace/settings", {
+        body: patch as components["schemas"]["WorkspaceSettingsPatch"],
+      }),
+    ),
 
   // assistants
   listAssistants: async (): Promise<{ assistants: Assistant[] }> => {
     const response = await unwrap(http.GET("/v1/workspace/assistants"));
     return {
-      assistants: response.assistants.map((assistant) => normalizeAssistant(assistant)),
+      assistants: response.assistants.map((assistant) =>
+        normalizeAssistant(assistant),
+      ),
     };
   },
   getAssistant: async (id: string): Promise<Assistant> => {
-    const response = await unwrap(http.GET("/v1/workspace/assistants/{id}", { params: { path: { id } } }));
+    const response = await unwrap(
+      http.GET("/v1/workspace/assistants/{id}", { params: { path: { id } } }),
+    );
     return normalizeAssistant(response);
   },
   createAssistant: (a: Partial<Assistant>) =>
@@ -196,19 +234,33 @@ export const workspaceApi = {
       }),
     ),
   archiveAssistant: (id: string) =>
-    unwrap(http.DELETE("/v1/workspace/assistants/{id}", { params: { path: { id } } })),
+    unwrap(
+      http.DELETE("/v1/workspace/assistants/{id}", {
+        params: { path: { id } },
+      }),
+    ),
 
   // knowledge
   listKnowledge: async (): Promise<{ sources: KnowledgeSource[] }> =>
-    (await unwrap(http.GET("/v1/workspace/knowledge"))) as { sources: KnowledgeSource[] },
+    (await unwrap(http.GET("/v1/workspace/knowledge"))) as {
+      sources: KnowledgeSource[];
+    },
   getKnowledge: (id: string) =>
-    unwrap(http.GET("/v1/workspace/knowledge/{id}", { params: { path: { id } } })),
+    unwrap(
+      http.GET("/v1/workspace/knowledge/{id}", { params: { path: { id } } }),
+    ),
   createKnowledge: (k: Partial<KnowledgeSource>) =>
-    unwrap(http.POST("/v1/workspace/knowledge", { body: k as KnowledgeSource })),
+    unwrap(
+      http.POST("/v1/workspace/knowledge", { body: k as KnowledgeSource }),
+    ),
   // Multipart upload — openapi-fetch supports `multipart/form-data` only
   // for shapes that JSON-stringify cleanly; for streaming a binary blob
   // we stick with raw fetch and hand the typed schema to the response.
-  uploadKnowledge: async (file: File, name?: string, sharing?: components["schemas"]["WorkspaceResourceSharing"]): Promise<KnowledgeSource> => {
+  uploadKnowledge: async (
+    file: File,
+    name?: string,
+    sharing?: components["schemas"]["WorkspaceResourceSharing"],
+  ): Promise<KnowledgeSource> => {
     const form = new FormData();
     form.append("file", file);
     if (name) form.append("name", name);
@@ -228,7 +280,9 @@ export const workspaceApi = {
   // Nothing is persisted; the text rides along inline in the next
   // user message. Image types come back with extracted=false; the
   // frontend renders a placeholder for those.
-  uploadChatAttachment: async (file: File): Promise<{
+  uploadChatAttachment: async (
+    file: File,
+  ): Promise<{
     name: string;
     mime_type: string;
     size: number;
@@ -250,19 +304,30 @@ export const workspaceApi = {
     return r.json();
   },
   archiveKnowledge: (id: string) =>
-    unwrap(http.DELETE("/v1/workspace/knowledge/{id}", { params: { path: { id } } })),
+    unwrap(
+      http.DELETE("/v1/workspace/knowledge/{id}", { params: { path: { id } } }),
+    ),
   releaseKnowledge: (id: string) =>
-    unwrap(http.POST("/v1/workspace/knowledge/{id}/release", { params: { path: { id } } })),
+    unwrap(
+      http.POST("/v1/workspace/knowledge/{id}/release", {
+        params: { path: { id } },
+      }),
+    ),
 
   // conversations
-  getEffectiveModels: () => unwrap(http.GET("/v1/workspace/me/effective-models")),
+  getEffectiveModels: () =>
+    unwrap(http.GET("/v1/workspace/me/effective-models")),
   listConversations: (limit = 50, q = "") =>
     unwrap(
-      http.GET("/v1/workspace/conversations", { params: { query: { limit, q } } }),
+      http.GET("/v1/workspace/conversations", {
+        params: { query: { limit, q } },
+      }),
     ),
   getConversation: (id: string) =>
     unwrap(
-      http.GET("/v1/workspace/conversations/{id}", { params: { path: { id } } }),
+      http.GET("/v1/workspace/conversations/{id}", {
+        params: { path: { id } },
+      }),
     ),
   createConversation: (body: { title?: string; assistant_id?: string }) =>
     unwrap(http.POST("/v1/workspace/conversations", { body })),
@@ -292,7 +357,9 @@ export const workspaceApi = {
     ),
   archiveConversation: (id: string) =>
     unwrap(
-      http.DELETE("/v1/workspace/conversations/{id}", { params: { path: { id } } }),
+      http.DELETE("/v1/workspace/conversations/{id}", {
+        params: { path: { id } },
+      }),
     ),
   // deleteFromMessage wipes the target message and every later
   // message in the same conversation. Used by regenerate + edit
@@ -315,7 +382,14 @@ export const workspaceApi = {
     ),
   sendMessage: (
     id: string,
-    body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
+    body: {
+      content: string;
+      provider?: string;
+      model?: string;
+      tool_mode?: boolean;
+      mcp_connection_ids?: string[];
+      history?: { role: "user" | "assistant"; content: string }[];
+    },
   ) =>
     unwrap(
       http.POST("/v1/workspace/conversations/{id}/messages", {
@@ -327,11 +401,56 @@ export const workspaceApi = {
   // event-stream. Use the existing fetch-based reader.
   streamSendMessage: (
     id: string,
-    body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
+    body: {
+      content: string;
+      provider?: string;
+      model?: string;
+      tool_mode?: boolean;
+      mcp_connection_ids?: string[];
+      history?: { role: "user" | "assistant"; content: string }[];
+    },
     onToken: (delta: string) => void,
     signal?: AbortSignal,
   ): Promise<Message> => streamSSE(id, body, onToken, signal),
 
+  toolApprovalStatus: (id: string, approvalID: string) =>
+    rawJSON<{ status: string }>(
+      `/v1/workspace/conversations/${id}/tool-approvals/${approvalID}`,
+    ),
+  toolApprovalAction: (
+    id: string,
+    approvalID: string,
+    body: { action: "approve" | "decline"; token: ToolProposal["token"] },
+  ) =>
+    rawJSON<{
+      status: string;
+      message?: Message;
+      result?: string;
+      error?: string;
+    }>(`/v1/workspace/conversations/${id}/tool-approvals/${approvalID}`, {
+      body,
+    }),
+  discoverMCPOAuth: (id: string) =>
+    rawJSON<{
+      issuer: string;
+      resource: string;
+      scopes: string[];
+      discovery_stamp: string;
+      redirect_uri: string;
+    }>(`/v1/workspace/mcp/connections/${id}/oauth/discover`, { body: {} }),
+  startMCPOAuth: (
+    id: string,
+    stamp: string,
+    destination: "admin" | "employee",
+  ) =>
+    rawJSON<{ authorization_url: string }>(
+      `/v1/workspace/mcp/connections/${id}/oauth/start`,
+      { body: { discovery_stamp: stamp, destination } },
+    ),
+  disconnectMCPOAuth: (id: string) =>
+    rawJSON(`/v1/workspace/mcp/connections/${id}/oauth/disconnect`, {
+      body: {},
+    }),
   // RBAC: who am I + what can I do?
   whoami: async (): Promise<{
     user_id: string;
@@ -343,7 +462,10 @@ export const workspaceApi = {
   }> => rawJSON("/v1/workspace/whoami"),
   // Promote / demote between admin / member / viewer. Owner promotion
   // requires the transfer flow.
-  changeMemberRole: async (userID: string, role: "admin" | "member" | "viewer") => {
+  changeMemberRole: async (
+    userID: string,
+    role: "admin" | "member" | "viewer",
+  ) => {
     const r = await fetch(
       `/v1/workspace/members/${encodeURIComponent(userID)}/role`,
       {
@@ -361,7 +483,8 @@ export const workspaceApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ new_owner_user_id: newOwnerUserID }),
     });
-    if (!r.ok) throw new Error(`transfer ownership ${r.status} ${await r.text()}`);
+    if (!r.ok)
+      throw new Error(`transfer ownership ${r.status} ${await r.text()}`);
   },
 
   // members + invitations — cloud-only, paths stripped from OSS
@@ -379,7 +502,8 @@ export const workspaceApi = {
   createInvitation: (body: {
     email: string;
     role?: "owner" | "admin" | "member" | "viewer";
-  }): Promise<Invitation & { token: string }> => rawJSON("/v1/workspace/invitations", { body }),
+  }): Promise<Invitation & { token: string }> =>
+    rawJSON("/v1/workspace/invitations", { body }),
   revokeInvitation: (id: string) =>
     rawJSON<void>(`/v1/workspace/invitations/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -407,7 +531,11 @@ export const workspaceApi = {
   // analytics
   analyticsSummary: () => unwrap(http.GET("/v1/workspace/analytics/summary")),
   analyticsDaily: (days = 14) =>
-    unwrap(http.GET("/v1/workspace/analytics/daily", { params: { query: { days } } })),
+    unwrap(
+      http.GET("/v1/workspace/analytics/daily", {
+        params: { query: { days } },
+      }),
+    ),
   analyticsByModel: () => unwrap(http.GET("/v1/workspace/analytics/by-model")),
   // Per-user drill-down (Favio-parity 026 cut). Raw fetch because
   // the openapi.yaml stubs use `type: object` for these endpoints —
@@ -423,11 +551,13 @@ export const workspaceApi = {
 
   // Audit log — admin-only on the server. Reverse-chronological;
   // pass `before` (an audit id) to paginate.
-  listAudit: async (params: {
-    limit?: number;
-    action?: string;
-    before?: string;
-  } = {}): Promise<{ entries: AuditEntry[] }> => {
+  listAudit: async (
+    params: {
+      limit?: number;
+      action?: string;
+      before?: string;
+    } = {},
+  ): Promise<{ entries: AuditEntry[] }> => {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.action) q.set("action", params.action);
@@ -440,13 +570,19 @@ export const workspaceApi = {
   // leave alone. Server responds 204 on success.
   setMemberBudgets: async (
     userID: string,
-    body: { monthly_token_limit?: number | null; daily_rate_limit?: number | null },
+    body: {
+      monthly_token_limit?: number | null;
+      daily_rate_limit?: number | null;
+    },
   ) => {
-    const r = await fetch(`/v1/workspace/members/${encodeURIComponent(userID)}/budgets`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const r = await fetch(
+      `/v1/workspace/members/${encodeURIComponent(userID)}/budgets`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
     if (!r.ok) throw new Error(`set budgets ${r.status} ${await r.text()}`);
   },
 };
@@ -489,7 +625,14 @@ async function rawJSON<T>(
 
 async function streamSSE(
   conversationID: string,
-  body: { content: string; provider?: string; model?: string; history?: { role: "user" | "assistant"; content: string }[] },
+  body: {
+    content: string;
+    provider?: string;
+    model?: string;
+    tool_mode?: boolean;
+    mcp_connection_ids?: string[];
+    history?: { role: "user" | "assistant"; content: string }[];
+  },
   onToken: (delta: string) => void,
   signal?: AbortSignal,
 ): Promise<Message> {
@@ -497,7 +640,11 @@ async function streamSSE(
     `/v1/workspace/conversations/${conversationID}/messages/stream`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...(body.tool_mode ? { "Cache-Control": "no-store" } : {}),
+      },
       body: JSON.stringify(body),
       signal,
     },

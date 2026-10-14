@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,9 +35,34 @@ const (
 // note like "[image attached]" into Content for those models so the
 // model is aware something was provided.
 type Message struct {
-	Role    string  `json:"role"`
-	Content string  `json:"content"`
-	Images  []Image `json:"images,omitempty"`
+	ProviderState []json.RawMessage `json:"provider_state,omitempty"`
+	Role          string            `json:"role"`
+	Content       string            `json:"content"`
+	Images        []Image           `json:"images,omitempty"`
+	ToolCalls     []ToolCall        `json:"tool_calls,omitempty"`
+	ToolCallID    string            `json:"tool_call_id,omitempty"`
+	ToolName      string            `json:"tool_name,omitempty"`
+}
+
+// Tool definitions describe capabilities; provider clients never execute them.
+type ToolDefinition struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+type ToolCall struct {
+	ID        string          `json:"id"`
+	Signature string          `json:"signature,omitempty"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+func SupportsTools(provider Provider) bool {
+	switch provider {
+	case ProviderOpenAI, ProviderAnthropic, ProviderGemini, ProviderOpenRouter, ProviderDeepSeek, ProviderXAI, ProviderGroq:
+		return true
+	}
+	return false
 }
 
 // Image is one image attachment carried inline with a Message.
@@ -52,15 +78,16 @@ type Image struct {
 
 // ChatRequest is a normalized chat completion request.
 type ChatRequest struct {
-	Provider        Provider  `json:"-"`
-	Model           string    `json:"model"`
-	FallbackModels  []string  `json:"fallback_models,omitempty"`
-	Messages        []Message `json:"messages"`
-	MaxTokens       *int      `json:"max_tokens,omitempty"`
-	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
-	Temperature     *float64  `json:"temperature,omitempty"`
-	TopP            *float64  `json:"top_p,omitempty"`
-	Stream          bool      `json:"stream"`
+	Tools           []ToolDefinition `json:"tools,omitempty"`
+	Provider        Provider         `json:"-"`
+	Model           string           `json:"model"`
+	FallbackModels  []string         `json:"fallback_models,omitempty"`
+	Messages        []Message        `json:"messages"`
+	MaxTokens       *int             `json:"max_tokens,omitempty"`
+	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	Temperature     *float64         `json:"temperature,omitempty"`
+	TopP            *float64         `json:"top_p,omitempty"`
+	Stream          bool             `json:"stream"`
 	// Raw holds the original request body for pass-through proxying.
 	Raw     []byte      `json:"-"`
 	Headers http.Header `json:"-"`
@@ -68,14 +95,16 @@ type ChatRequest struct {
 
 // ChatResponse is a normalized non-streaming response.
 type ChatResponse struct {
-	ID           string `json:"id"`
-	Model        string `json:"model"`
-	Content      string `json:"content"`
-	Role         string `json:"role"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-	FinishReason string `json:"finish_reason"`
-	Raw          []byte `json:"-"` // Original provider response for pass-through
+	ProviderState []json.RawMessage `json:"provider_state,omitempty"`
+	ToolCalls     []ToolCall        `json:"tool_calls,omitempty"`
+	ID            string            `json:"id"`
+	Model         string            `json:"model"`
+	Content       string            `json:"content"`
+	Role          string            `json:"role"`
+	InputTokens   int               `json:"input_tokens"`
+	OutputTokens  int               `json:"output_tokens"`
+	FinishReason  string            `json:"finish_reason"`
+	Raw           []byte            `json:"-"` // Original provider response for pass-through
 }
 
 // StreamChunk is a single chunk in a streaming response.

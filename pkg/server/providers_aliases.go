@@ -33,6 +33,9 @@ type ChatResponse = providers.ChatResponse
 // Message is one chat turn in a request's Messages slice.
 type Message = providers.Message
 
+type ToolDefinition = providers.ToolDefinition
+type ToolCall = providers.ToolCall
+
 // Image is an optional inline attachment on a Message.
 type Image = providers.Image
 

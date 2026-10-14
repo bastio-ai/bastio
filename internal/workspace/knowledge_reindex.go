@@ -13,13 +13,17 @@ import (
 // starts with the API, is bounded per workspace and stops with the API context.
 // Original uploaded files remain intact; only security-checked text is embedded.
 func (h *Handler) RunKnowledgeMaintenance(ctx context.Context) {
-	if h.embedder == nil || h.store == nil {
+	if h.store == nil {
 		return
 	}
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
-		h.reindexPass(ctx)
+		_, _ = h.store.pool.Exec(ctx, `DELETE FROM workspace_mcp_oauth_flows WHERE expires_at<now()`)
+		_, _ = h.store.pool.Exec(ctx, `DELETE FROM workspace_tool_approvals WHERE expires_at<now()-interval '30 days'`)
+		if h.embedder != nil {
+			h.reindexPass(ctx)
+		}
 		select {
 		case <-ctx.Done():
 			return

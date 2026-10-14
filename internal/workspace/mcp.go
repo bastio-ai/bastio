@@ -19,24 +19,31 @@ import (
 )
 
 type MCPConnection struct {
-	Sharing       *ResourceSharing `json:"sharing,omitempty"`
-	ID            uuid.UUID        `json:"id"`
-	Name          string           `json:"name"`
-	Endpoint      string           `json:"endpoint"`
-	Scope         string           `json:"scope"`
-	OwnerUserID   string           `json:"owner_user_id"`
-	AllowedTools  []string         `json:"allowed_tools"`
-	HasCredential bool             `json:"has_credential"`
-	CreatedAt     time.Time        `json:"created_at"`
-	credential    []byte
+	AuthType       string `json:"auth_type"`
+	OAuthConnected bool   `json:"oauth_connected"`
+	oauth          []byte
+	Sharing        *ResourceSharing `json:"sharing,omitempty"`
+	ID             uuid.UUID        `json:"id"`
+	Name           string           `json:"name"`
+	Endpoint       string           `json:"endpoint"`
+	Scope          string           `json:"scope"`
+	OwnerUserID    string           `json:"owner_user_id"`
+	AllowedTools   []string         `json:"allowed_tools"`
+	HasCredential  bool             `json:"has_credential"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+	CreatedAt      time.Time        `json:"created_at"`
+	credential     []byte
 }
 type mcpConnectionInput struct {
-	Sharing      *ResourceSharing `json:"sharing,omitempty"`
-	Name         string           `json:"name"`
-	Endpoint     string           `json:"endpoint"`
-	Scope        string           `json:"scope"`
-	AllowedTools []string         `json:"allowed_tools"`
-	Credential   *string          `json:"credential,omitempty"`
+	AuthType          string           `json:"auth_type,omitempty"`
+	OAuthClientID     *string          `json:"oauth_client_id,omitempty"`
+	OAuthClientSecret *string          `json:"oauth_client_secret,omitempty"`
+	Sharing           *ResourceSharing `json:"sharing,omitempty"`
+	Name              string           `json:"name"`
+	Endpoint          string           `json:"endpoint"`
+	Scope             string           `json:"scope"`
+	AllowedTools      []string         `json:"allowed_tools"`
+	Credential        *string          `json:"credential,omitempty"`
 }
 type mcpPolicyResponse struct {
 	Connections   []MCPConnection `json:"connections"`
@@ -59,7 +66,7 @@ func (h *Handler) listMCPConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	args := []any{cid, uid}
 	filter := accessSQL(r.Context(), &args, "mcp", "c.id")
-	rows, err := h.store.pool.Query(r.Context(), `SELECT id,name,endpoint,scope,owner_user_id,allowed_tools,encrypted_credential IS NOT NULL,created_at
+	rows, err := h.store.pool.Query(r.Context(), `SELECT id,name,endpoint,scope,owner_user_id,allowed_tools,encrypted_credential IS NOT NULL,created_at,updated_at,auth_type,oauth_connected
 FROM workspace_mcp_connections c WHERE customer_id=$1 AND revoked_at IS NULL AND ((scope='workspace'`+filter+`) OR (scope='personal' AND owner_user_id=$2)) ORDER BY scope,name`, args...)
 	if err != nil {
 		writeError(w, 500, "integrations unavailable")
@@ -69,7 +76,7 @@ FROM workspace_mcp_connections c WHERE customer_id=$1 AND revoked_at IS NULL AND
 	items := []MCPConnection{}
 	for rows.Next() {
 		var c MCPConnection
-		if rows.Scan(&c.ID, &c.Name, &c.Endpoint, &c.Scope, &c.OwnerUserID, &c.AllowedTools, &c.HasCredential, &c.CreatedAt) != nil {
+		if rows.Scan(&c.ID, &c.Name, &c.Endpoint, &c.Scope, &c.OwnerUserID, &c.AllowedTools, &c.HasCredential, &c.CreatedAt, &c.UpdatedAt, &c.AuthType, &c.OAuthConnected) != nil {
 			writeError(w, 500, "integrations unavailable")
 			return
 		}
@@ -118,8 +125,8 @@ func (h *Handler) loadMCPConnection(ctx context.Context, cid, id uuid.UUID, uid 
 	var c MCPConnection
 	args := []any{cid, id, uid}
 	filter := accessSQL(ctx, &args, "mcp", "c.id")
-	err := h.store.pool.QueryRow(ctx, `SELECT id,name,endpoint,scope,owner_user_id,allowed_tools,encrypted_credential,encrypted_credential IS NOT NULL,created_at
-FROM workspace_mcp_connections c WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND ((scope='workspace'`+filter+`) OR (scope='personal' AND owner_user_id=$3))`, args...).Scan(&c.ID, &c.Name, &c.Endpoint, &c.Scope, &c.OwnerUserID, &c.AllowedTools, &c.credential, &c.HasCredential, &c.CreatedAt)
+	err := h.store.pool.QueryRow(ctx, `SELECT id,name,endpoint,scope,owner_user_id,allowed_tools,encrypted_credential,encrypted_credential IS NOT NULL,created_at,updated_at,auth_type,oauth_connected,encrypted_oauth
+FROM workspace_mcp_connections c WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND ((scope='workspace'`+filter+`) OR (scope='personal' AND owner_user_id=$3))`, args...).Scan(&c.ID, &c.Name, &c.Endpoint, &c.Scope, &c.OwnerUserID, &c.AllowedTools, &c.credential, &c.HasCredential, &c.CreatedAt, &c.UpdatedAt, &c.AuthType, &c.OAuthConnected, &c.oauth)
 	if err == nil && c.Scope == "workspace" && RoleFromCtx(ctx).AtLeast(RoleAdmin) {
 		c.Sharing, err = h.store.resourceSharing(ctx, cid, id, "mcp")
 	}
@@ -133,6 +140,10 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.Name = strings.TrimSpace(b.Name)
+	if b.AuthType != "" && b.AuthType != "none" && b.AuthType != "bearer" && b.AuthType != "oauth" {
+		writeError(w, 400, "invalid authentication method")
+		return
+	}
 	if b.Scope != "personal" && b.Scope != "workspace" || len(b.Name) < 1 || len(b.Name) > 100 || mcp.ValidateRemoteURL(b.Endpoint) != nil || len(b.AllowedTools) > 100 {
 		writeError(w, 400, "provide a name, HTTPS MCP endpoint and valid scope")
 		return
@@ -164,7 +175,8 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	id := uuid.New()
-	var cipher []byte
+	var cipher, oauth []byte
+	connected := false
 	if r.Method == http.MethodPut {
 		id, err = uuidParam(r, "id")
 		if err != nil {
@@ -177,7 +189,7 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var previous MCPConnection
-		if e := tx.QueryRow(r.Context(), `SELECT scope,endpoint,encrypted_credential FROM workspace_mcp_connections WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL`, cid, id).Scan(&previous.Scope, &previous.Endpoint, &previous.credential); e != nil {
+		if e := tx.QueryRow(r.Context(), `SELECT scope,endpoint,encrypted_credential,auth_type,encrypted_oauth,oauth_connected FROM workspace_mcp_connections WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL`, cid, id).Scan(&previous.Scope, &previous.Endpoint, &previous.credential, &previous.AuthType, &previous.oauth, &previous.OAuthConnected); e != nil {
 			writeError(w, 404, "integration not found")
 			return
 		}
@@ -186,13 +198,64 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cipher = previous.credential
+		oauth = previous.oauth
+		connected = previous.OAuthConnected
+		if b.AuthType == "" {
+			b.AuthType = previous.AuthType
+		}
+		if previous.Endpoint != b.Endpoint || previous.AuthType != b.AuthType {
+			oauth = nil
+			connected = false
+			cipher = nil
+		}
 		// Credentials must be explicitly supplied again when changing host,
 		// so editing an endpoint cannot redirect an existing token elsewhere.
 		if previous.Endpoint != b.Endpoint && b.Credential == nil {
 			cipher = nil
 		}
 	}
-	if b.Credential != nil {
+	if b.AuthType == "" {
+		if b.Credential != nil && *b.Credential != "" {
+			b.AuthType = "bearer"
+		} else {
+			b.AuthType = "none"
+		}
+	}
+	if b.AuthType != "bearer" {
+		cipher = nil
+	}
+	if b.AuthType != "oauth" {
+		oauth = nil
+		connected = false
+	}
+	if b.AuthType == "oauth" && (b.OAuthClientID != nil || b.OAuthClientSecret != nil) {
+		bundle := oauthBundle{}
+		if b.OAuthClientID != nil {
+			bundle.Client.ClientID = strings.TrimSpace(*b.OAuthClientID)
+		}
+		if b.OAuthClientSecret != nil {
+			bundle.Client.ClientSecret = *b.OAuthClientSecret
+		}
+		if bundle.Client.ClientSecret != "" && bundle.Client.ClientID == "" {
+			writeError(w, 400, "a client secret requires its pre-registered client ID")
+			return
+		}
+		if len(bundle.Client.ClientID) > 4096 || len(bundle.Client.ClientSecret) > 8192 || strings.ContainsAny(bundle.Client.ClientSecret, "\r\n") {
+			writeError(w, 400, "invalid OAuth client configuration")
+			return
+		}
+		bundle.Client.AuthMethod = "none"
+		if bundle.Client.ClientSecret != "" {
+			bundle.Client.AuthMethod = "client_secret_basic"
+		}
+		oauth, err = h.sealOAuth(cid, id, bundle)
+		if err != nil {
+			writeError(w, 503, "OAuth encryption unavailable")
+			return
+		}
+		connected = false
+	}
+	if b.Credential != nil && b.AuthType == "bearer" {
 		if len(*b.Credential) > 8192 || strings.ContainsAny(*b.Credential, "\r\n") {
 			writeError(w, 400, "invalid credential")
 			return
@@ -215,9 +278,9 @@ func (h *Handler) saveMCPConnection(w http.ResponseWriter, r *http.Request) {
 		b.AllowedTools = []string{}
 	}
 	if r.Method == http.MethodPost {
-		_, err = tx.Exec(r.Context(), `INSERT INTO workspace_mcp_connections(id,customer_id,owner_user_id,name,endpoint,scope,allowed_tools,encrypted_credential) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, cid, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher)
+		_, err = tx.Exec(r.Context(), `INSERT INTO workspace_mcp_connections(id,customer_id,owner_user_id,name,endpoint,scope,allowed_tools,encrypted_credential,auth_type,encrypted_oauth,oauth_connected) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, id, cid, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher, b.AuthType, oauth, connected)
 	} else {
-		_, err = tx.Exec(r.Context(), `UPDATE workspace_mcp_connections SET name=$4,endpoint=$5,scope=$6,allowed_tools=$7,encrypted_credential=$8,owner_user_id=$3,updated_at=now() WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND (scope='workspace' OR owner_user_id=$3)`, cid, id, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher)
+		_, err = tx.Exec(r.Context(), `UPDATE workspace_mcp_connections SET name=$4,endpoint=$5,scope=$6,allowed_tools=$7,encrypted_credential=$8,auth_type=$9,encrypted_oauth=$10,oauth_connected=$11,owner_user_id=$3,updated_at=now() WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL AND (scope='workspace' OR owner_user_id=$3)`, cid, id, uid, b.Name, b.Endpoint, b.Scope, b.AllowedTools, cipher, b.AuthType, oauth, connected)
 	}
 	if err != nil {
 		writeError(w, 500, "integration save failed")
@@ -268,7 +331,7 @@ func (h *Handler) revokeMCPConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "only administrators can remove shared integrations")
 		return
 	}
-	_, err = h.store.pool.Exec(r.Context(), `UPDATE workspace_mcp_connections SET revoked_at=now() WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL`, cid, id)
+	_, err = h.store.pool.Exec(r.Context(), `UPDATE workspace_mcp_connections SET revoked_at=now(),encrypted_credential=NULL,encrypted_oauth=NULL,oauth_connected=FALSE WHERE customer_id=$1 AND id=$2 AND revoked_at IS NULL`, cid, id)
 	if err != nil {
 		writeError(w, 500, "integration removal failed")
 		return
@@ -286,14 +349,24 @@ func (h *Handler) mcpClient(r *http.Request) (MCPConnection, *mcp.RemoteClient, 
 	if err != nil {
 		return c, nil, errors.New("integration unavailable")
 	}
+	return h.mcpClientFor(r.Context(), cid, c)
+}
+func (h *Handler) mcpClientFor(ctx context.Context, cid uuid.UUID, c MCPConnection) (MCPConnection, *mcp.RemoteClient, error) {
+	var err error
+	id := c.ID
 	if c.Scope == "personal" {
-		allowed, e := h.mcpPersonalAllowed(r.Context(), cid)
+		allowed, e := h.mcpPersonalAllowed(ctx, cid)
 		if e != nil || !allowed {
 			return c, nil, errors.New("personal integrations are disabled")
 		}
 	}
 	token := ""
-	if c.HasCredential {
+	if c.AuthType == "oauth" {
+		token, err = h.oauthAccessToken(ctx, cid, c)
+		if err != nil {
+			return c, nil, err
+		}
+	} else if c.HasCredential {
 		var sealed encryption.Encrypted
 		if h.mcpCipher == nil || json.Unmarshal(c.credential, &sealed) != nil {
 			return c, nil, errors.New("integration credential unavailable")

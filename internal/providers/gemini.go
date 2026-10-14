@@ -105,7 +105,14 @@ func (c *GeminiClient) Chat(ctx context.Context, req *ChatRequest, apiKey string
 		cand := geminiResp.Candidates[0]
 		result.FinishReason = cand.FinishReason
 		var sb strings.Builder
-		for _, part := range cand.Content.Parts {
+		for i, part := range cand.Content.Parts {
+			if part.FunctionCall != nil {
+				id := part.FunctionCall.ID
+				if id == "" {
+					id = fmt.Sprintf("gemini-call-%d", i)
+				}
+				result.ToolCalls = append(result.ToolCalls, ToolCall{ID: id, Name: part.FunctionCall.Name, Arguments: part.FunctionCall.Args, Signature: part.ThoughtSignature})
+			}
 			sb.WriteString(part.Text)
 		}
 		result.Content = sb.String()
@@ -181,8 +188,11 @@ func normalizeGeminiModel(m string) string {
 // Gemini request structures
 
 type geminiPart struct {
-	Text       string            `json:"text,omitempty"`
-	InlineData *geminiInlineData `json:"inline_data,omitempty"`
+	Text             string              `json:"text,omitempty"`
+	FunctionCall     *geminiFunctionCall `json:"functionCall,omitempty"`
+	FunctionResponse any                 `json:"functionResponse,omitempty"`
+	ThoughtSignature string              `json:"thoughtSignature,omitempty"`
+	InlineData       *geminiInlineData   `json:"inline_data,omitempty"`
 }
 
 type geminiInlineData struct {
@@ -202,6 +212,7 @@ type geminiGenerationConfig struct {
 }
 
 type geminiGenerateContentRequest struct {
+	Tools             []any                   `json:"tools,omitempty"`
 	Contents          []geminiContent         `json:"contents"`
 	SystemInstruction *geminiContent          `json:"system_instruction,omitempty"`
 	GenerationConfig  *geminiGenerationConfig `json:"generationConfig,omitempty"`
@@ -246,6 +257,12 @@ func toGeminiRequest(req *ChatRequest) *geminiGenerateContentRequest {
 		if msg.Content != "" {
 			parts = append(parts, geminiPart{Text: msg.Content})
 		}
+		for _, call := range msg.ToolCalls {
+			parts = append(parts, geminiPart{FunctionCall: &geminiFunctionCall{ID: call.ID, Name: call.Name, Args: call.Arguments}, ThoughtSignature: call.Signature})
+		}
+		if msg.Role == "tool" {
+			parts = []geminiPart{{FunctionResponse: map[string]any{"id": msg.ToolCallID, "name": msg.ToolName, "response": map[string]any{"output": msg.Content}}}}
+		}
 		for _, img := range msg.Images {
 			parts = append(parts, geminiPart{
 				InlineData: &geminiInlineData{
@@ -270,9 +287,24 @@ func toGeminiRequest(req *ChatRequest) *geminiGenerateContentRequest {
 		}
 	}
 
+	var tools []any
+	if len(req.Tools) > 0 {
+		declarations := []any{}
+		for _, t := range req.Tools {
+			declarations = append(declarations, map[string]any{"name": t.Name, "description": t.Description, "parametersJsonSchema": t.Parameters})
+		}
+		tools = []any{map[string]any{"functionDeclarations": declarations}}
+	}
 	return &geminiGenerateContentRequest{
+		Tools:             tools,
 		Contents:          contents,
 		SystemInstruction: systemInstruction,
 		GenerationConfig:  genConfig,
 	}
+}
+
+type geminiFunctionCall struct {
+	ID   string          `json:"id,omitempty"`
+	Name string          `json:"name"`
+	Args json.RawMessage `json:"args"`
 }

@@ -25,15 +25,17 @@ func TestGroq_Chat(t *testing.T) {
 			Model: "llama-3.3-70b-versatile",
 			Choices: []struct {
 				Message struct {
-					Role    string `json:"role"`
-					Content string `json:"content"`
+					ToolCalls []openAIFunctionCall `json:"tool_calls,omitempty"`
+					Role      string               `json:"role"`
+					Content   string               `json:"content"`
 				} `json:"message"`
 				FinishReason string `json:"finish_reason"`
 			}{
 				{
 					Message: struct {
-						Role    string `json:"role"`
-						Content string `json:"content"`
+						ToolCalls []openAIFunctionCall `json:"tool_calls,omitempty"`
+						Role      string               `json:"role"`
+						Content   string               `json:"content"`
 					}{
 						Role:    "assistant",
 						Content: "Fast response from Groq!",
