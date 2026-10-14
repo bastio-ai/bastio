@@ -165,3 +165,15 @@ func TestGatewayModelDiscoveryUsesSamePipelineAndFiltersNonChat(t *testing.T) {
 		t.Fatal("unsupported discovery should be explicit and not issue keys")
 	}
 }
+
+func TestGatewayHelloUsesSupportedReasoningControls(t *testing.T) {
+	for model, want := range map[string]string{
+		"gpt-5-nano": "minimal", "gpt-5-nano-2025-08-07": "minimal", "gpt-5-mini": "minimal", "gpt-5": "minimal",
+		"gpt-6-luna": "none", "gpt-6-sol": "none", "gpt-6.1-sol": "low", "gpt-6-astra": "low",
+		"gpt-4o-mini": "", "gpt-unknown": "", "gpt-5-nano-unrelated": "",
+	} {
+		if got := gatewayHelloReasoningEffort(model); got != want {
+			t.Fatalf("%s effort %s want %s", model, got, want)
+		}
+	}
+}

@@ -69,7 +69,9 @@ export function listedGatewayModelChoices(
       known ?? {
         provider: listing.provider as ModelChoice["provider"],
         model: id,
-        label: name || id,
+        label:
+          name ||
+          (listing.provider === "openai" ? friendlyOpenAIModel(id) : id),
         description: "Reported by your provider key",
       }
     );
@@ -82,7 +84,20 @@ export function defaultListedGatewayModel(
 ): string {
   if (choices.some((choice) => choice.model === configured.trim()))
     return configured.trim();
-  // A tiny hello does not need a large reasoning model. Only select a reported ID.
+  // Prefer inexpensive non-reasoning aliases for a bounded hello, independent
+  // of provider list order. Never select an ID this account did not report.
+  for (const id of [
+    "gpt-4.1-nano",
+    "gpt-4o-mini",
+    "gpt-4.1-mini",
+    "gpt-5-nano",
+    "gpt-5-mini",
+  ]) {
+    const choice = choices.find(
+      (item) => item.provider === "openai" && item.model === id,
+    );
+    if (choice) return choice.model;
+  }
   return (
     (
       choices.find((choice) =>
@@ -90,4 +105,14 @@ export function defaultListedGatewayModel(
       ) ?? choices[0]
     )?.model ?? ""
   );
+}
+
+function friendlyOpenAIModel(id: string): string {
+  return id
+    .replace(/^gpt-/, "GPT-")
+    .replace(
+      /-(mini|nano)(?=-|$)/,
+      (_, size: string) => ` ${size.charAt(0).toUpperCase()}${size.slice(1)}`,
+    )
+    .replace(/-(\d{4}-\d{2}-\d{2})$/, " · $1");
 }

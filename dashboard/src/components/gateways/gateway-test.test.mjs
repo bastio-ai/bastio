@@ -140,3 +140,18 @@ test("provider model errors explain why replacing a Bastio key cannot help", () 
   assert.equal(failure.title, "Your provider key cannot use this model");
   assert.match(failure.detail, /new Bastio API key will not change it/);
 });
+
+test("hello defaults prefer small non-reasoning models regardless of provider list order", () => {
+  const choices = listedGatewayModelChoices({
+    provider: "openai",
+    source: "provider",
+    models: [
+      { id: "gpt-5-nano" },
+      { id: "gpt-4o-mini" },
+      { id: "gpt-4.1-nano" },
+    ],
+  });
+  assert.equal(choices[0].label, "GPT-5 Nano");
+  assert.equal(defaultListedGatewayModel(choices), "gpt-4.1-nano");
+  assert.equal(defaultListedGatewayModel(choices, "gpt-5-nano"), "gpt-5-nano");
+});

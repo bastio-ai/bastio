@@ -153,8 +153,8 @@ func (g *gatewayTools) Test(w http.ResponseWriter, r *http.Request) {
 	path := "/v1/chat/completions"
 	if p.TargetProvider == providers.ProviderOpenAI {
 		body["max_completion_tokens"] = 512
-		if strings.HasPrefix(input.Model, "gpt-6") {
-			body["reasoning_effort"] = "none"
+		if effort := gatewayHelloReasoningEffort(input.Model); effort != "" {
+			body["reasoning_effort"] = effort
 		}
 	} else {
 		body["max_tokens"] = 512
@@ -261,4 +261,35 @@ func parseGatewayModels(provider providers.Provider, raw []byte) ([]gatewayListe
 		seen[item.ID] = true
 	}
 	return out, nil
+}
+
+// Reasoning controls vary by model; do not send "none" to every GPT-6 model.
+// Snapshots retain the alias capability. Unrecognized families use defaults.
+func gatewayHelloReasoningEffort(model string) string {
+	matches := func(id string) bool {
+		if model == id {
+			return true
+		}
+		if !strings.HasPrefix(model, id+"-") {
+			return false
+		}
+		_, err := time.Parse("2006-01-02", strings.TrimPrefix(model, id+"-"))
+		return err == nil
+	}
+	for _, id := range []string{"gpt-6-luna", "gpt-6-sol", "gpt-5.6", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"} {
+		if matches(id) {
+			return "none"
+		}
+	}
+	for _, id := range []string{"gpt-6-astra", "gpt-6.1-sol"} {
+		if matches(id) {
+			return "low"
+		}
+	}
+	for _, id := range []string{"gpt-5", "gpt-5-nano", "gpt-5-mini"} {
+		if matches(id) {
+			return "minimal"
+		}
+	}
+	return ""
 }
