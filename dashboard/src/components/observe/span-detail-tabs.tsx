@@ -60,9 +60,9 @@ export function SpanDetailTabs({
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
             {span.type}
           </Badge>
-          {span.status === "error" ? (
+          {span.status === "error" || span.status === "blocked" ? (
             <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-              error
+              {span.status}
             </Badge>
           ) : null}
         </div>
@@ -84,7 +84,7 @@ export function SpanDetailTabs({
           ) : null}
           {span.tool_name ? <Meta label="Tool" value={span.tool_name} /> : null}
         </div>
-        {span.status === "error" && span.status_message ? (
+        {(span.status === "error" || span.status === "blocked") && span.status_message ? (
           <p className="mt-2 rounded border border-destructive/40 bg-destructive/5 px-2 py-1.5 font-mono text-[11px] text-destructive">
             {span.status_message}
           </p>
@@ -134,6 +134,7 @@ export function SpanDetailTabs({
               </h3>
               <div className="grid gap-px overflow-hidden rounded-md border border-border-subtle bg-border-subtle sm:grid-cols-2">
                 <MetadataItem label="Span type" value={span.type} />
+                {span.status_message ? <MetadataItem label="Decision" value={span.status_message} /> : null}
                 <MetadataItem label="Depth" value={String(span.depth ?? 0)} />
                 <MetadataItem label="Started" value={new Date(span.started_at).toLocaleString()} />
                 <MetadataItem label="Completed" value={new Date(span.completed_at).toLocaleString()} />

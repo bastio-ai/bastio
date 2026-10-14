@@ -170,14 +170,17 @@ type ScanRequest struct {
 
 // ScanResult is the output of a full security scan.
 type ScanResult struct {
-	Findings           []Finding     `json:"findings"`
-	BlockingDetectors  []string      `json:"blocking_detectors,omitempty"`
-	RewriteUnavailable bool          `json:"rewrite_unavailable,omitempty"`
-	ThreatScore        float64       `json:"threat_score"` // Aggregate 0.0-1.0
-	Action             Action        `json:"action"`       // Final recommended action
-	ShouldBlock        bool          `json:"should_block"`
-	ThreatTypes        []ThreatType  `json:"threat_types"`
-	ScanDuration       time.Duration `json:"scan_duration"`
+	Findings          []Finding `json:"findings"`
+	BlockingDetectors []string  `json:"blocking_detectors,omitempty"`
+	// DetectorActions contains effective step actions after threshold checks,
+	// rather than the detector's default recommendation on each finding.
+	DetectorActions    map[string]Action `json:"detector_actions,omitempty"`
+	RewriteUnavailable bool              `json:"rewrite_unavailable,omitempty"`
+	ThreatScore        float64           `json:"threat_score"` // Aggregate 0.0-1.0
+	Action             Action            `json:"action"`       // Final recommended action
+	ShouldBlock        bool              `json:"should_block"`
+	ThreatTypes        []ThreatType      `json:"threat_types"`
+	ScanDuration       time.Duration     `json:"scan_duration"`
 	// SanitizedContent holds the content with PII masked or tokenized.
 	// Only populated when PIIAction is ActionMask or ActionTokenize.
 	SanitizedContent string `json:"sanitized_content,omitempty"`
@@ -367,10 +370,11 @@ func (e *Engine) scanViaSteps(ctx context.Context, req *ScanRequest, start time.
 	stepsRes := e.RunSteps(ctx, req.Content, req.Steps, opts)
 
 	result := &ScanResult{
-		Action:       stepsRes.Action,
-		ShouldBlock:  stepsRes.ShouldBlock,
-		TokenMap:     stepsRes.TokenMap,
-		ScanDuration: time.Since(start),
+		Action:          stepsRes.Action,
+		DetectorActions: make(map[string]Action),
+		ShouldBlock:     stepsRes.ShouldBlock,
+		TokenMap:        stepsRes.TokenMap,
+		ScanDuration:    time.Since(start),
 	}
 
 	// Per-message sanitization is the gateway's responsibility (one
@@ -391,6 +395,9 @@ func (e *Engine) scanViaSteps(ctx context.Context, req *ScanRequest, start time.
 		}
 		if s.Skipped {
 			continue
+		}
+		if previous, ok := result.DetectorActions[s.Detector]; !ok || actionRank(s.Action) > actionRank(previous) {
+			result.DetectorActions[s.Detector] = s.Action
 		}
 		for _, f := range s.Findings {
 			result.Findings = append(result.Findings, f)

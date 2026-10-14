@@ -437,26 +437,35 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer closeMCP(client)
+	r, trace := h.beginMCPTrace(w, r, c, b.Name, "manual", uuid.Nil)
+	defer trace.complete()
+	trace.startStage("guardrail", "mcp.arguments")
 	cid := customerIDFromCtx(r.Context())
 	// Re-check both access and current allowlist on every invocation.
 	decision := mcp.Inspect(r.Context(), nil, mcp.InspectRequest{ToolName: b.Name, Arguments: b.Arguments, Policy: mcp.Policy{AllowedTools: c.AllowedTools}})
 	if decision.Action == "blocked" {
-		h.auditMCP(r, c, "", "blocked", decision.Categories)
+		trace.outcome("blocked", "tool_denied", 403, "Tool call blocked by the integration allowlist or argument policy.")
+		h.auditMCP(r, c, b.Name, "blocked", decision.Categories)
 		writeError(w, 403, "tool call blocked by security policy")
 		return
 	}
 	arguments, categories, err := h.inspectMCPJSON(r.Context(), cid, b.Arguments, security.RoleUser, 0)
 	if err != nil {
+		trace.inspectionFailure(err, categories, "arguments", 403)
 		h.auditMCPInspection(r, c, b.Name, "blocked", categories, err, "arguments")
 		writeJSON(w, 403, mcpSecurityFailure(err, categories, "arguments"))
 		return
 	}
+	trace.inspected(categories)
+	trace.startStage("span", "mcp.discovery")
 	tools, err := h.protectedMCPTools(r.Context(), cid, c, client)
 	if err != nil {
+		trace.outcome("error", "discovery_failed", 502, "MCP tool discovery failed.")
 		writeError(w, 502, err.Error())
 		return
 	}
 	if !slices.ContainsFunc(tools, func(t mcp.RemoteTool) bool { return t.Name == b.Name }) {
+		trace.outcome("error", "tool_unavailable", 403, "Tool is unavailable or not allowed.")
 		writeError(w, 403, "tool is unavailable or not allowed")
 		return
 	}
@@ -464,22 +473,30 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 	// or disabled personal access cannot reuse an earlier discovery response.
 	current, _, err := h.mcpClient(r)
 	if err != nil || current.Endpoint != c.Endpoint || !bytes.Equal(current.credential, c.credential) || len(current.AllowedTools) > 0 && !slices.Contains(current.AllowedTools, b.Name) {
+		trace.outcome("error", "access_changed", 403, "Integration access changed before execution.")
 		writeError(w, 403, "integration access changed; refresh before running")
 		return
 	}
+	trace.startStage("tool", "mcp."+b.Name)
+	trace.trace.Tags["remote_action"] = "unknown"
 	raw, err := client.CallTool(r.Context(), b.Name, arguments)
 	if err != nil {
+		trace.outcome("error", "remote_error", 502, "MCP request failed; the remote action may have completed.")
 		h.auditMCP(r, c, b.Name, "error", categories)
 		writeError(w, 502, "MCP tool request failed. The remote action may already have completed; check that service before retrying.")
 		return
 	}
+	trace.trace.Tags["remote_action"] = "completed"
+	trace.startStage("guardrail", "mcp.result")
 	processed, resultCategories, err := h.inspectMCPJSON(r.Context(), cid, raw, security.RoleRetrieval, 0)
 	categories = append(categories, resultCategories...)
 	if err != nil {
+		trace.inspectionFailure(err, resultCategories, "result", 403)
 		h.auditMCPInspection(r, c, b.Name, "result_blocked", resultCategories, err, "result")
 		writeJSON(w, 403, mcpSecurityFailure(err, resultCategories, "result"))
 		return
 	}
+	trace.inspected(resultCategories)
 	// Return text/structured content only. Text inspection cannot protect
 	// image pixels or embedded binary resources, so don't expose those.
 	var result struct {
@@ -491,6 +508,7 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 		IsError    bool            `json:"isError"`
 	}
 	if json.Unmarshal(processed, &result) != nil {
+		trace.outcome("error", "unsupported_result", 502, "The tool returned an unsupported result.")
 		writeError(w, 502, "unsupported MCP result")
 		return
 	}
@@ -504,11 +522,16 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 		text = append(text, string(result.Structured))
 	}
 	if len(text) == 0 {
+		trace.outcome("error", "unsupported_result", 422, "The tool returned no supported text content.")
 		writeError(w, 422, "this tool returned no supported text content")
 		return
 	}
 	if categories == nil {
 		categories = []string{}
+	}
+	trace.outcome("ok", "completed", 200, "")
+	if result.IsError {
+		trace.outcome("error", "tool_error", 200, "The remote tool returned isError=true.")
 	}
 	h.auditMCP(r, c, b.Name, "completed", categories)
 	writeJSON(w, 200, struct {
@@ -519,10 +542,7 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) auditMCP(r *http.Request, c MCPConnection, tool, action string, categories []string) {
 	// No arguments, outputs, endpoint tokens or content excerpts are retained.
-	body, _ := json.Marshal(struct {
-		Tool       string   `json:"tool"`
-		Categories []string `json:"categories"`
-	}{tool, categories})
+	body, _ := json.Marshal(map[string]any{"tool": tool, "categories": categories, "trace_id": mcpAuditTraceID(r)})
 	h.auditJSON(r, "mcp.tool_"+action, AuditTarget{Type: "mcp_connection", ID: c.ID.String()}, body)
 }
 func mustJSONString(s string) json.RawMessage { b, _ := json.Marshal(s); return b }
@@ -573,6 +593,9 @@ func inspectMCPPayload(ctx context.Context, engine *security.Engine, profiles se
 		decision, err := scanWorkspaceContent(ctx, engine, profiles, cid, text, role, true)
 		if err != nil || decision == nil {
 			return nil, nil, errors.New("mcp security unavailable")
+		}
+		if trace := mcpTraceFromContext(ctx); trace != nil {
+			trace.captureScan(cid, decision.Result)
 		}
 		if decision.Action == "block" {
 			return nil, decision.Categories, mcpBlockedInspection(decision, "policy_block", "The workspace security policy blocks this content.")
@@ -638,6 +661,9 @@ func inspectMCPPayload(ctx context.Context, engine *security.Engine, profiles se
 		decision, err := scanWorkspaceContent(ctx, engine, profiles, cid, string(raw), role, true)
 		if err != nil || decision == nil {
 			return nil, nil, errors.New("mcp security unavailable")
+		}
+		if trace := mcpTraceFromContext(ctx); trace != nil {
+			trace.captureScan(cid, decision.Result)
 		}
 		if decision.Action == "block" {
 			return nil, decision.Categories, mcpBlockedInspection(decision, "policy_block", "The workspace security policy blocks this content.")

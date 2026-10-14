@@ -54,7 +54,9 @@ export function TraceDetailPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["trace", id],
     queryFn: () => api.traces.get(id),
-    retry: false,
+    // The recorder batches writes; a link opened immediately can precede ingestion.
+    retry: (failures, error) => failures < 4 && error.message.includes("trace not found"),
+    retryDelay: 1000,
   });
 
   // Fallback path: when api.traces.get(id) fails (typically 404 because the
@@ -259,6 +261,30 @@ function getTraceOutcome(
   trace: NonNullable<TraceDetail["trace"]>,
   threats: import("@/api/client").TraceThreatDetection[],
 ) {
+  if (trace.provider === "mcp") {
+    const remote = trace.tags?.remote_action;
+    const detail = remote === "completed" ? "Remote action completed" : remote === "unknown" ? "Remote outcome unknown" : "Tool did not run";
+    if (trace.status === "blocked") return {
+      label: remote === "completed" ? "Tool ran · result withheld" : "Tool request withheld",
+      shortLabel: "Withheld",
+      description: trace.error_message || "Workspace security policy withheld this content.",
+      detail, tone: "danger" as OutcomeTone, icon: Ban,
+    };
+    if (trace.status !== "ok") return {
+      label: "Tool request failed", shortLabel: "Failed",
+      description: trace.error_message || "The MCP tool request did not complete successfully.",
+      detail, tone: "danger" as OutcomeTone, icon: AlertTriangle,
+    };
+    return {
+      label: threats.length ? "Tool completed with security findings" : "Tool completed",
+      shortLabel: "Completed",
+      description: "Arguments and returned content passed through workspace security checks. Their content is not stored in this trace.",
+      detail: threats.length ? `Effective strategy: ${trace.security_action}` : "Security checks passed",
+      tone: (threats.length ? "warning" : "success") as OutcomeTone,
+      icon: threats.length ? ShieldAlert : CheckCircle2,
+    };
+  }
+
   const blockedFindings = threats.filter((threat) => threat.action_taken === "block").length;
   const categories = [...new Set(threats.map((threat) => threat.threat_type).filter(Boolean))];
 
