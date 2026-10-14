@@ -47,3 +47,47 @@ export function matchesGatewayModel(choice: ModelChoice, query: string) {
     .toLowerCase()
     .includes(query.trim().toLowerCase());
 }
+
+export type GatewayModelListing = {
+  provider: string;
+  source: "provider" | "catalog";
+  models: { id: string; name?: string }[];
+};
+
+// Include older IDs when reported by this account. A public catalogue must not
+// invent provider account access.
+export function listedGatewayModelChoices(
+  listing: GatewayModelListing,
+): ModelChoice[] {
+  if (listing.source === "catalog")
+    return gatewayModelChoices(listing.provider);
+  return listing.models.map(({ id, name }) => {
+    const known = MODEL_CATALOG.find(
+      (item) => item.provider === listing.provider && item.model === id,
+    );
+    return (
+      known ?? {
+        provider: listing.provider as ModelChoice["provider"],
+        model: id,
+        label: name || id,
+        description: "Reported by your provider key",
+      }
+    );
+  });
+}
+
+export function defaultListedGatewayModel(
+  choices: ModelChoice[],
+  configured = "",
+): string {
+  if (choices.some((choice) => choice.model === configured.trim()))
+    return configured.trim();
+  // A tiny hello does not need a large reasoning model. Only select a reported ID.
+  return (
+    (
+      choices.find((choice) =>
+        /mini|nano|haiku|flash|instant|20b/i.test(choice.model),
+      ) ?? choices[0]
+    )?.model ?? ""
+  );
+}

@@ -800,6 +800,73 @@ paths:
         "204":
           description: Deleted
 
+  /v1/proxies/{id}/models:
+    get:
+      operationId: listGatewayTestModels
+      summary: Discover chat models using this gateway's actual provider credential
+      description: Owner/admin dashboard session required. Uses the normal scoped gateway pipeline. Provider-reported models are suggestions; inference confirms model access. Providers without native model discovery return source catalog.
+      tags: [Gateway]
+      security: [{ DashboardSession: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Provider model list or explicit catalogue fallback
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [provider, source, models]
+                properties:
+                  provider: { type: string }
+                  source: { type: string, enum: [provider, catalog] }
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      required: [id]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+        "401": { description: Dashboard session required }
+        "403": { description: Workspace owner or admin role required, or provider access denied }
+        "404": { description: Gateway not found or disabled }
+        "429": { description: Rate or usage limit exceeded }
+        "502": { description: Provider configuration or model discovery failed }
+  /v1/proxies/{id}/test:
+    post:
+      operationId: testGateway
+      summary: Send a small fixed hello through this gateway
+      description: Owner/admin dashboard session and trusted Origin required. Server issues a gateway-scoped key that expires in two minutes and deletes it after the request. Normal authentication, security, billing, and quota middleware applies. Provider charges apply. No API key is returned to the browser.
+      tags: [Gateway]
+      security: [{ DashboardSession: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              additionalProperties: false
+              properties:
+                model: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        "200":
+          description: Provider completion through normal security controls
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { description: Invalid model or request body }
+        "401": { description: Dashboard session or provider authentication failed }
+        "402": { description: Billing or usage limit exceeded }
+        "403": { description: Role, trusted origin, security policy, or provider model access denied }
+        "404": { description: Gateway or model not found }
+        "429": { description: Rate or usage limit exceeded }
+        "502": { description: Provider request failed }
+        "503": { description: Temporary gateway credentials unavailable }
+
   /v1/proxies/{id}/provider-keys:
     get:
       operationId: listProviderKeysForProxy
@@ -3006,6 +3073,11 @@ paths:
 
 components:
   securitySchemes:
+    DashboardSession:
+      type: apiKey
+      in: cookie
+      name: bastio_session
+      description: Signed-in dashboard session; deployed session authentication is configured by the host.
     MCPEnrollment:
       type: http
       scheme: bearer

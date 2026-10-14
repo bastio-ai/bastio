@@ -58,7 +58,7 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 			k.last_used_at::text, k.created_at::text
 		FROM gateway_api_keys k
 		LEFT JOIN environments e ON e.id = k.environment_id
-		WHERE k.customer_id = $1::uuid
+		WHERE k.customer_id = $1::uuid AND NOT k.is_ephemeral
 		ORDER BY k.created_at DESC
 	`, tenantIDFromCtx(r.Context()))
 	if err != nil {

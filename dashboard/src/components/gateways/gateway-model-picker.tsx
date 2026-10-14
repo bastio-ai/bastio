@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Combobox } from "@base-ui/react/combobox";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { FieldLabel } from "@/components/admin/admin-primitives";
@@ -7,28 +7,23 @@ import { Input } from "@/components/ui/input";
 import type { ModelChoice } from "@/components/workspace/model-catalog";
 import { providerLabels } from "@/components/gateway-setup";
 import {
-  defaultGatewayTestModel,
-  gatewayModelChoices,
+  defaultListedGatewayModel,
   matchesGatewayModel,
 } from "./gateway-models";
 
 export function GatewayModelPicker({
   provider,
-  configuredModel,
+  choices,
   value,
   onChange,
   disabled,
 }: {
   provider: string;
-  configuredModel: string;
+  choices: ModelChoice[];
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
 }) {
-  const choices = useMemo(
-    () => gatewayModelChoices(provider, configuredModel),
-    [provider, configuredModel],
-  );
   const [custom, setCustom] = useState(choices.length === 0);
   return (
     <div className="space-y-2">
@@ -134,7 +129,7 @@ export function GatewayModelPicker({
             className="h-auto px-0 py-1 text-xs underline underline-offset-4"
             onClick={() => {
               if (custom && !choices.some((choice) => choice.model === value))
-                onChange(defaultGatewayTestModel(provider, configuredModel));
+                onChange(defaultListedGatewayModel(choices));
               setCustom(!custom);
             }}
           >

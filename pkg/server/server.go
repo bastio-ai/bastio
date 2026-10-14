@@ -832,6 +832,20 @@ func (s *Server) registerV1Routes(r chi.Router) {
 		fn(workspaceHandler)
 	}
 
+	toolPipeline := chi.NewRouter()
+	for _, mw := range s.opts.rootMiddleware {
+		toolPipeline.Use(mw)
+	}
+	toolPipeline.Route("/v1", func(r chi.Router) { s.registerGatewayGroup(r, authSvc, rateLimiter, gw) })
+	tools := &gatewayTools{
+		proxies: proxySvc, keys: authSvc, pipeline: toolPipeline,
+		limiter: rateLimiter, origins: s.cfg.CORSOrigins,
+		native: func(p providers.Provider) bool {
+			_, err := providerRegistry.Native(p)
+			return err == nil
+		},
+	}
+
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"name": "bastio", "version": "0.1.0"})
@@ -866,6 +880,8 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.Mount("/mcp", mcpHandler.Routes(workspace.RequireRole(workspace.RoleAdmin)))
 			r.Mount("/playground", playgroundHandler.Routes())
 			r.Mount("/proxies", proxySvc.Routes(providerKeyHandler))
+			r.With(workspace.RequireRole(workspace.RoleAdmin)).Get("/proxies/{id}/models", tools.Models)
+			r.With(workspace.RequireRole(workspace.RoleAdmin)).Post("/proxies/{id}/test", tools.Test)
 			r.Mount("/provider-keys", providerKeyHandler.Routes())
 			r.Mount("/prompts", promptHandler.Routes())
 			piiHandler := detection.NewPIIMaskHandler()
@@ -896,34 +912,8 @@ func (s *Server) registerV1Routes(r chi.Router) {
 			r.Mount("/workspace", workspaceHandler.Routes())
 		})
 
-		// Gateway proxy endpoints (API-key auth + rate limiting +
-		// optional cloud middleware via WithGatewayMiddleware,
-		// applied AFTER auth so wrapped middleware can read
-		// APIKeyInfo / CustomerID from request context).
-		r.Group(func(r chi.Router) {
-			r.Use(authSvc.Middleware)
-			r.Use(rateLimiter.Middleware)
-			// Optional IP threat-list check. After auth/rate-limit per
-			// the documented ordering (Auth → RateLimit → context
-			// middleware → handler) and before the WithGatewayMiddleware
-			// hooks so cloud middleware can read the verdict from the
-			// request context. Health endpoints live outside this group
-			// and are additionally guarded inside the middleware itself.
-			if s.ipList != nil {
-				r.Use(iplist.Middleware(s.ipList, iplist.MiddlewareConfig{Block: s.cfg.IPListBlock}))
-			}
-			for _, mw := range s.opts.gatewayMiddleware {
-				r.Use(mw)
-			}
-			r.Post("/chat/completions", gw.ChatCompletions)
-			r.Post("/guard/{proxyId}/v1/messages", gw.AnthropicMessages)
-			gw.RegisterNativeRoutes(r)
-
-			// OTLP/HTTP trace ingestion. POST is authenticated; GET
-			// /v1/traces (in the dashboard group above) lists traces.
-			otlp := observability.NewOTLPHandler(s.recorder)
-			r.Post("/traces", otlp.ServeHTTP)
-		})
+		// The dashboard tool and public API share this exact gateway middleware chain.
+		s.registerGatewayGroup(r, authSvc, rateLimiter, gw)
 
 		r.Post("/mcp/runtime", mcpHandler.Runtime)
 
@@ -1046,4 +1036,31 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+func (s *Server) registerGatewayGroup(r chi.Router, authSvc *auth.Service, rateLimiter *gateway.RateLimiter, gw *gateway.Handler) {
+	r.Group(func(r chi.Router) {
+		r.Use(authSvc.Middleware)
+		r.Use(rateLimiter.Middleware)
+		// Optional IP threat-list check. After auth/rate-limit per
+		// the documented ordering (Auth → RateLimit → context
+		// middleware → handler) and before the WithGatewayMiddleware
+		// hooks so cloud middleware can read the verdict from the
+		// request context. Health endpoints live outside this group
+		// and are additionally guarded inside the middleware itself.
+		if s.ipList != nil {
+			r.Use(iplist.Middleware(s.ipList, iplist.MiddlewareConfig{Block: s.cfg.IPListBlock}))
+		}
+		for _, mw := range s.opts.gatewayMiddleware {
+			r.Use(mw)
+		}
+		r.Post("/chat/completions", gw.ChatCompletions)
+		r.Post("/guard/{proxyId}/v1/messages", gw.AnthropicMessages)
+		gw.RegisterNativeRoutes(r)
+
+		// OTLP/HTTP trace ingestion. POST is authenticated; GET
+		// /v1/traces (in the dashboard group above) lists traces.
+		otlp := observability.NewOTLPHandler(s.recorder)
+		r.Post("/traces", otlp.ServeHTTP)
+	})
 }

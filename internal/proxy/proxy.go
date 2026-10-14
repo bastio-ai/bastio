@@ -157,7 +157,7 @@ func (s *Service) ResolveProviderKey(ctx context.Context, customerID, proxyID uu
 		SELECT encrypted_key FROM proxy_provider_keys
 		WHERE customer_id = $1 AND provider = $2
 			AND (proxy_id = $3 OR (proxy_id IS NULL AND is_default = true))
-		ORDER BY proxy_id NULLS LAST
+		ORDER BY proxy_id NULLS LAST, created_at DESC, id DESC
 		LIMIT 1
 	`, customerID, string(provider), proxyID).Scan(&encryptedKey)
 	if err != nil {
@@ -202,7 +202,7 @@ func (s *Service) ResolveTenantKey(ctx context.Context, customerID uuid.UUID, pr
 	err := s.db.QueryRow(ctx, `
 		SELECT encrypted_key FROM proxy_provider_keys
 		WHERE customer_id = $1 AND provider = $2
-		ORDER BY is_default DESC, proxy_id NULLS LAST
+		ORDER BY is_default DESC, (proxy_id IS NULL) DESC, created_at DESC, id DESC
 		LIMIT 1
 	`, customerID, string(provider)).Scan(&encryptedKey)
 	if err != nil {
