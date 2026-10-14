@@ -110,14 +110,15 @@ type toolProposal struct {
 	ExpiresAt      time.Time             `json:"expires_at"`
 }
 type toolContinuation struct {
-	ProviderState  []json.RawMessage   `json:"provider_state,omitempty"`
-	UserID         string              `json:"user_id"`
-	ConversationID uuid.UUID           `json:"conversation_id"`
-	Plan           assistantToolPlan   `json:"plan"`
-	Messages       []providers.Message `json:"messages"`
-	Call           providers.ToolCall  `json:"call"`
-	Target         plannedTool         `json:"target"`
-	ExpiresAt      time.Time           `json:"expires_at"`
+	ReasoningContent string              `json:"reasoning_content,omitempty"`
+	ProviderState    []json.RawMessage   `json:"provider_state,omitempty"`
+	UserID           string              `json:"user_id"`
+	ConversationID   uuid.UUID           `json:"conversation_id"`
+	Plan             assistantToolPlan   `json:"plan"`
+	Messages         []providers.Message `json:"messages"`
+	Call             providers.ToolCall  `json:"call"`
+	Target           plannedTool         `json:"target"`
+	ExpiresAt        time.Time           `json:"expires_at"`
 }
 
 func (h *Handler) prepareAssistantTools(r *http.Request, conv *Conversation, b SendMessageRequest, provider providers.Provider, model string) (*assistantToolPlan, error) {
@@ -266,7 +267,7 @@ func (h *Handler) proposeAssistantTool(r *http.Request, convID uuid.UUID, p *ass
 	id := uuid.New()
 	expiry := time.Now().UTC().Add(10 * time.Minute)
 	// Raw provider tool arguments never enter storage or a review card.
-	continuation := toolContinuation{ProviderState: resp.ProviderState, UserID: userIDFromCtx(r.Context()), ConversationID: convID, Plan: *p, Messages: msgs, Call: call, Target: target, ExpiresAt: expiry}
+	continuation := toolContinuation{ReasoningContent: resp.ReasoningContent, ProviderState: resp.ProviderState, UserID: userIDFromCtx(r.Context()), ConversationID: convID, Plan: *p, Messages: msgs, Call: call, Target: target, ExpiresAt: expiry}
 	raw, err := json.Marshal(continuation)
 	if err != nil || len(raw) > 256<<10 {
 		return nil, errors.New("tool context exceeds 256 KB; start a shorter conversation")
@@ -483,7 +484,7 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 	} else if system != "" {
 		cont.Messages = append([]providers.Message{{Role: "system", Content: system}}, cont.Messages...)
 	}
-	cont.Messages = append(cont.Messages, providers.Message{Role: "assistant", ProviderState: cont.ProviderState, ToolCalls: []providers.ToolCall{cont.Call}}, providers.Message{Role: "tool", Content: text, ToolCallID: cont.Call.ID, ToolName: cont.Call.Name})
+	cont.Messages = append(cont.Messages, providers.Message{Role: "assistant", ReasoningContent: cont.ReasoningContent, ProviderState: cont.ProviderState, ToolCalls: []providers.ToolCall{cont.Call}}, providers.Message{Role: "tool", Content: text, ToolCallID: cont.Call.ID, ToolName: cont.Call.Name})
 	cont.Plan.Depth++
 	// Refresh accessible definitions for the next proposal; every next call asks again.
 	p, e := h.prepareAssistantTools(r, conv, SendMessageRequest{MCPConnectionIDs: cont.Plan.ConnectionIDs}, cont.Plan.Provider, cont.Plan.Model)

@@ -41,6 +41,9 @@ func (c *GroqClient) Name() Provider { return ProviderGroq }
 
 // Chat sends a non-streaming chat completion request to Groq.
 func (c *GroqClient) Chat(ctx context.Context, req *ChatRequest, apiKey string) (*ChatResponse, error) {
+	copyReq := *req
+	copyReq.Provider = c.Name()
+	req = &copyReq
 	body, err := buildOpenAICompatBody(req, false, false)
 	if err != nil {
 		return nil, fmt.Errorf("build groq request: %w", err)
@@ -84,6 +87,9 @@ func (c *GroqClient) Chat(ctx context.Context, req *ChatRequest, apiKey string) 
 
 	if len(groqResp.Choices) > 0 {
 		result.Content = groqResp.Choices[0].Message.Content
+		for _, call := range groqResp.Choices[0].Message.ToolCalls {
+			result.ToolCalls = append(result.ToolCalls, ToolCall{ID: call.ID, Name: call.Function.Name, Arguments: json.RawMessage(call.Function.Arguments)})
+		}
 		result.Role = groqResp.Choices[0].Message.Role
 		result.FinishReason = groqResp.Choices[0].FinishReason
 	}

@@ -42,7 +42,10 @@ func (h *Handler) reserveSpend(ctx context.Context, cid uuid.UUID, model string,
 	// Byte count intentionally overestimates input tokens, with room for framing.
 	input := 1024
 	for _, m := range msgs {
-		input += len(m.Content) + 32
+		input += len(m.Content) + len(m.ReasoningContent) + 32
+		for _, state := range m.ProviderState {
+			input += len(state)
+		}
 		for _, image := range m.Images {
 			input += len(image.Data)
 		}
@@ -98,7 +101,10 @@ func accountMissingUsage(msgs []providers.Message, input, output *int, maximum .
 	if *input == 0 {
 		*input = 1024
 		for _, m := range msgs {
-			*input += len(m.Content) + 32
+			*input += len(m.Content) + len(m.ReasoningContent) + 32
+			for _, state := range m.ProviderState {
+				*input += len(state)
+			}
 			for _, image := range m.Images {
 				*input += len(image.Data)
 			}

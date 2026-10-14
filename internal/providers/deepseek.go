@@ -41,6 +41,9 @@ func (c *DeepSeekClient) Name() Provider { return ProviderDeepSeek }
 
 // Chat sends a non-streaming chat completion request to DeepSeek.
 func (c *DeepSeekClient) Chat(ctx context.Context, req *ChatRequest, apiKey string) (*ChatResponse, error) {
+	copyReq := *req
+	copyReq.Provider = c.Name()
+	req = &copyReq
 	body, err := buildOpenAICompatBody(req, false, false)
 	if err != nil {
 		return nil, fmt.Errorf("build deepseek request: %w", err)
@@ -85,6 +88,12 @@ func (c *DeepSeekClient) Chat(ctx context.Context, req *ChatRequest, apiKey stri
 	if len(deepseekResp.Choices) > 0 {
 		choice := deepseekResp.Choices[0]
 		result.Content = choice.Message.Content
+		if len(req.Tools) > 0 {
+			result.ReasoningContent = choice.Message.ReasoningContent
+		}
+		for _, call := range choice.Message.ToolCalls {
+			result.ToolCalls = append(result.ToolCalls, ToolCall{ID: call.ID, Name: call.Function.Name, Arguments: json.RawMessage(call.Function.Arguments)})
+		}
 		result.Role = choice.Message.Role
 		result.FinishReason = choice.FinishReason
 	}
@@ -129,9 +138,10 @@ func (c *DeepSeekClient) ChatStream(ctx context.Context, req *ChatRequest, apiKe
 }
 
 type deepSeekMessage struct {
-	Role             string `json:"role"`
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
+	ToolCalls        []openAIFunctionCall `json:"tool_calls,omitempty"`
+	Role             string               `json:"role"`
+	Content          string               `json:"content"`
+	ReasoningContent string               `json:"reasoning_content,omitempty"`
 }
 
 type deepSeekChatResponse struct {

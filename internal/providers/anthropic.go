@@ -85,6 +85,10 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest, apiKey str
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
+	var state struct {
+		Content []json.RawMessage `json:"content"`
+	}
+	_ = json.Unmarshal(respBody, &state)
 	result := &ChatResponse{
 		ID:           anthropicResp.ID,
 		Model:        anthropicResp.Model,
@@ -93,6 +97,14 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest, apiKey str
 		Raw:          respBody,
 	}
 
+	for _, raw := range state.Content {
+		var kind struct {
+			Type string `json:"type"`
+		}
+		if len(req.Tools) > 0 && json.Unmarshal(raw, &kind) == nil && (kind.Type == "thinking" || kind.Type == "redacted_thinking") {
+			result.ProviderState = append(result.ProviderState, raw)
+		}
+	}
 	// Extract text content
 	for _, block := range anthropicResp.Content {
 		if block.Type == "tool_use" {
@@ -232,6 +244,9 @@ func toAnthropicRequest(req *ChatRequest) *anthropicMessagesRequest {
 		}
 		if len(m.ToolCalls) > 0 {
 			blocks := []any{}
+			for _, state := range m.ProviderState {
+				blocks = append(blocks, state)
+			}
 			if m.Content != "" {
 				blocks = append(blocks, anthropicTextBlock{Type: "text", Text: m.Content})
 			}
