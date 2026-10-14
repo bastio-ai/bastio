@@ -100,3 +100,26 @@ func TestOAuthNoRedirectsAndNoSecretErrorBodies(t *testing.T) {
 		}
 	}
 }
+
+func TestOAuthServerRootResourcesRemainOriginAndPathBound(t *testing.T) {
+	for _, item := range []struct {
+		resource, endpoint string
+		valid              bool
+	}{
+		{"https://mcp.notion.com", "https://mcp.notion.com/mcp", true},
+		{"https://mcp.notion.com/", "https://mcp.notion.com/mcp", true},
+		{"https://tools.example.com/team", "https://tools.example.com/team/mcp", true},
+		{"https://TOOLS.example.com:443/team", "https://tools.example.com/team/mcp", true},
+		{"https://other.example.com", "https://tools.example.com/mcp", false},
+		{"https://tools.example.com:8443", "https://tools.example.com/mcp", false},
+		{"https://tools.example.com/team", "https://tools.example.com/teams/mcp", false},
+		{"https://tools.example.com/team", "https://tools.example.com/team%2Fmcp", false},
+		{"https://tools.example.com/team", "https://tools.example.com/team/../legal/mcp", false},
+		{"https://tools.example.com/team", "https://tools.example.com/legal/mcp", false},
+		{"http://tools.example.com", "https://tools.example.com/mcp", false},
+	} {
+		if OAuthResourceCoversEndpoint(item.resource, item.endpoint) != item.valid {
+			t.Fatalf("invalid resource binding: %s -> %s", item.resource, item.endpoint)
+		}
+	}
+}

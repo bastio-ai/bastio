@@ -381,7 +381,7 @@ func (h *Handler) oauthAccessToken(ctx context.Context, cid uuid.UUID, c MCPConn
 		return "", errors.New("OAuth account needs reconnection")
 	}
 	bundle, err := h.unsealOAuth(cid, c.ID, raw)
-	if err != nil || bundle.Discovery.Resource != endpoint || bundle.Token.AccessToken == "" {
+	if err != nil || !mcp.OAuthResourceCoversEndpoint(bundle.Discovery.Resource, endpoint) || bundle.Token.AccessToken == "" {
 		return "", errors.New("OAuth account needs reconnection")
 	}
 	if bundle.ExpiresAt.IsZero() || time.Now().Add(30*time.Second).Before(bundle.ExpiresAt) {
