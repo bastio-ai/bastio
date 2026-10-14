@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/bastio-ai/bastio/internal/providers"
-	"github.com/bastio-ai/bastio/internal/workspace"
 	"github.com/bastio-ai/bastio/pkg/encryption"
 	"github.com/bastio-ai/bastio/pkg/tenant"
 )
@@ -391,7 +390,7 @@ func (s *Service) Routes(providerKeys ...*ProviderKeyHandler) chi.Router {
 
 	// Mount provider keys sub-route on each proxy
 	if len(providerKeys) > 0 && providerKeys[0] != nil {
-		r.With(workspace.RequireRole(workspace.RoleAdmin)).Get("/{id}/provider-keys", providerKeys[0].ListForProxy)
+		r.Method(http.MethodGet, "/{id}/provider-keys", providerKeys[0].guardManagement(providerKeys[0].ListForProxy))
 	}
 
 	return r

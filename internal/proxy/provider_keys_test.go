@@ -71,6 +71,7 @@ func TestProviderKeyLabelsTenantIsolation(t *testing.T) {
 		}
 	}
 	handler := NewProviderKeyHandler(pool)
+	handler.SetManagementGuard(workspace.RequireRole(workspace.RoleAdmin))
 	owner, other := uuid.New(), uuid.New()
 	call := func(method, path, body string, customer uuid.UUID) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
@@ -116,6 +117,7 @@ func TestProviderKeyLabelsTenantIsolation(t *testing.T) {
 
 func TestProviderKeyManagementRequiresWorkspaceAdmin(t *testing.T) {
 	handler := NewProviderKeyHandler(nil)
+	handler.SetManagementGuard(workspace.RequireRole(workspace.RoleAdmin))
 	routes := handler.Routes()
 	for _, role := range []workspace.Role{"", workspace.RoleMember, workspace.RoleViewer, workspace.Role("unknown")} {
 		for _, endpoint := range []struct{ method, path string }{{"GET", "/"}, {"POST", "/"}, {"PATCH", "/" + uuid.NewString()}, {"DELETE", "/" + uuid.NewString()}} {
