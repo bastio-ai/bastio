@@ -768,6 +768,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	})
 	playgroundHandler := security.NewPlaygroundHandler(s.db.Pool)
 	providerKeyHandler := proxy.NewProviderKeyHandler(s.db.Pool)
+	providerKeyHandler.SetManagementGuard(workspace.RequireRole(workspace.RoleAdmin))
 	if s.opts.encryption != nil {
 		providerKeyHandler.SetEncryptionService(s.opts.encryption)
 	}

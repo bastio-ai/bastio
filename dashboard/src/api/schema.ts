@@ -4648,6 +4648,13 @@ export interface operations {
                     "application/json": components["schemas"]["ProviderKey"][];
                 };
             };
+            /** @description Workspace owner or admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     createProviderKey: {
@@ -4672,6 +4679,13 @@ export interface operations {
                     "application/json": components["schemas"]["ProviderKey"];
                 };
             };
+            /** @description Workspace owner or admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     deleteProviderKey: {
@@ -4687,6 +4701,13 @@ export interface operations {
         responses: {
             /** @description Deleted */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Workspace owner or admin role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4726,6 +4747,13 @@ export interface operations {
             };
             /** @description Invalid label */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Workspace owner or admin role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4834,6 +4862,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ProviderKey"][];
                 };
+            };
+            /** @description Workspace owner or admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

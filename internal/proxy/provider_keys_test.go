@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bastio-ai/bastio/internal/workspace"
 	"github.com/bastio-ai/bastio/pkg/tenant"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,10 +71,11 @@ func TestProviderKeyLabelsTenantIsolation(t *testing.T) {
 		}
 	}
 	handler := NewProviderKeyHandler(pool)
+	handler.SetManagementGuard(workspace.RequireRole(workspace.RoleAdmin))
 	owner, other := uuid.New(), uuid.New()
 	call := func(method, path, body string, customer uuid.UUID) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
-		request = request.WithContext(tenant.WithID(request.Context(), customer))
+		request = request.WithContext(workspace.WithRole(tenant.WithID(request.Context(), customer), workspace.RoleOwner))
 		response := httptest.NewRecorder()
 		handler.Routes().ServeHTTP(response, request)
 		return response
@@ -110,5 +112,41 @@ func TestProviderKeyLabelsTenantIsolation(t *testing.T) {
 	otherList := call(http.MethodGet, "/", "", other)
 	if otherList.Body.String() != "[]\n" {
 		t.Fatal("provider key leaked to another tenant")
+	}
+}
+
+func TestProviderKeyManagementRequiresWorkspaceAdmin(t *testing.T) {
+	handler := NewProviderKeyHandler(nil)
+	handler.SetManagementGuard(workspace.RequireRole(workspace.RoleAdmin))
+	routes := handler.Routes()
+	for _, role := range []workspace.Role{"", workspace.RoleMember, workspace.RoleViewer, workspace.Role("unknown")} {
+		for _, endpoint := range []struct{ method, path string }{{"GET", "/"}, {"POST", "/"}, {"PATCH", "/" + uuid.NewString()}, {"DELETE", "/" + uuid.NewString()}} {
+			request := httptest.NewRequest(endpoint.method, endpoint.path, strings.NewReader(`{}`))
+			if role != "" {
+				request = request.WithContext(workspace.WithRole(request.Context(), role))
+			}
+			response := httptest.NewRecorder()
+			routes.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("role %q %s: expected 403, got %d", role, endpoint.method, response.Code)
+			}
+		}
+		request := httptest.NewRequest("GET", "/"+uuid.NewString()+"/provider-keys", nil)
+		if role != "" {
+			request = request.WithContext(workspace.WithRole(request.Context(), role))
+		}
+		response := httptest.NewRecorder()
+		(&Service{}).Routes(handler).ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("role %q per-gateway keys: expected 403, got %d", role, response.Code)
+		}
+	}
+	for _, role := range []workspace.Role{workspace.RoleOwner, workspace.RoleAdmin} {
+		request := httptest.NewRequest("POST", "/", strings.NewReader(`{}`)).WithContext(workspace.WithRole(context.Background(), role))
+		response := httptest.NewRecorder()
+		routes.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("role %q should reach body validation, got %d", role, response.Code)
+		}
 	}
 }

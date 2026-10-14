@@ -29,8 +29,9 @@ type ProviderKey struct {
 
 // ProviderKeyHandler manages provider key CRUD.
 type ProviderKeyHandler struct {
-	db  *pgxpool.Pool
-	enc *encryption.Service // optional — when wired, Create encrypts before storing
+	db              *pgxpool.Pool
+	enc             *encryption.Service // optional — when wired, Create encrypts before storing
+	managementGuard func(http.Handler) http.Handler
 }
 
 // NewProviderKeyHandler creates a new provider key handler.
@@ -47,9 +48,26 @@ func (h *ProviderKeyHandler) SetEncryptionService(s *encryption.Service) {
 	h.enc = s
 }
 
+// SetManagementGuard protects both the top-level management API and per-proxy
+// masked-key listing. The server wires its owner/admin role guard here so the
+// credential store does not depend on workspace handlers.
+func (h *ProviderKeyHandler) SetManagementGuard(guard func(http.Handler) http.Handler) {
+	h.managementGuard = guard
+}
+
+func (h *ProviderKeyHandler) guardManagement(next http.HandlerFunc) http.Handler {
+	if h.managementGuard != nil {
+		return h.managementGuard(next)
+	}
+	return next
+}
+
 // Routes returns the Chi router for top-level provider key endpoints.
 func (h *ProviderKeyHandler) Routes() chi.Router {
 	r := chi.NewRouter()
+	if h.managementGuard != nil {
+		r.Use(h.managementGuard)
+	}
 	r.Get("/", h.List)
 	r.Post("/", h.Create)
 	r.Patch("/{id}", h.Rename)

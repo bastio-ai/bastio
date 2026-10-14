@@ -5,6 +5,8 @@ import type { Proxy } from "@/api/client";
 import { FieldLabel } from "@/components/admin/admin-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { GatewayModelPicker } from "./gateway-model-picker";
+import { defaultGatewayTestModel } from "./gateway-models";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +34,9 @@ type TestResult = {
 export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
   const [open, setOpen] = useState(false);
   const [apiKey, setAPIKey] = useState("");
-  const [model, setModel] = useState(proxy.target_model);
+  const [model, setModel] = useState(() =>
+    defaultGatewayTestModel(proxy.target_provider, proxy.target_model),
+  );
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
   const controller = useRef<AbortController | null>(null);
@@ -133,7 +137,9 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
         variant="outline"
         disabled={!proxy.is_active}
         onClick={() => {
-          setModel(proxy.target_model);
+          setModel(
+            defaultGatewayTestModel(proxy.target_provider, proxy.target_model),
+          );
           setResult(null);
           setOpen(true);
         }}
@@ -146,7 +152,7 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
           if (!next) close();
         }}
       >
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Say hello through {proxy.name}</DialogTitle>
             <DialogDescription>
@@ -162,17 +168,16 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
               void runTest();
             }}
           >
-            <div>
-              <FieldLabel htmlFor="test-gateway-model">Model ID</FieldLabel>
-              <Input
-                id="test-gateway-model"
-                required
-                disabled={pending}
-                value={model}
-                onChange={(event) => setModel(event.target.value)}
-                placeholder="Model ID from your provider"
-              />
-            </div>
+            <GatewayModelPicker
+              provider={proxy.target_provider}
+              configuredModel={proxy.target_model}
+              value={model}
+              onChange={(next) => {
+                setModel(next);
+                setResult(null);
+              }}
+              disabled={pending}
+            />
             <div>
               <FieldLabel htmlFor="test-gateway-key">
                 Bastio application API key
