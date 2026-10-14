@@ -197,6 +197,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Parse to determine model, fallback models, and streaming mode
 	var chatReq struct {
 		Model          string   `json:"model"`
+		MaxTokens      *int     `json:"max_tokens"`
 		FallbackModels []string `json:"fallback_models"`
 		Stream         bool     `json:"stream"`
 	}
@@ -340,6 +341,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			}
 			req := &providers.ChatRequest{
 				Model:          modelName,
+				MaxTokens:      chatReq.MaxTokens,
 				FallbackModels: chatReq.FallbackModels,
 				Stream:         true,
 				Raw:            body,
@@ -440,6 +442,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			}
 			req := &providers.ChatRequest{
 				Model:          modelName,
+				MaxTokens:      chatReq.MaxTokens,
 				FallbackModels: chatReq.FallbackModels,
 				Stream:         false,
 				Raw:            body,

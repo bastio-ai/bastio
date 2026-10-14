@@ -24,8 +24,10 @@ import {
   controlClass,
 } from "@/components/gateways/primitives";
 import { cn } from "@/lib/utils";
+import { useGatewayExtension } from "@/components/gateways/extension-context";
 
 export function ProxiesPage() {
+  const extension = useGatewayExtension();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as GatewaySearch;
   const proxies = useQuery({
@@ -76,6 +78,8 @@ export function ProxiesPage() {
           </div>
         }
       />
+
+      {extension.accountNotice}
 
       <nav
         aria-label="Gateway management"
@@ -134,6 +138,7 @@ export function ProxiesPage() {
             <Button
               className="cursor-pointer"
               onClick={() => actions.openProviderDialog("openai")}
+              disabled={extension.providerKeyManagement !== "allowed"}
             >
               <Plus /> Add provider key
             </Button>
@@ -159,7 +164,10 @@ export function ProxiesPage() {
               title="No provider keys yet"
               description="Add the secret from your provider’s account to connect Bastio to its models."
               action={
-                <Button onClick={() => actions.openProviderDialog("openai")}>
+                <Button
+                  disabled={extension.providerKeyManagement !== "allowed"}
+                  onClick={() => actions.openProviderDialog("openai")}
+                >
                   Add first provider key
                 </Button>
               }
@@ -299,7 +307,11 @@ export function ProxiesPage() {
                             >
                               {providerKeys.isError || appKeys.isError
                                 ? "Setup unavailable"
-                                : status}
+                                : status === "Add provider key" &&
+                                    extension.providerKeyManagement ===
+                                      "restricted"
+                                  ? "Provider unavailable"
+                                  : status}
                             </span>
                           </span>
                           <ArrowRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

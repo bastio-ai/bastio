@@ -24,9 +24,11 @@ import type {
 } from "@/api/client";
 import { providerLabels } from "@/components/gateway-setup";
 import { controlClass, CopyButton, ErrorMessage } from "./primitives";
+import { useGatewayExtension } from "./extension-context";
 import { EnvironmentPicker } from "./environment-picker";
 
 export function useGatewayActions(onCreated: (id: string) => void) {
+  const extension = useGatewayExtension();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
@@ -35,6 +37,7 @@ export function useGatewayActions(onCreated: (id: string) => void) {
   const [model, setModel] = useState("");
   const [providerDialog, setProviderDialog] = useState<string | null>(null);
   const [providerSecret, setProviderSecret] = useState("");
+  const [providerLabel, setProviderLabel] = useState("");
   const [deleteKey, setDeleteKey] = useState<ProviderKey | null>(null);
   const [deleteProxy, setDeleteProxy] = useState<Proxy | null>(null);
   const [appKeyProxy, setAppKeyProxy] = useState<Proxy | null>(null);
@@ -95,6 +98,7 @@ export function useGatewayActions(onCreated: (id: string) => void) {
   const openProviderDialog = (value: string) => {
     storeProvider.reset();
     setProviderSecret("");
+    setProviderLabel("");
     setProviderDialog(value);
   };
   const openAppKey = (p: Proxy) => {
@@ -234,12 +238,27 @@ export function useGatewayActions(onCreated: (id: string) => void) {
                 e.preventDefault();
                 if (providerDialog)
                   storeProvider.mutate({
+                    name: providerLabel.trim(),
                     provider:
                       providerDialog as CreateProviderKeyRequest["provider"],
                     key: providerSecret.trim(),
                   });
               }}
             >
+              <div>
+                <FieldLabel htmlFor="provider-key-label">Key label</FieldLabel>
+                <Input
+                  id="provider-key-label"
+                  required
+                  maxLength={120}
+                  value={providerLabel}
+                  onChange={(event) => setProviderLabel(event.target.value)}
+                  placeholder="e.g. OpenAI — Production EU"
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  A name your team can recognize when choosing or rotating keys.
+                </p>
+              </div>
               <div>
                 <FieldLabel htmlFor="credential-provider">
                   AI provider
@@ -299,7 +318,12 @@ export function useGatewayActions(onCreated: (id: string) => void) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={!providerSecret.trim() || storeProvider.isPending}
+                  disabled={
+                    extension.providerKeyManagement !== "allowed" ||
+                    !providerLabel.trim() ||
+                    !providerSecret.trim() ||
+                    storeProvider.isPending
+                  }
                 >
                   {storeProvider.isPending ? "Saving…" : "Save provider key"}
                 </Button>

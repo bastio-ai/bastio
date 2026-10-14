@@ -270,6 +270,8 @@ export const api = {
   },
 
   providerKeys: {
+    rename: (id: string, name: string) =>
+      unwrap(http.PATCH("/v1/provider-keys/{id}", { params: { path: { id } }, body: { name } })),
     list: () => unwrap(http.GET("/v1/provider-keys", {})),
     create: (data: CreateProviderKeyRequest) =>
       unwrap(http.POST("/v1/provider-keys", { body: data })),

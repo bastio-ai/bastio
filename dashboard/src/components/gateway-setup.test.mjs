@@ -29,6 +29,8 @@ test("setup distinguishes enabled routes, missing credentials, scoped app keys, 
     gatewaySetupStatus(gateway, [provider], [app]),
     "Setup complete",
   );
+  assert.equal(gatewaySetupStatus(gateway, [], [app], ["openai"]), "Setup complete");
+  assert.equal(gatewaySetupStatus(gateway, [], [app], ["anthropic"]), "Add provider key");
   assert.equal(
     gatewaySetupStatus({ ...gateway, is_active: false }, [provider], [app]),
     "Disabled",

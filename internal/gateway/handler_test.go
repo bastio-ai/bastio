@@ -948,3 +948,35 @@ func TestChatCompletions_SemanticCacheMissAndStore(t *testing.T) {
 		t.Errorf("expected upstream calls to remain 1, got %d", len(mockClient.calls))
 	}
 }
+
+type tokenLimitClient struct {
+	mockFailingClient
+	received *int
+}
+
+func (client *tokenLimitClient) Chat(ctx context.Context, req *providers.ChatRequest, key string) (*providers.ChatResponse, error) {
+	client.received = req.MaxTokens
+	return client.mockFailingClient.Chat(ctx, req, key)
+}
+func (client *tokenLimitClient) ChatStream(_ context.Context, req *providers.ChatRequest, _ string) (<-chan providers.StreamChunk, error) {
+	client.received = req.MaxTokens
+	chunks := make(chan providers.StreamChunk)
+	close(chunks)
+	return chunks, nil
+}
+func TestChatCompletionsPreservesNormalizedProviderOutputLimit(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprint(stream), func(t *testing.T) {
+			client := &tokenLimitClient{mockFailingClient: mockFailingClient{name: providers.ProviderGemini}}
+			registry := providers.NewRegistry()
+			registry.Register(client)
+			handler := NewHandler(registry, nil, nil, nil, nil, "fail-open")
+			request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(fmt.Sprintf(`{"model":"gemini-test","max_tokens":128,"stream":%t,"messages":[{"role":"user","content":"Hello"}]}`, stream)))
+			request = request.WithContext(auth.WithInfo(request.Context(), &auth.APIKeyInfo{ID: uuid.New(), CustomerID: uuid.New()}))
+			handler.ChatCompletions(httptest.NewRecorder(), request)
+			if client.received == nil || *client.received != 128 {
+				t.Fatal("normalized provider lost output limit")
+			}
+		})
+	}
+}
