@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -37,8 +38,11 @@ type WorkspaceProviderModels struct {
 }
 
 func credentialFingerprint(cid uuid.UUID, provider, key string) string {
-	sum := sha256.Sum256([]byte(cid.String() + "\x00" + provider + "\x00" + key))
-	return hex.EncodeToString(sum[:])
+	// This is an identity stamp for a high-entropy API token, never a
+	// password verifier. Domain separation also binds it to this tenant.
+	stamp := hmac.New(sha256.New, []byte("bastio:model-readiness:"+cid.String()+":"+provider))
+	_, _ = stamp.Write([]byte(key))
+	return hex.EncodeToString(stamp.Sum(nil))
 }
 func (h *Handler) configuredWorkspaceProvider(ctx context.Context, cid uuid.UUID, name string) (string, bool) {
 	if h.registry == nil {
