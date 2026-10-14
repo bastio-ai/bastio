@@ -29,13 +29,67 @@ type plannedTool struct {
 	Tool           mcp.RemoteTool `json:"tool"`
 }
 type assistantToolPlan struct {
-	Provider           providers.Provider `json:"provider"`
-	Model              string             `json:"model"`
-	Tools              []plannedTool      `json:"tools"`
-	ConnectionIDs      []uuid.UUID        `json:"connection_ids"`
-	AssistantID        *uuid.UUID         `json:"assistant_id,omitempty"`
-	AssistantUpdatedAt time.Time          `json:"assistant_updated_at"`
-	Depth              int                `json:"depth"`
+	SecurityStamp      string                 `json:"security_stamp"`
+	Knowledge          []toolKnowledgeBinding `json:"knowledge"`
+	Provider           providers.Provider     `json:"provider"`
+	Model              string                 `json:"model"`
+	Tools              []plannedTool          `json:"tools"`
+	ConnectionIDs      []uuid.UUID            `json:"connection_ids"`
+	AssistantID        *uuid.UUID             `json:"assistant_id,omitempty"`
+	AssistantUpdatedAt time.Time              `json:"assistant_updated_at"`
+	Depth              int                    `json:"depth"`
+}
+
+type toolKnowledgeBinding struct {
+	ID        uuid.UUID `json:"id"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (h *Handler) toolSecurityStamp(ctx context.Context, cid uuid.UUID) (string, error) {
+	if h.secProfiles == nil {
+		return "unconfigured", nil
+	}
+	profile, err := h.secProfiles.GetDefault(ctx, cid)
+	if err != nil || profile == nil {
+		return "", errors.New("security profile unavailable for tool approval")
+	}
+	raw, err := json.Marshal(profile)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+func (h *Handler) validateToolContext(ctx context.Context, cid uuid.UUID, p *assistantToolPlan) error {
+	stamp, err := h.toolSecurityStamp(ctx, cid)
+	if err != nil || stamp != p.SecurityStamp {
+		return errors.New("security policy changed; send a new request")
+	}
+	for _, binding := range p.Knowledge {
+		allowed, err := h.store.canAccess(ctx, cid, binding.ID, "knowledge")
+		source, e := h.store.GetKnowledgeSource(ctx, cid, binding.ID)
+		if err != nil || e != nil || !allowed || source.Status != "ready" || !source.UpdatedAt.Equal(binding.UpdatedAt) {
+			return errors.New("knowledge access or content changed; send a new request")
+		}
+	}
+	return nil
+}
+func (h *Handler) bindToolKnowledge(ctx context.Context, cid uuid.UUID, p *assistantToolPlan, citations []Citation) error {
+	if err := h.validateToolContext(ctx, cid, p); err != nil {
+		return err
+	}
+	for _, citation := range citations {
+		if slices.ContainsFunc(p.Knowledge, func(b toolKnowledgeBinding) bool { return b.ID == citation.SourceID }) {
+			continue
+		}
+		allowed, err := h.store.canAccess(ctx, cid, citation.SourceID, "knowledge")
+		source, e := h.store.GetKnowledgeSource(ctx, cid, citation.SourceID)
+		if err != nil || e != nil || !allowed || source.Status != "ready" {
+			return errors.New("knowledge access changed; send a new request")
+		}
+		p.Knowledge = append(p.Knowledge, toolKnowledgeBinding{source.ID, source.UpdatedAt})
+	}
+	return nil
 }
 
 func (p *assistantToolPlan) definitions() []providers.ToolDefinition {
@@ -75,6 +129,11 @@ func (h *Handler) prepareAssistantTools(r *http.Request, conv *Conversation, b S
 	}
 	cid, uid := customerIDFromCtx(r.Context()), userIDFromCtx(r.Context())
 	p := &assistantToolPlan{Provider: provider, Model: model, AssistantID: conv.AssistantID, ConnectionIDs: append([]uuid.UUID{}, b.MCPConnectionIDs...)}
+	stamp, err := h.toolSecurityStamp(r.Context(), cid)
+	p.SecurityStamp = stamp
+	if err != nil {
+		return nil, err
+	}
 	if conv.AssistantID != nil {
 		a, err := h.store.GetAssistant(r.Context(), cid, *conv.AssistantID)
 		if err != nil {
@@ -183,6 +242,9 @@ func (h *Handler) protectProposedArguments(ctx context.Context, cid uuid.UUID, t
 	return raw, categories, nil
 }
 func (h *Handler) proposeAssistantTool(r *http.Request, convID uuid.UUID, p *assistantToolPlan, msgs []providers.Message, resp *providers.ChatResponse, metadata json.RawMessage) (json.RawMessage, error) {
+	if err := h.validateToolContext(r.Context(), customerIDFromCtx(r.Context()), p); err != nil {
+		return nil, err
+	}
 	if len(resp.ToolCalls) != 1 {
 		return nil, errors.New("the model proposed multiple tools; ask it to do one action at a time")
 	}
@@ -309,6 +371,10 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "conversation permissions changed")
 		return
 	}
+	if err = h.validateToolContext(r.Context(), cid, &cont.Plan); err != nil {
+		writeError(w, 409, err.Error())
+		return
+	}
 	if err = h.assertModelAllowed(r.Context(), cid, uid, string(cont.Plan.Provider), cont.Plan.Model); err != nil {
 		writeError(w, 403, "model permissions changed")
 		return
@@ -426,6 +492,7 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.Depth = cont.Plan.Depth
+	p.Knowledge = cont.Plan.Knowledge
 	options = callOptions(r.Context())
 	options.reservation = reservation
 	options.hasReservation = true

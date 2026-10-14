@@ -571,6 +571,11 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	if err != nil {
 		return nil, err
 	}
+	if plan := callOptions(r.Context()).toolPlan; plan != nil {
+		if err = h.bindToolKnowledge(r.Context(), customerID, plan, citations); err != nil {
+			return nil, err
+		}
+	}
 
 	apiKey, err := h.resolveAPIKey(r, customerID, prov)
 	if err != nil {
@@ -691,10 +696,13 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	if plan := callOptions(r.Context()).toolPlan; plan != nil && len(resp.ToolCalls) > 0 {
 		metadata, err = h.proposeAssistantTool(r, conversationID, plan, msgs, resp, metadata)
 		if err != nil {
-			return nil, err
+			metadata = encodeCitationsMetadata(citations)
+			resp.Content = "I couldn't offer that tool request: " + err.Error()
+			resp.FinishReason = "tool_blocked"
+		} else {
+			resp.Content = "Review this proposed tool request before it runs."
+			resp.FinishReason = "tool_approval"
 		}
-		resp.Content = "Review this proposed tool request before it runs."
-		resp.FinishReason = "tool_approval"
 	}
 	finish := resp.FinishReason
 	asstMsg, err := h.store.AppendMessage(r.Context(), Message{

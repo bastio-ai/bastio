@@ -306,3 +306,56 @@ func TestToolSchemaNeverFetchesRemoteReferences(t *testing.T) {
 		t.Fatal("valid schema rejected")
 	}
 }
+
+func TestToolContextRejectsRevokedKnowledgeAndChangedSecurity(t *testing.T) {
+	store := workspaceToolsTestStore(t)
+	cid := uuid.New()
+	admin := testIdentity(cid, "manager", RoleAdmin)
+	employee := testIdentity(cid, "employee", RoleMember)
+	if _, err := store.pool.Exec(admin, `INSERT INTO customers(id,name,slug) VALUES($1,'Context test',$2)`, cid, cid.String()); err != nil {
+		t.Fatal(err)
+	}
+	source, err := store.CreateKnowledgeSource(admin, KnowledgeSource{CustomerID: cid, Name: "Handbook", Type: "text", Status: "ready", Metadata: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := security.DefaultProfile()
+	h := NewHandler(store, nil, nil)
+	h.SetSecurityProfiles(&staticProfileLookup{profile: &profile})
+	stamp, err := h.toolSecurityStamp(employee, cid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &assistantToolPlan{SecurityStamp: stamp}
+	if err = h.bindToolKnowledge(employee, cid, plan, []Citation{{SourceID: source.ID, SourceName: source.Name}}); err != nil {
+		t.Fatal(err)
+	}
+	profile.PIIEnabled = !profile.PIIEnabled
+	if h.validateToolContext(employee, cid, plan) == nil {
+		t.Fatal("changed security reused opaque model context")
+	}
+	profile.PIIEnabled = !profile.PIIEnabled
+	if _, err = store.pool.Exec(admin, `UPDATE workspace_knowledge_sources SET updated_at=now() WHERE customer_id=$1 AND id=$2`, cid, source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if h.validateToolContext(employee, cid, plan) == nil {
+		t.Fatal("changed knowledge reused old context")
+	}
+	plan.Knowledge = nil
+	if err = h.bindToolKnowledge(employee, cid, plan, []Citation{{SourceID: source.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := store.pool.Begin(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = setResourceSharing(admin, tx, cid, source.ID, "knowledge", ResourceSharing{Restricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(admin); err != nil {
+		t.Fatal(err)
+	}
+	if h.validateToolContext(employee, cid, plan) == nil {
+		t.Fatal("revoked knowledge context accepted")
+	}
+}
