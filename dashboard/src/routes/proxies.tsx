@@ -144,7 +144,8 @@ export function ProxiesPage() {
             </Button>
           </div>
           <SecurityNotice title="Shared within your workspace" className="mb-5">
-            New provider keys are saved as shared defaults. Gateways for the
+            New provider keys are saved as shared defaults. The newest key is
+            used unless a gateway has its own provider key. Gateways for the
             same provider and workspace AI using your own keys can use them.
             Adding a key does not remove an existing one.
           </SecurityNotice>

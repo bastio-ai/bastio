@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2, MessageCircle, Sparkles } from "lucide-react";
 import type { Proxy } from "@/api/client";
-import { FieldLabel } from "@/components/admin/admin-primitives";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { GatewayModelPicker } from "./gateway-model-picker";
-import { defaultGatewayTestModel } from "./gateway-models";
+import {
+  defaultListedGatewayModel,
+  listedGatewayModelChoices,
+  type GatewayModelListing,
+} from "./gateway-models";
+import type { ModelChoice } from "@/components/workspace/model-catalog";
 import {
   Dialog,
   DialogContent,
@@ -33,23 +36,93 @@ type TestResult = {
 
 export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
   const [open, setOpen] = useState(false);
-  const [apiKey, setAPIKey] = useState("");
-  const [model, setModel] = useState(() =>
-    defaultGatewayTestModel(proxy.target_provider, proxy.target_model),
+  const [model, setModel] = useState("");
+  const [choices, setChoices] = useState<ModelChoice[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const [modelSource, setModelSource] = useState<"provider" | "catalog">(
+    "provider",
   );
+  const modelController = useRef<AbortController | null>(null);
+  const apiOrigin = new URL(
+    import.meta.env.VITE_API_URL || window.location.origin,
+    window.location.origin,
+  ).href.replace(/\/$/, "");
+  const loadModels = async () => {
+    modelController.current?.abort();
+    const abort = new AbortController();
+    modelController.current = abort;
+    setLoadingModels(true);
+    setModelError("");
+    setModel("");
+    setChoices([]);
+    setResult(null);
+    const timeout = window.setTimeout(() => abort.abort("timeout"), 30000);
+    try {
+      const response = await fetch(
+        `${apiOrigin}/v1/proxies/${encodeURIComponent(proxy.id)}/models`,
+        {
+          credentials: "include",
+          cache: "no-store",
+          redirect: "error",
+          signal: abort.signal,
+        },
+      );
+      const body = await response.json();
+      if (!response.ok)
+        throw new Error(gatewayTestFailure(response.status, body).detail);
+      if (
+        body.provider !== proxy.target_provider ||
+        !Array.isArray(body.models) ||
+        !["provider", "catalog"].includes(body.source)
+      )
+        throw new Error("The provider returned an unexpected model list.");
+      if (!abort.signal.aborted) {
+        const listing = body as GatewayModelListing;
+        const available = listedGatewayModelChoices(listing);
+        setChoices(available);
+        setModelSource(listing.source);
+        setModel(defaultListedGatewayModel(available, proxy.target_model));
+        if (available.length === 0)
+          setModelError(
+            "No chat models were reported. You can enter a custom model ID from your provider.",
+          );
+      }
+    } catch (error) {
+      if (!abort.signal.aborted || abort.signal.reason === "timeout")
+        setModelError(
+          error instanceof Error
+            ? error.message
+            : "Could not load models. Check this gateway’s provider key or try again.",
+        );
+    } finally {
+      window.clearTimeout(timeout);
+      if (modelController.current === abort) {
+        modelController.current = null;
+        setLoadingModels(false);
+      }
+    }
+  };
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
   const controller = useRef<AbortController | null>(null);
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      modelController.current?.abort();
+    },
+    [],
+  );
   const close = () => {
     controller.current?.abort();
     setOpen(false);
-    setAPIKey("");
+    modelController.current?.abort();
+    setLoadingModels(false);
     setPending(false);
     setResult(null);
   };
   const runTest = async () => {
-    if (!model.trim() || !apiKey.trim() || !proxy.is_active || pending) return;
+    if (!model.trim() || loadingModels || !proxy.is_active || pending) return;
     const request = buildGatewayTestRequest(
       proxy,
       model,
@@ -58,8 +131,6 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
         window.location.origin,
       ).href,
     );
-    const credential = apiKey.trim();
-    setAPIKey("");
     setResult(null);
     setPending(true);
     const abort = new AbortController();
@@ -70,15 +141,10 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
       const response = await fetch(request.url, {
         method: "POST",
         body: request.body,
-        credentials: "omit",
+        credentials: "include",
         redirect: "error",
         signal: abort.signal,
-        headers: {
-          ...request.headers,
-          ...(proxy.target_provider === "anthropic"
-            ? { "x-api-key": credential }
-            : { Authorization: `Bearer ${credential}` }),
-        },
+        headers: request.headers,
       });
       const raw = await response.text();
       let body: unknown;
@@ -137,10 +203,7 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
         variant="outline"
         disabled={!proxy.is_active}
         onClick={() => {
-          setModel(
-            defaultGatewayTestModel(proxy.target_provider, proxy.target_model),
-          );
-          setResult(null);
+          void loadModels();
           setOpen(true);
         }}
       >
@@ -168,35 +231,60 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
               void runTest();
             }}
           >
-            <GatewayModelPicker
-              provider={proxy.target_provider}
-              configuredModel={proxy.target_model}
-              value={model}
-              onChange={(next) => {
-                setModel(next);
-                setResult(null);
-              }}
-              disabled={pending}
-            />
-            <div>
-              <FieldLabel htmlFor="test-gateway-key">
-                Bastio application API key
-              </FieldLabel>
-              <Input
-                id="test-gateway-key"
-                type="password"
-                required
-                disabled={pending}
-                autoComplete="off"
-                value={apiKey}
-                onChange={(event) => setAPIKey(event.target.value)}
-                placeholder="Paste your sk-bastio-… key"
-              />
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Used only for this request and cleared after sending. Your
-                provider’s key stays on the server.
+            {loadingModels ? (
+              <p
+                role="status"
+                className="flex items-center gap-2 py-3 text-sm text-muted-foreground"
+              >
+                <Loader2 className="size-4 animate-spin" /> Loading models with
+                your gateway’s provider key…
               </p>
-            </div>
+            ) : (
+              <GatewayModelPicker
+                key={`${modelSource}-${choices.length}`}
+                provider={proxy.target_provider}
+                choices={choices}
+                value={model}
+                onChange={(next) => {
+                  setModel(next);
+                  setResult(null);
+                }}
+                disabled={pending}
+              />
+            )}
+            {modelError ? (
+              <div role="alert" className="space-y-1 text-sm">
+                <p className="break-words text-muted-foreground">
+                  {modelError}
+                </p>
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto px-0"
+                  disabled={loadingModels || pending}
+                  onClick={() => void loadModels()}
+                >
+                  Retry model discovery
+                </Button>
+              </div>
+            ) : !loadingModels ? (
+              <p className="text-xs text-muted-foreground">
+                {modelSource === "provider"
+                  ? "Models reported by your gateway’s provider key. Say hello confirms that the selected model can answer."
+                  : "Suggested models: this provider does not support automatic discovery here. Your provider account controls access."}
+                {proxy.target_model &&
+                !choices.some(
+                  (choice) => choice.model === proxy.target_model,
+                ) &&
+                modelSource === "provider"
+                  ? " Your configured default was not reported; choose a listed model or enter its ID manually."
+                  : ""}
+              </p>
+            ) : null}
+            <p className="text-xs text-muted-foreground">
+              Bastio handles test authentication automatically. No API key to copy or
+              paste; your provider’s key stays on the server.
+            </p>
             <div className="rounded-lg border border-border bg-muted/30 p-3">
               <p className="mb-1 text-xs font-medium">Our tiny test prompt</p>
               <p className="text-sm leading-relaxed text-muted-foreground">
@@ -249,7 +337,7 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
               </Button>
               <Button
                 type="submit"
-                disabled={pending || !model.trim() || !apiKey.trim()}
+                disabled={pending || loadingModels || !model.trim()}
               >
                 {pending ? (
                   <Loader2 className="size-4 animate-spin" />

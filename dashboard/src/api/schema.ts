@@ -480,6 +480,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/proxies/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Discover chat models using this gateway's actual provider credential
+         * @description Owner/admin dashboard session required. Uses the normal scoped gateway pipeline. Provider-reported models are suggestions; inference confirms model access. Providers without native model discovery return source catalog.
+         */
+        get: operations["listGatewayTestModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/proxies/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a small fixed hello through this gateway
+         * @description Owner/admin dashboard session and trusted Origin required. Server issues a gateway-scoped key that expires in two minutes and deletes it after the request. Normal authentication, security, billing, and quota middleware applies. Provider charges apply. No API key is returned to the browser.
+         */
+        post: operations["testGateway"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/proxies/{id}/provider-keys": {
         parameters: {
             query?: never;
@@ -4836,6 +4876,157 @@ export interface operations {
         responses: {
             /** @description Deleted */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listGatewayTestModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider model list or explicit catalogue fallback */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        provider: string;
+                        /** @enum {string} */
+                        source: "provider" | "catalog";
+                        models: {
+                            id: string;
+                            name?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Workspace owner or admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Gateway not found or disabled */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate or usage limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Provider configuration or model discovery failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testGateway: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    model: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Provider completion through normal security controls */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Invalid model or request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dashboard session or provider authentication failed */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Billing or usage limit exceeded */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Gateway or model not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate or usage limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Provider request failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Temporary gateway credentials unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

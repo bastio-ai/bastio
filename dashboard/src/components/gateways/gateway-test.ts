@@ -1,5 +1,4 @@
 import type { Proxy } from "../../api/client";
-import { gatewayBasePath } from "../gateway-setup.ts";
 
 export const helloPrompt =
   "Say hello in one short, cheerful sentence. Include a tiny robot celebrating a successful connection.";
@@ -9,29 +8,13 @@ export function buildGatewayTestRequest(
   model: string,
   origin: string,
 ) {
-  const anthropic = proxy.target_provider === "anthropic";
-  const native = gatewayBasePath(proxy) !== "/v1";
   return {
-    url: `${origin.replace(/\/$/, "")}${gatewayBasePath(proxy)}/${anthropic ? "messages" : "chat/completions"}`,
+    url: `${origin.replace(/\/$/, "")}/v1/proxies/${encodeURIComponent(proxy.id)}/test`,
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
-      ...(anthropic ? { "anthropic-version": "2023-06-01" } : {}),
-      ...(native
-        ? {}
-        : {
-            "X-Bastio-Proxy-Id": proxy.id,
-            "X-Bastio-Provider": proxy.target_provider,
-          }),
     },
-    body: JSON.stringify({
-      model: model.trim(),
-      messages: [{ role: "user", content: helloPrompt }],
-      stream: false,
-      ...(proxy.target_provider === "openai"
-        ? { max_completion_tokens: 128 }
-        : { max_tokens: 128 }),
-    }),
+    body: JSON.stringify({ model: model.trim() }),
   };
 }
 
@@ -95,10 +78,20 @@ export function gatewayTestFailure(status: number, body: unknown) {
     data.blocked === true
   )
     return { title: "Security policy blocked the test", detail };
+  if (
+    error.code === "model_not_found" ||
+    /does not have access to model|model.*(?:not found|does not exist|not available|not permitted|no access)|access.*model/i.test(
+      detail,
+    )
+  )
+    return {
+      title: "Your provider key cannot use this model",
+      detail: `${detail} Choose another model. This is a provider project/model access restriction; creating a new Bastio API key will not change it.`,
+    };
   if (status === 401)
     return {
       title: "Authentication failed",
-      detail: `${detail} Check that you entered a Bastio API key, not a provider key.`,
+      detail: `${detail} Check your dashboard session and the provider key configured for this gateway.`,
     };
   if (status === 402 || status === 429)
     return { title: "A balance or usage limit stopped the test", detail };

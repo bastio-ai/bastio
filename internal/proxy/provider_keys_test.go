@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/workspace"
 	"github.com/bastio-ai/bastio/pkg/tenant"
 	"github.com/google/uuid"
@@ -148,5 +149,68 @@ func TestProviderKeyManagementRequiresWorkspaceAdmin(t *testing.T) {
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("role %q should reach body validation, got %d", role, response.Code)
 		}
+	}
+}
+
+func TestProviderKeySelectionNewestSharedDefaultAndProxyPriority(t *testing.T) {
+	databaseURL := os.Getenv("MCP_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("MCP_TEST_DATABASE_URL not configured")
+	}
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	schema := "key_selection_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, `CREATE TABLE proxy_provider_keys(id UUID PRIMARY KEY,customer_id UUID,proxy_id UUID,provider TEXT,encrypted_key JSONB,is_default BOOLEAN,created_at TIMESTAMPTZ,updated_at TIMESTAMPTZ)`); err != nil {
+		t.Fatal(err)
+	}
+	cid, pid, other := uuid.New(), uuid.New(), uuid.New()
+	seed := func(customer, proxy uuid.UUID, key string, days int) {
+		t.Helper()
+		var scope any
+		if proxy != uuid.Nil {
+			scope = proxy
+		}
+		raw, _ := json.Marshal(map[string]string{"key": key})
+		if _, err := pool.Exec(ctx, `INSERT INTO proxy_provider_keys VALUES($1,$2,$3,'openai',$4,TRUE,now()+($5::int * interval '1 day'),now())`, uuid.New(), customer, scope, raw, days); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(cid, uuid.Nil, "older", -2)
+	seed(cid, uuid.Nil, "latest", -1)
+	seed(other, uuid.Nil, "other-workspace", 0)
+	seed(cid, uuid.New(), "unrelated-gateway", 0)
+	service := NewService(pool, nil)
+	if key, err := service.ResolveProviderKey(ctx, cid, pid, providers.ProviderOpenAI); err != nil || key != "latest" {
+		t.Fatalf("shared credential selection incorrect: %v", err)
+	}
+	// Renaming an old key must not make it the newest credential.
+	pool.Exec(ctx, `UPDATE proxy_provider_keys SET updated_at=now()+interval '1 day' WHERE encrypted_key->>'key'='older'`)
+	seed(cid, pid, "scoped", -3)
+	if key, err := service.ResolveProviderKey(ctx, cid, pid, providers.ProviderOpenAI); err != nil || key != "scoped" {
+		t.Fatalf("gateway-specific credential lost priority: %v", err)
+	}
+	if key, err := service.ResolveTenantKey(ctx, cid, providers.ProviderOpenAI); err != nil || key != "latest" {
+		t.Fatalf("tenant ordering incorrect: %v", err)
+	}
+	if _, err := service.ResolveProviderKey(ctx, uuid.New(), pid, providers.ProviderOpenAI); err == nil {
+		t.Fatal("cross tenant credential lookup allowed")
 	}
 }

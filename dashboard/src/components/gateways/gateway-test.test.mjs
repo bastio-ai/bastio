@@ -2,6 +2,8 @@ import {
   gatewayModelChoices,
   defaultGatewayTestModel,
   matchesGatewayModel,
+  listedGatewayModelChoices,
+  defaultListedGatewayModel,
 } from "./gateway-models.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -10,45 +12,24 @@ import {
   gatewayTestFailure,
   gatewayTestReply,
   gatewayTraceId,
-  helloPrompt,
 } from "./gateway-test.ts";
 const proxy = {
   id: "00000000-0000-0000-0000-000000000001",
   target_provider: "openai",
 };
-test("hello goes through the real scoped route with a bounded non-streaming request", () => {
+test("hello uses the dashboard session and cannot supply credentials or arbitrary prompts", () => {
   const request = buildGatewayTestRequest(
     proxy,
-    "gpt-example",
+    " gpt-example ",
     "https://cloud.bastio.com/",
   );
   assert.equal(
     request.url,
-    `https://cloud.bastio.com/v1/guard/${proxy.id}/v1/chat/completions`,
+    `https://cloud.bastio.com/v1/proxies/${proxy.id}/test`,
   );
+  assert.deepEqual(JSON.parse(request.body), { model: "gpt-example" });
   assert.equal(request.headers["Cache-Control"], "no-store");
-  const body = JSON.parse(request.body);
-  assert.equal(body.max_completion_tokens, 128);
-  assert.equal(body.stream, false);
-  assert.equal(body.messages[0].content, helloPrompt);
-  assert.ok(!JSON.stringify(request).includes("sk-"));
-});
-test("Claude and normalized providers use their correct protocol and explicit routing", () => {
-  const claude = buildGatewayTestRequest(
-    { ...proxy, target_provider: "anthropic" },
-    "claude-example",
-    "https://bastio.example",
-  );
-  assert.ok(claude.url.endsWith("/v1/messages"));
-  assert.equal(claude.headers["anthropic-version"], "2023-06-01");
-  assert.equal(JSON.parse(claude.body).max_tokens, 128);
-  const gemini = buildGatewayTestRequest(
-    { ...proxy, target_provider: "gemini" },
-    "gemini-example",
-    "https://bastio.example",
-  );
-  assert.equal(gemini.headers["X-Bastio-Proxy-Id"], proxy.id);
-  assert.equal(gemini.headers["X-Bastio-Provider"], "gemini");
+  assert.equal(request.headers.Authorization, undefined);
 });
 test("replies are extracted across provider formats without treating reasoning-only output as a reply", () => {
   for (const body of [
@@ -77,7 +58,7 @@ test("auth, usage, entitlement, and security failures are distinct", () => {
   );
   assert.match(
     gatewayTestFailure(401, { error: "invalid api key" }).detail,
-    /Bastio API key/,
+    /provider key/,
   );
   assert.match(
     gatewayTestFailure(402, { error: { message: "Credits exhausted" } }).detail,
@@ -133,4 +114,29 @@ test("model search accepts human names and IDs without mixing providers", () => 
   assert.ok(matchesGatewayModel(routerClaude, "  CLAUDE SONNET "));
   assert.ok(matchesGatewayModel(routerClaude, routerClaude.model));
   assert.ok(!matchesGatewayModel(routerClaude, "Gemini"));
+});
+
+test("model discovery never offers or auto-selects an unavailable catalogue model", () => {
+  const choices = listedGatewayModelChoices({
+    provider: "openai",
+    source: "provider",
+    models: [{ id: "gpt-4o" }, { id: "gpt-4o-mini" }],
+  });
+  assert.deepEqual(
+    choices.map((choice) => choice.model),
+    ["gpt-4o", "gpt-4o-mini"],
+  );
+  assert.equal(defaultListedGatewayModel(choices, "gpt-6-luna"), "gpt-4o-mini");
+  assert.equal(defaultListedGatewayModel(choices, "gpt-4o"), "gpt-4o");
+  assert.equal(defaultListedGatewayModel([]), "");
+});
+test("provider model errors explain why replacing a Bastio key cannot help", () => {
+  const failure = gatewayTestFailure(403, {
+    error: {
+      code: "model_not_found",
+      message: "Project example does not have access to model gpt-6-luna",
+    },
+  });
+  assert.equal(failure.title, "Your provider key cannot use this model");
+  assert.match(failure.detail, /new Bastio API key will not change it/);
 });
