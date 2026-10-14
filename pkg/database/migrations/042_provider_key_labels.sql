@@ -1,0 +1,1 @@
+ALTER TABLE proxy_provider_keys ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';

@@ -692,6 +692,35 @@ paths:
                 $ref: "#/components/schemas/ProviderKey"
 
   /v1/provider-keys/{id}:
+    patch:
+      operationId: renameProviderKey
+      summary: Change the display label of a provider key
+      tags: [Provider Keys]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        "200":
+          description: Label updated; credential and scope unchanged
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, name]
+                properties:
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+        "400": { description: Invalid label }
+        "404": { description: Key not found }
     delete:
       operationId: deleteProviderKey
       summary: Delete a stored provider key
@@ -3595,8 +3624,9 @@ components:
 
     ProviderKey:
       type: object
-      required: [id, provider, key_masked, is_default, created_at]
+      required: [id, name, provider, key_masked, is_default, created_at]
       properties:
+        name: { type: string, description: Display label; empty for legacy keys. }
         id:
           type: string
           format: uuid
@@ -3618,6 +3648,7 @@ components:
       type: object
       required: [provider, key]
       properties:
+        name: { type: string, maxLength: 120, description: Optional display label. }
         provider:
           type: string
           enum: [openai, openrouter, xai, anthropic, bedrock, vertex, azure, ollama, gemini, deepseek, groq]

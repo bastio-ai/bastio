@@ -32,6 +32,8 @@ import {
   providerLabels,
 } from "@/components/gateway-setup";
 import { cn } from "@/lib/utils";
+import { useGatewayExtension } from "./extension-context";
+import { GatewayTestDialog } from "./gateway-test-dialog";
 import {
   CopyButton,
   ErrorMessage,
@@ -65,6 +67,7 @@ export function GatewayPanel({
   onDeleteProvider: (key: ProviderKey) => void;
   onDelete: () => void;
 }) {
+  const extension = useGatewayExtension();
   const qc = useQueryClient();
   const [section, setSection] = useState<"setup" | "settings">("setup");
   const [name, setName] = useState(proxy.name);
@@ -100,13 +103,21 @@ export function GatewayPanel({
       !(key.scopes ?? []).some((scope) => scope.startsWith("proxy:")),
   );
   const serverAuth = ["ollama", "bedrock"].includes(proxy.target_provider);
-  const configured = keys.length > 0 || serverAuth;
+  const managedAuth = extension.managedProviders.includes(
+    proxy.target_provider,
+  );
+  const configured = keys.length > 0 || serverAuth || managedAuth;
   const origin = new URL(
     import.meta.env.VITE_API_URL || window.location.origin,
     window.location.origin,
   ).href.replace(/\/$/, "");
   const connection = gatewayConnection(proxy, origin);
-  const status = gatewaySetupStatus(proxy, providerKeys, appKeys);
+  const status = gatewaySetupStatus(
+    proxy,
+    providerKeys,
+    appKeys,
+    extension.managedProviders,
+  );
   const snippet = example === "curl" ? connection.curl : connection.python;
   const dirty =
     name.trim() !== proxy.name || model.trim() !== proxy.target_model;
@@ -167,14 +178,17 @@ export function GatewayPanel({
             {proxy.target_model || "App supplies the model"}
           </p>
         </div>
-        <Button
-          nativeButton={false}
-          variant="outline"
-          className="cursor-pointer"
-          render={<Link to="/proxies/$id" params={{ id: proxy.id }} />}
-        >
-          <ArrowUpRight /> View traffic
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <GatewayTestDialog proxy={proxy} />
+          <Button
+            nativeButton={false}
+            variant="outline"
+            className="cursor-pointer"
+            render={<Link to="/proxies/$id" params={{ id: proxy.id }} />}
+          >
+            <ArrowUpRight /> View traffic
+          </Button>
+        </div>
       </header>
       <nav
         aria-label={`${proxy.name} configuration`}
@@ -304,9 +318,11 @@ export function GatewayPanel({
                   <Badge variant={keys.length ? "success" : "outline"}>
                     {keys.length
                       ? "Saved"
-                      : serverAuth
-                        ? "Server auth"
-                        : "Needed"}
+                      : managedAuth
+                        ? "Bastio-managed"
+                        : serverAuth
+                          ? "Server auth"
+                          : "Needed"}
                   </Badge>
                 ) : null
               }
@@ -327,12 +343,17 @@ export function GatewayPanel({
                     <ProviderKeyList keys={keys} onDelete={onDeleteProvider} />
                   ) : (
                     <p className="text-sm leading-relaxed text-muted-foreground">
-                      {serverAuth
-                        ? "Uses credentials or a local endpoint configured on the Bastio server. Confirm that server configuration before sending requests."
-                        : "Add a provider key to let Bastio call this provider. The key is stored as a shared default."}
+                      {managedAuth
+                        ? "Uses a provider credential configured by Bastio on this server."
+                        : serverAuth
+                          ? "Uses credentials or a local endpoint configured on the Bastio server. Confirm that server configuration before sending requests."
+                          : extension.providerKeyManagement === "restricted"
+                            ? "This provider has no stored credential, and your plan cannot add one. Review provider access and billing above."
+                            : "Add a provider key to let Bastio call this provider. The key is stored as a shared default."}
                     </p>
                   )}
                   <Button
+                    disabled={extension.providerKeyManagement !== "allowed"}
                     variant="outline"
                     className="w-full cursor-pointer"
                     onClick={onAddProvider}

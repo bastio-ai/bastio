@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -17,6 +19,7 @@ import (
 // ProviderKey represents a stored LLM provider API key.
 type ProviderKey struct {
 	ID        string  `json:"id"`
+	Name      string  `json:"name"`
 	ProxyID   *string `json:"proxy_id"`
 	Provider  string  `json:"provider"`
 	KeyMasked string  `json:"key_masked"`
@@ -49,6 +52,7 @@ func (h *ProviderKeyHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/", h.List)
 	r.Post("/", h.Create)
+	r.Patch("/{id}", h.Rename)
 	r.Delete("/{id}", h.Delete)
 	return r
 }
@@ -67,12 +71,12 @@ func (h *ProviderKeyHandler) queryKeys(ctx context.Context, customerID, query st
 	var keys []ProviderKey
 	for rows.Next() {
 		var (
-			id, provider, createdAt string
-			proxyID                 *string
-			encryptedKeyStr         string
-			isDefault               bool
+			id, provider, createdAt, name string
+			proxyID                       *string
+			encryptedKeyStr               string
+			isDefault                     bool
 		)
-		if err := rows.Scan(&id, &proxyID, &provider, &encryptedKeyStr, &isDefault, &createdAt); err != nil {
+		if err := rows.Scan(&id, &proxyID, &provider, &encryptedKeyStr, &isDefault, &createdAt, &name); err != nil {
 			slog.Error("scan provider key row", "error", err)
 			continue
 		}
@@ -90,6 +94,7 @@ func (h *ProviderKeyHandler) queryKeys(ctx context.Context, customerID, query st
 
 		keys = append(keys, ProviderKey{
 			ID:        id,
+			Name:      name,
 			ProxyID:   proxyID,
 			Provider:  provider,
 			KeyMasked: masked,
@@ -109,7 +114,7 @@ func (h *ProviderKeyHandler) ListForProxy(w http.ResponseWriter, r *http.Request
 	proxyID := chi.URLParam(r, "id")
 	custID := tenantIDFromCtx(r.Context())
 	keys, err := h.queryKeys(r.Context(), custID, `
-		SELECT pk.id::text, pk.proxy_id::text, pk.provider, pk.encrypted_key::text, pk.is_default, pk.created_at::text
+		SELECT pk.id::text, pk.proxy_id::text, pk.provider, pk.encrypted_key::text, pk.is_default, pk.created_at::text, pk.name
 		FROM proxy_provider_keys pk
 		WHERE pk.customer_id = $1::uuid
 			AND (pk.proxy_id = $2::uuid
@@ -130,7 +135,7 @@ func (h *ProviderKeyHandler) ListForProxy(w http.ResponseWriter, r *http.Request
 func (h *ProviderKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	custID := tenantIDFromCtx(r.Context())
 	keys, err := h.queryKeys(r.Context(), custID, `
-		SELECT id::text, proxy_id::text, provider, encrypted_key::text, is_default, created_at::text
+		SELECT id::text, proxy_id::text, provider, encrypted_key::text, is_default, created_at::text, name
 		FROM proxy_provider_keys
 		WHERE customer_id = $1::uuid
 		ORDER BY provider, created_at DESC
@@ -148,6 +153,7 @@ func (h *ProviderKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 // Also stores as default (proxy_id = NULL) so it works for any proxy of that provider.
 func (h *ProviderKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Name     string  `json:"name"`
 		Provider string  `json:"provider"`
 		Key      string  `json:"key"`
 		ProxyID  *string `json:"proxy_id"`
@@ -158,6 +164,11 @@ func (h *ProviderKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Provider == "" || req.Key == "" {
 		http.Error(w, `{"error":"provider and key are required"}`, http.StatusBadRequest)
+		return
+	}
+	name, err := providerKeyName(req.Name, false)
+	if err != nil {
+		http.Error(w, `{"error":"key label must be at most 120 characters"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -177,19 +188,19 @@ func (h *ProviderKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Always store as default (proxy_id = NULL) so any proxy of this provider can use it
 	id := uuid.New()
 	var createdAt string
-	err := h.db.QueryRow(r.Context(), `
-		INSERT INTO proxy_provider_keys (id, customer_id, proxy_id, provider, encrypted_key, is_default)
-		VALUES ($1, $2::uuid, NULL, $3, $4::jsonb, true)
+	err = h.db.QueryRow(r.Context(), `
+		INSERT INTO proxy_provider_keys (id, customer_id, proxy_id, provider, encrypted_key, is_default, name)
+		VALUES ($1, $2::uuid, NULL, $3, $4::jsonb, true, $5)
 		ON CONFLICT DO NOTHING
 		RETURNING created_at::text
-	`, id, custID, req.Provider, encryptedKey).Scan(&createdAt)
+	`, id, custID, req.Provider, encryptedKey, name).Scan(&createdAt)
 	if err != nil {
 		// Might be a conflict, try without ON CONFLICT
 		err = h.db.QueryRow(r.Context(), `
-			INSERT INTO proxy_provider_keys (id, customer_id, proxy_id, provider, encrypted_key, is_default)
-			VALUES ($1, $2::uuid, NULL, $3, $4::jsonb, true)
+			INSERT INTO proxy_provider_keys (id, customer_id, proxy_id, provider, encrypted_key, is_default, name)
+			VALUES ($1, $2::uuid, NULL, $3, $4::jsonb, true, $5)
 			RETURNING created_at::text
-		`, id, custID, req.Provider, encryptedKey).Scan(&createdAt)
+		`, id, custID, req.Provider, encryptedKey, name).Scan(&createdAt)
 		if err != nil {
 			slog.Error("create provider key failed", "error", err)
 			http.Error(w, fmt.Sprintf(`{"error":"failed to create: %s"}`, err), http.StatusInternalServerError)
@@ -208,6 +219,7 @@ func (h *ProviderKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(ProviderKey{
 		ID:        id.String(),
+		Name:      name,
 		Provider:  req.Provider,
 		KeyMasked: masked,
 		IsDefault: true,
@@ -265,6 +277,49 @@ func (h *ProviderKeyHandler) decodeKeyFromStorage(envelopeJSON, customerID, prov
 		return ""
 	}
 	return plain
+}
+
+func providerKeyName(value string, required bool) (string, error) {
+	value = strings.TrimSpace(value)
+	if (required && value == "") || utf8.RuneCountInString(value) > 120 {
+		return "", fmt.Errorf("invalid provider key label")
+	}
+	return value, nil
+}
+
+// Rename changes only display metadata, never the credential or access scope.
+func (h *ProviderKeyHandler) Rename(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid key id"}`, http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Name string `json:"name"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&req) != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	name, err := providerKeyName(req.Name, true)
+	if err != nil {
+		http.Error(w, `{"error":"key label must contain 1 to 120 characters"}`, http.StatusBadRequest)
+		return
+	}
+	result, err := h.db.Exec(r.Context(), `UPDATE proxy_provider_keys SET name = $1 WHERE id = $2 AND customer_id = $3::uuid`, name, id, tenantIDFromCtx(r.Context()))
+	if err != nil {
+		slog.Error("rename provider key failed", "error", err)
+		http.Error(w, `{"error":"failed to rename key"}`, http.StatusInternalServerError)
+		return
+	}
+	if result.RowsAffected() == 0 {
+		http.Error(w, `{"error":"key not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": id.String(), "name": name})
 }
 
 // Delete removes a provider key.

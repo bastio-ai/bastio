@@ -30,16 +30,22 @@ export function gatewaySetupStatus(
   proxy: Proxy,
   keys?: ProviderKey[],
   appKeys?: APIKey[],
+  managedProviders: string[] = [],
 ) {
   if (!proxy.is_active) return "Disabled";
   if (!keys || !appKeys) return "Checking setup";
   if (
     !availableProviderKeys(proxy, keys).length &&
+    !managedProviders.includes(proxy.target_provider) &&
     !["ollama", "bedrock"].includes(proxy.target_provider)
   )
     return "Add provider key";
   if (!gatewayAppKeys(proxy, appKeys).length) return "Create app key";
-  if (!availableProviderKeys(proxy, keys).length) return "Check server setup";
+  if (
+    !availableProviderKeys(proxy, keys).length &&
+    !managedProviders.includes(proxy.target_provider)
+  )
+    return "Check server setup";
   return "Setup complete";
 }
 

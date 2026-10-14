@@ -457,7 +457,8 @@ export interface paths {
         delete: operations["deleteProviderKey"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Change the display label of a provider key */
+        patch: operations["renameProviderKey"];
         trace?: never;
     };
     "/v1/proxies/{id}": {
@@ -2227,6 +2228,8 @@ export interface components {
             license: string;
         };
         ProviderKey: {
+            /** @description Display label; empty for legacy keys. */
+            name: string;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -2238,6 +2241,8 @@ export interface components {
             created_at: string;
         };
         CreateProviderKeyRequest: {
+            /** @description Optional display label. */
+            name?: string;
             /** @enum {string} */
             provider: "openai" | "openrouter" | "xai" | "anthropic" | "bedrock" | "vertex" | "azure" | "ollama" | "gemini" | "deepseek" | "groq";
             /** @description Plaintext key. Stored encrypted at rest. */
@@ -4682,6 +4687,52 @@ export interface operations {
         responses: {
             /** @description Deleted */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    renameProviderKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Label updated; credential and scope unchanged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        name: string;
+                    };
+                };
+            };
+            /** @description Invalid label */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Key not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -888,6 +888,25 @@ func TestChatCompletions_SemanticCacheHit(t *testing.T) {
 	if len(mockClient.calls) != 0 {
 		t.Errorf("expected zero upstream calls on semantic cache hit, got %d", len(mockClient.calls))
 	}
+	// A live connection check bypasses lookup and does not replace the cache.
+	for _, directive := range []string{"no-store", "max-age=0, No-Cache"} {
+		live := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)).WithContext(req.Context())
+		live.Header.Set("X-Bastio-Embedding", "0.11,0.20,0.29,0.41")
+		live.Header.Set("Cache-Control", directive)
+		response := httptest.NewRecorder()
+		h.ChatCompletions(response, live)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Response from gpt-4o") || response.Header().Get("X-Bastio-Cache") != "" {
+			t.Fatalf("live cache bypass failed: %d %s", response.Code, response.Body.String())
+		}
+	}
+	if len(mockClient.calls) != 2 {
+		t.Fatal("live checks did not reach upstream")
+	}
+	entry, _, hit := sc.Query(context.Background(), custID.String(), model, cachedEmb, 0.95)
+	if !hit || !strings.Contains(string(entry.Response), "Cached semantic response") {
+		t.Fatal("no-store check changed the cached response")
+	}
+
 }
 
 func TestChatCompletions_SemanticCacheMissAndStore(t *testing.T) {
@@ -946,5 +965,37 @@ func TestChatCompletions_SemanticCacheMissAndStore(t *testing.T) {
 	// Upstream call count should still be 1 (not called again)
 	if len(mockClient.calls) != 1 {
 		t.Errorf("expected upstream calls to remain 1, got %d", len(mockClient.calls))
+	}
+}
+
+type tokenLimitClient struct {
+	mockFailingClient
+	received *int
+}
+
+func (client *tokenLimitClient) Chat(ctx context.Context, req *providers.ChatRequest, key string) (*providers.ChatResponse, error) {
+	client.received = req.MaxTokens
+	return client.mockFailingClient.Chat(ctx, req, key)
+}
+func (client *tokenLimitClient) ChatStream(_ context.Context, req *providers.ChatRequest, _ string) (<-chan providers.StreamChunk, error) {
+	client.received = req.MaxTokens
+	chunks := make(chan providers.StreamChunk)
+	close(chunks)
+	return chunks, nil
+}
+func TestChatCompletionsPreservesNormalizedProviderOutputLimit(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprint(stream), func(t *testing.T) {
+			client := &tokenLimitClient{mockFailingClient: mockFailingClient{name: providers.ProviderGemini}}
+			registry := providers.NewRegistry()
+			registry.Register(client)
+			handler := NewHandler(registry, nil, nil, nil, nil, "fail-open")
+			request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(fmt.Sprintf(`{"model":"gemini-test","max_tokens":128,"stream":%t,"messages":[{"role":"user","content":"Hello"}]}`, stream)))
+			request = request.WithContext(auth.WithInfo(request.Context(), &auth.APIKeyInfo{ID: uuid.New(), CustomerID: uuid.New()}))
+			handler.ChatCompletions(httptest.NewRecorder(), request)
+			if client.received == nil || *client.received != 128 {
+				t.Fatal("normalized provider lost output limit")
+			}
+		})
 	}
 }
