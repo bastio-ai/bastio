@@ -33,6 +33,8 @@ import {
   AttachmentChipStrip,
 } from "./message-bubble";
 import { OnboardingCard } from "./onboarding-card";
+import { AssistantToolsPicker, ToolApprovalCard } from "./assistant-tools";
+import { messageToolProposal } from "./types";
 import { MCPIntegrationsButton } from "./mcp-integrations";
 import {
   ModelPicker,
@@ -121,6 +123,9 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
   // conversation exists with an assistant_id bound, that wins — this
   // state only matters for the empty / pre-first-message flow. Null
   // = "use the workspace's default_assistant".
+  const [toolMode, setToolMode] = useState(false);
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [toolRunning, setToolRunning] = useState(false);
   const [selectedAssistantID, setSelectedAssistantID] = useState<string | null>(
     null,
   );
@@ -504,6 +509,8 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
         convID,
         {
           content: composed,
+          tool_mode: toolMode,
+          mcp_connection_ids: selectedTools,
           provider: model.provider,
           model: model.model,
           history: isTemporary
@@ -563,7 +570,7 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
     e.preventDefault();
     const trimmed = draft.trim();
     if (!trimmed && attachments.length === 0) return;
-    if (sending) return;
+    if (sending || toolRunning) return;
     if (
       !settings.data ||
       !modelInventory.data ||
@@ -887,18 +894,56 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     const isLastAssistant =
                       m.role === "assistant" && i === arr.length - 1;
                     return (
-                      <MessageBubble
-                        key={m.id}
-                        m={m}
-                        onRegenerate={
-                          isLastAssistant ? regenerateLast : undefined
-                        }
-                        onEdit={
-                          m.role === "user"
-                            ? (newContent) => editUserMessage(m.id, newContent)
-                            : undefined
-                        }
-                      />
+                      <div key={m.id}>
+                        <MessageBubble
+                          m={m}
+                          onRegenerate={
+                            isLastAssistant ? regenerateLast : undefined
+                          }
+                          onEdit={
+                            m.role === "user"
+                              ? (newContent) =>
+                                  editUserMessage(m.id, newContent)
+                              : undefined
+                          }
+                        />
+                        {messageToolProposal(m) && activeID ? (
+                          <ToolApprovalCard
+                            proposal={messageToolProposal(m)!}
+                            conversationID={activeID}
+                            onBusy={setToolRunning}
+                            onMessage={(reply) => {
+                              const convID = reply.conversation_id;
+                              if (temporary || reply.temporary) {
+                                const current =
+                                  temporaryChats.current.get(convID) ??
+                                  qc.getQueryData<{ messages: Message[] }>([
+                                    "workspace",
+                                    "messages",
+                                    convID,
+                                  ])?.messages ??
+                                  [];
+                                const next = current.some(
+                                  (item) => item.id === reply.id,
+                                )
+                                  ? current
+                                  : [...current, reply];
+                                temporaryChats.current.set(convID, next);
+                                qc.setQueryData(
+                                  ["workspace", "messages", convID],
+                                  { messages: next },
+                                );
+                              } else
+                                qc.invalidateQueries({
+                                  queryKey: ["workspace", "messages", convID],
+                                });
+                              qc.invalidateQueries({
+                                queryKey: ["workspace", "conversations"],
+                              });
+                            }}
+                          />
+                        ) : null}
+                      </div>
                     );
                   })}
                 {pendingUserMessage !== null && (
@@ -1059,6 +1104,20 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     >
                       <Plus className="h-4 w-4" />
                     </button>
+                    <AssistantToolsPicker
+                      enabled={toolMode}
+                      onEnabled={setToolMode}
+                      selected={selectedTools}
+                      onSelected={setSelectedTools}
+                      disabled={sending || toolRunning}
+                      attached={
+                        (assistants.data?.assistants ?? []).find(
+                          (a) =>
+                            a.id ===
+                            (activeID ? activeConversation.data?.assistant_id : selectedAssistantID),
+                        )?.mcp_connection_ids ?? []
+                      }
+                    />
                     <MCPIntegrationsButton
                       disabled={sending}
                       onUseResult={(text) =>
@@ -1137,7 +1196,10 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                     ) : (
                       <button
                         type="submit"
-                        disabled={!draft.trim() && attachments.length === 0}
+                        disabled={
+                          toolRunning ||
+                          (!draft.trim() && attachments.length === 0)
+                        }
                         aria-label="Send"
                         className="flex h-8 w-8 items-center justify-center rounded-[5px] bg-foreground text-background transition hover:opacity-90 disabled:bg-muted disabled:text-muted-foreground disabled:hover:opacity-100"
                       >

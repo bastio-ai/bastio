@@ -1,9 +1,16 @@
-import { ResourceSharingButton, SharingPicker, sharingLabel, everyoneSharing, type ResourceSharing } from "./sharing-controls";
+import {
+  ResourceSharingButton,
+  SharingPicker,
+  sharingLabel,
+  everyoneSharing,
+  type ResourceSharing,
+} from "./sharing-controls";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plug, ShieldCheck, Loader2, Pencil, Trash2 } from "lucide-react";
 import { http, unwrap } from "@/api/typed";
 import type { components } from "@/api/schema";
+import { workspaceApi } from "./types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -76,6 +83,9 @@ export function MCPIntegrations({
   });
   const [editing, setEditing] = useState<Connection | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [oauthConnection, setOAuthConnection] = useState<Connection | null>(
+    null,
+  );
   const [selected, setSelected] = useState<Connection | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: integrationKey });
   const policy = useMutation({
@@ -179,12 +189,17 @@ export function MCPIntegrations({
                   {c.name}{" "}
                   <span className="ml-1 text-[10px] font-normal text-muted-foreground">
                     {c.scope === "workspace"
-                      ? (c.sharing ? sharingLabel(c.sharing) : "Shared with you")
+                      ? c.sharing
+                        ? sharingLabel(c.sharing)
+                        : "Shared with you"
                       : "Personal · only you"}
                   </span>
                 </p>
                 <p className="truncate text-[10px] text-muted-foreground">
                   {c.endpoint}
+                  {c.auth_type === "oauth"
+                    ? ` · OAuth ${c.oauth_connected ? "connected" : "needs connecting"}`
+                    : ""}
                 </p>
               </div>
               <Button
@@ -198,14 +213,31 @@ export function MCPIntegrations({
               >
                 Tools
               </Button>
-              {data.can_manage && c.scope === "workspace" && <ResourceSharingButton type="mcp" id={c.id} name={c.name} sharing={c.sharing} />}
+              {canEdit && c.auth_type === "oauth" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => setOAuthConnection(c)}
+                >
+                  {c.oauth_connected ? "Manage account" : "Connect account"}
+                </Button>
+              ) : null}
+              {data.can_manage && c.scope === "workspace" && (
+                <ResourceSharingButton
+                  type="mcp"
+                  id={c.id}
+                  name={c.name}
+                  sharing={c.sharing}
+                />
+              )}
               {canEdit && (
                 <>
                   <Button
                     variant="ghost"
                     size="icon-xs"
                     disabled={disabled}
- aria-label={`Edit ${c.name}`}
+                    aria-label={`Edit ${c.name}`}
                     onClick={() => {
                       setEditing(c);
                       setShowForm(true);
@@ -228,6 +260,15 @@ export function MCPIntegrations({
           );
         })}
       </div>
+      {oauthConnection ? (
+        <OAuthConnectionDialog
+          connection={oauthConnection}
+          onClose={() => {
+            setOAuthConnection(null);
+            refresh();
+          }}
+        />
+      ) : null}
       {showForm && (
         <ConnectionForm
           key={editing?.id ?? "new"}
@@ -271,7 +312,14 @@ function ConnectionForm({
   const [scope, setScope] = useState<"personal" | "workspace">(
     connection?.scope ?? (allowPersonal ? "personal" : "workspace"),
   );
-  const [sharing, setSharing] = useState<ResourceSharing>(connection?.sharing ?? everyoneSharing());
+  const [sharing, setSharing] = useState<ResourceSharing>(
+    connection?.sharing ?? everyoneSharing(),
+  );
+  const [authType, setAuthType] = useState<"none" | "bearer" | "oauth">(
+    connection?.auth_type ?? (connection?.has_credential ? "bearer" : "none"),
+  );
+  const [clientID, setClientID] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [token, setToken] = useState("");
   const [clearToken, setClearToken] = useState(false);
   const [allowed, setAllowed] = useState(
@@ -288,7 +336,13 @@ function ConnectionForm({
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
-        ...(token || clearToken ? { credential: token } : {}),
+        auth_type: authType,
+        ...(authType === "bearer" && (token || clearToken)
+          ? { credential: token }
+          : {}),
+        ...(authType === "oauth" && (clientID || clientSecret)
+          ? { oauth_client_id: clientID, oauth_client_secret: clientSecret }
+          : {}),
       };
       return connection
         ? unwrap(
@@ -352,36 +406,98 @@ function ConnectionForm({
           )}
         </select>
       </label>
-      {scope === "workspace" && <SharingPicker value={sharing} onChange={setSharing} disabled={save.isPending} />}
+      {scope === "workspace" && (
+        <SharingPicker
+          value={sharing}
+          onChange={setSharing}
+          disabled={save.isPending}
+        />
+      )}
       {scope === "workspace" && (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Selected members can run the allowed tools using this connection’s credential.
-          The credential stays encrypted on the server and is never shown to
-          members.
+          Selected members can run the allowed tools using this connection’s
+          credential. The credential stays encrypted on the server and is never
+          shown to members.
         </p>
       )}
       <label className="block space-y-1 text-xs">
-        Bearer token (optional)
-        <Input
-          type="password"
- disabled={clearToken}
-          autoComplete="off"
-          value={token}
-          maxLength={8192}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder={
-            connection?.has_credential
-              ? "Leave blank to keep stored token"
-              : "Provided by your MCP service"
-          }
-        />
+        Authentication
+        <select
+          value={authType}
+          onChange={(e) => setAuthType(e.target.value as typeof authType)}
+          className="h-8 w-full cursor-pointer rounded-md border border-input bg-background px-2 text-xs"
+        >
+          <option value="none">No authentication</option>
+          <option value="bearer">Bearer token</option>
+          <option value="oauth">OAuth — connect an account</option>
+        </select>
       </label>
-      {connection?.has_credential && (
+      {authType === "oauth" ? (
+        <div className="space-y-2 rounded-md border border-border p-3 text-xs">
+          <p className="leading-relaxed text-muted-foreground">
+            Save this integration, then choose Connect account. Bastio discovers
+            the service's OAuth settings and keeps access tokens encrypted on
+            the server.
+          </p>
+          <details>
+            <summary className="cursor-pointer font-medium">
+              Advanced: pre-registered OAuth client
+            </summary>
+            <div className="mt-2 space-y-2">
+              <label className="block">
+                Client ID
+                <Input
+                  value={clientID}
+                  onChange={(e) => setClientID(e.target.value)}
+                  placeholder="Optional; automatic registration when supported"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="block">
+                Client secret (if required)
+                <Input
+                  type="password"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  autoComplete="off"
+                />
+              </label>
+              <p className="text-muted-foreground">
+                Leave both blank to keep stored settings. Replacing a client
+                requires its secret again. The callback URL is shown when
+                connecting.
+              </p>
+            </div>
+          </details>
+        </div>
+      ) : null}
+      {authType === "bearer" ? (
+        <label className="block space-y-1 text-xs">
+          Bearer token
+          <Input
+            type="password"
+            disabled={clearToken}
+            autoComplete="off"
+            value={token}
+            maxLength={8192}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={
+              connection?.has_credential
+                ? "Leave blank to keep stored token"
+                : "Provided by your MCP service"
+            }
+          />
+        </label>
+      ) : null}
+      {authType === "bearer" && connection?.has_credential && (
         <label className="flex items-center gap-2 text-[11px]">
           <input
             type="checkbox"
             checked={clearToken}
-            onChange={(e) => { setClearToken(e.target.checked); if (e.target.checked) setToken(""); }}
+            onChange={(e) => {
+              setClearToken(e.target.checked);
+              if (e.target.checked) setToken("");
+            }}
           />{" "}
           Clear the stored token
         </label>
@@ -396,9 +512,12 @@ function ConnectionForm({
       </label>
       <p className="text-[11px] text-muted-foreground">
         Leave the allowlist empty to expose all permitted discovered tools.
-        Changing the endpoint clears its stored token unless you enter a token again. Put credentials in the token field, never in the endpoint URL. Public HTTPS Streamable HTTP endpoints support bearer tokens or no
-        authentication. Interactive OAuth and local stdio servers are configured
-        separately.
+        Changing the endpoint clears its stored token unless you enter a token
+        again. Put credentials in the token field, never in the endpoint URL.
+        Public HTTPS Streamable HTTP endpoints support OAuth, bearer tokens and
+        no authentication. Changing authentication or the endpoint disconnects
+        the stored account. Local stdio servers are not supported in the cloud
+        workspace.
       </p>
       {save.isError && (
         <p role="alert" className="text-xs text-destructive">
@@ -672,4 +791,128 @@ function defaultArguments(tool: Tool | null) {
 }
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Integration request failed.";
+}
+
+function OAuthConnectionDialog({
+  connection,
+  onClose,
+}: {
+  connection: Connection;
+  onClose: () => void;
+}) {
+  const discovery = useQuery({
+    queryKey: ["workspace-mcp-oauth", connection.id],
+    queryFn: () => workspaceApi.discoverMCPOAuth(connection.id),
+    retry: false,
+    gcTime: 0,
+  });
+  const authorize = useMutation({
+    mutationFn: () =>
+      workspaceApi.startMCPOAuth(
+        connection.id,
+        discovery.data!.discovery_stamp,
+        window.location.pathname.startsWith("/workspace")
+          ? "admin"
+          : "employee",
+      ),
+  });
+  const disconnect = useMutation({
+    mutationFn: () => workspaceApi.disconnectMCPOAuth(connection.id),
+    onSuccess: onClose,
+  });
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Connect {connection.name}</DialogTitle>
+          <DialogDescription>
+            Authorize this service to connect to Bastio.{" "}
+            {connection.scope === "workspace"
+              ? "Members in the integration's sharing audience can use this account's permitted tools."
+              : "This account connection is available only to you."}
+          </DialogDescription>
+        </DialogHeader>
+        {discovery.isPending ? (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Discovering the authorization service…
+          </p>
+        ) : null}
+        {discovery.data ? (
+          <div className="space-y-3 text-xs">
+            <div className="rounded-lg border border-border p-3">
+              <p className="font-medium">Authorization service</p>
+              <p className="mt-1 break-all text-muted-foreground">
+                {discovery.data.issuer}
+              </p>
+              <p className="mt-3 font-medium">MCP resource</p>
+              <p className="mt-1 break-all text-muted-foreground">
+                {discovery.data.resource}
+              </p>
+              <p className="mt-3 font-medium">Requested scopes</p>
+              <p className="mt-1 break-all text-muted-foreground">
+                {discovery.data.scopes.join(", ") ||
+                  "The service determines access during authorization."}
+              </p>
+            </div>
+            <details>
+              <summary className="cursor-pointer text-muted-foreground">
+                Callback URL for pre-registered clients
+              </summary>
+              <code className="mt-2 block break-all">
+                {discovery.data.redirect_uri}
+              </code>
+            </details>
+            {authorize.data ? (
+              <>
+                <p className="text-muted-foreground">
+                  Continue in a new tab to sign in and approve access. Return
+                  here and close this dialog to refresh your connection.
+                </p>
+                <a
+                  className="inline-flex cursor-pointer items-center rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90"
+                  href={authorize.data.authorization_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Continue to service ↗
+                </a>
+              </>
+            ) : (
+              <Button
+                disabled={authorize.isPending}
+                onClick={() => authorize.mutate()}
+              >
+                {authorize.isPending ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : null}
+                Prepare secure connection
+              </Button>
+            )}
+          </div>
+        ) : null}
+        {[discovery.error, authorize.error, disconnect.error]
+          .filter(Boolean)
+          .map((e, i) => (
+            <p key={i} role="alert" className="text-xs text-destructive">
+              {errorMessage(e)}
+            </p>
+          ))}
+        <div className="flex justify-end gap-2">
+          {connection.oauth_connected ? (
+            <Button
+              variant="outline"
+              disabled={disconnect.isPending}
+              onClick={() => disconnect.mutate()}
+            >
+              Disconnect account
+            </Button>
+          ) : null}
+          <Button variant="outline" onClick={onClose}>
+            Close & refresh
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/skeleton";
+import { http, unwrap } from "@/api/typed";
 import { workspaceApi, type Assistant, type KnowledgeSource } from "./types";
 import { DEFAULT_MODEL, DEFAULT_MODELS, MODEL_PROVIDERS, providerLabel, type ModelProvider } from "./model-picker";
 
@@ -185,6 +186,9 @@ function AssistantEditor({
   const [language, setLanguage] = useState(initial?.language ?? "");
   const [suggestedPrompts, setSuggestedPrompts] = useState((initial?.suggested_prompts ?? []).join("\n"));
   const [sharing, setSharing] = useState<ResourceSharing>(initial?.sharing ?? everyoneSharing());
+  const [selectedTools,setSelectedTools]=useState<string[]>(initial?.mcp_connection_ids??[]);
+  const integrations=useQuery({queryKey:["workspace-mcp-integrations"],queryFn:()=>unwrap(http.GET("/v1/workspace/mcp")),staleTime:0});
+  const sharedTools=(integrations.data?.connections??[]).filter(c=>c.scope==="workspace");
   const [selectedKB, setSelectedKB] = useState<string[]>(initial?.knowledge_source_ids ?? []);
   const knowledge = useQuery({
     queryKey: ["workspace", "knowledge"],
@@ -207,6 +211,7 @@ function AssistantEditor({
         language: language.trim() || null,
         suggested_prompts: suggestedPrompts.split("\n").map((item) => item.trim()).filter(Boolean),
         knowledge_source_ids: selectedKB,
+        mcp_connection_ids: selectedTools,
         sharing,
       };
       return initial
@@ -353,6 +358,13 @@ function AssistantEditor({
         </label>
 
         {save.error ? <p className="text-[11px] text-destructive">{(save.error as Error).message}</p> : null}
+        <div className="space-y-2 rounded-lg border border-border p-3">
+          <FieldLabel optional>Shared integrations</FieldLabel>
+          <p className="text-xs text-muted-foreground">Employees can enable these tools in chat. Each proposed action needs their approval, and integration sharing still applies.</p>
+          {sharedTools.map(c=><label key={c.id} className="flex cursor-pointer items-center gap-2 py-1 text-xs"><input type="checkbox" checked={selectedTools.includes(c.id)} onChange={e=>setSelectedTools(e.target.checked?[...selectedTools,c.id]:selectedTools.filter(id=>id!==c.id))}/>{c.name}</label>)}
+          {sharedTools.length===0?<p className="text-xs text-muted-foreground">Add a shared connection in Workspace → Integrations first.</p>:null}
+          {integrations.error?<p className="text-xs text-destructive">Could not load integrations.</p>:null}
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => save.mutate()} disabled={!name.trim() || save.isPending}>

@@ -53,6 +53,9 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest, apiKey string
 	copyReq := *req
 	copyReq.Model = c.outboundModel(req.Model)
 	req = &copyReq
+	if c.Name() == ProviderOpenAI && len(req.Tools) > 0 && req.Raw == nil {
+		return c.responsesTools(ctx, req, apiKey)
+	}
 	// Use raw body if available (pass-through proxy mode)
 	var body []byte
 	if req.Raw != nil {
@@ -117,6 +120,9 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest, apiKey string
 
 	if len(openaiResp.Choices) > 0 {
 		result.Content = openaiResp.Choices[0].Message.Content
+		for _, call := range openaiResp.Choices[0].Message.ToolCalls {
+			result.ToolCalls = append(result.ToolCalls, ToolCall{ID: call.ID, Name: call.Function.Name, Arguments: json.RawMessage(call.Function.Arguments)})
+		}
 		result.Role = openaiResp.Choices[0].Message.Role
 		result.FinishReason = openaiResp.Choices[0].FinishReason
 	}
@@ -194,6 +200,8 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, apiKey 
 // OpenAI-specific types
 
 type openAIChatRequest struct {
+	Tools               []openAIFunctionTool `json:"tools,omitempty"`
+	ParallelToolCalls   *bool                `json:"parallel_tool_calls,omitempty"`
 	ReasoningEffort     string               `json:"reasoning_effort,omitempty"`
 	Model               string               `json:"model"`
 	Messages            []openAIMessage      `json:"messages"`
@@ -210,8 +218,10 @@ type openAIChatRequest struct {
 // Completions API accepts both shapes for `content`; using `any`
 // keeps the JSON output the spec wants.
 type openAIMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	ToolCalls  []openAIFunctionCall `json:"tool_calls,omitempty"`
+	ToolCallID string               `json:"tool_call_id,omitempty"`
+	Role       string               `json:"role"`
+	Content    any                  `json:"content"`
 }
 
 // openAITextPart and openAIImagePart are the two part types we emit
@@ -240,8 +250,9 @@ type openAIChatResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			ToolCalls []openAIFunctionCall `json:"tool_calls,omitempty"`
+			Role      string               `json:"role"`
+			Content   string               `json:"content"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -257,7 +268,10 @@ func toOpenAIRequest(req *ChatRequest) *openAIChatRequest {
 		// No images → plain string content. Cheaper for the model
 		// and matches the most common request shape.
 		if len(m.Images) == 0 {
-			msgs[i] = openAIMessage{Role: m.Role, Content: m.Content}
+			msgs[i] = openAIMessage{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}
+			for _, call := range m.ToolCalls {
+				msgs[i].ToolCalls = append(msgs[i].ToolCalls, openAIFunctionCall{ID: call.ID, Type: "function", Function: openAIFunctionArguments{Name: call.Name, Arguments: string(call.Arguments)}})
+			}
 			continue
 		}
 		// Multimodal: content is a parts array. Text first, then
@@ -277,7 +291,17 @@ func toOpenAIRequest(req *ChatRequest) *openAIChatRequest {
 		}
 		msgs[i] = openAIMessage{Role: m.Role, Content: parts}
 	}
+	tools := []openAIFunctionTool{}
+	for _, tool := range req.Tools {
+		tools = append(tools, openAIFunctionTool{Type: "function", Function: tool})
+	}
+	var parallel *bool
+	if len(tools) > 0 {
+		value := false
+		parallel = &value
+	}
 	return &openAIChatRequest{
+		Tools: tools, ParallelToolCalls: parallel,
 		Model:           req.Model,
 		ReasoningEffort: req.ReasoningEffort,
 		Messages:        msgs,

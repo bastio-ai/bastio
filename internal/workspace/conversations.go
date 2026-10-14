@@ -2,8 +2,10 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -256,10 +258,12 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 // SendMessageRequest is the POST body for /conversations/{id}/messages.
 // MVP non-streaming. Streaming SSE variant is a Phase 2 follow-up.
 type SendMessageRequest struct {
-	Content  string           `json:"content"`
-	Provider string           `json:"provider,omitempty"` // override assistant default
-	Model    string           `json:"model,omitempty"`
-	History  []HistoryMessage `json:"history,omitempty"`
+	ToolMode         bool             `json:"tool_mode,omitempty"`
+	MCPConnectionIDs []uuid.UUID      `json:"mcp_connection_ids,omitempty"`
+	Content          string           `json:"content"`
+	Provider         string           `json:"provider,omitempty"` // override assistant default
+	Model            string           `json:"model,omitempty"`
+	History          []HistoryMessage `json:"history,omitempty"`
 }
 
 // SendMessageResponse returns both the user message and the assistant reply.
@@ -282,6 +286,13 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(body.Content) == "" {
 		writeError(w, http.StatusBadRequest, "content is required")
 		return
+	}
+	if body.ToolMode {
+		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || media != "application/json" {
+			writeError(w, 400, "JSON content type required for assistant tools")
+			return
+		}
 	}
 	if h.requireConversationWrite(w, r, id) == nil {
 		return
@@ -369,6 +380,17 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		llmMsgs = append(llmMsgs, providers.Message{Role: m.Role, Content: text, Images: imgs})
 	}
 
+	if body.ToolMode {
+		plan, e := h.prepareAssistantTools(r, conv, body, providerEnum, model)
+		if e != nil {
+			writeError(w, 400, e.Error())
+			return
+		}
+		options := callOptions(r.Context())
+		options.toolPlan = plan
+		options.tools = plan.definitions()
+		r = r.WithContext(context.WithValue(r.Context(), callOptionsKey{}, options))
+	}
 	// Call the provider through the shared registry. Citations from
 	// the RAG pass flow into the persisted assistant message so the
 	// chat UI can render "based on X" chips below the reply.
@@ -410,6 +432,13 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	if h.registry == nil {
 		return nil, fmt.Errorf("provider registry not configured")
 	}
+	options := callOptions(r.Context())
+	providerAttempted := false
+	defer func() {
+		if options.hasReservation && !providerAttempted {
+			_ = h.settleSpend(customerID, options.reservation, 0)
+		}
+	}()
 	conversationID, _ := uuidParam(r, "id")
 	startedAt := time.Now().UTC()
 	traceID := uuid.New()
@@ -542,6 +571,11 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 	if err != nil {
 		return nil, err
 	}
+	if plan := callOptions(r.Context()).toolPlan; plan != nil {
+		if err = h.bindToolKnowledge(r.Context(), customerID, plan, citations); err != nil {
+			return nil, err
+		}
+	}
 
 	apiKey, err := h.resolveAPIKey(r, customerID, prov)
 	if err != nil {
@@ -551,12 +585,17 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		apiKey = options.resolvedKey
 	}
 
-	reservation, err := h.reserveSpend(r.Context(), customerID, model, msgs, prov)
-	if err != nil {
-		return nil, err
+	reservation := options.reservation
+	if !options.hasReservation {
+		reservation, err = h.reserveSpend(r.Context(), customerID, model, msgs, prov)
+		if err != nil {
+			return nil, err
+		}
 	}
 	maxOutput := callMaxOutput(r.Context())
+	providerAttempted = true
 	resp, err := client.Chat(r.Context(), &providers.ChatRequest{
+		Tools:           callOptions(r.Context()).tools,
 		Provider:        prov,
 		MaxTokens:       &maxOutput,
 		ReasoningEffort: callOptions(r.Context()).reasoningEffort,
@@ -583,7 +622,12 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		return nil, err
 	}
 
+	missingInput := resp.InputTokens == 0
 	accountMissingUsage(msgs, &resp.InputTokens, &resp.OutputTokens, callMaxOutput(r.Context()))
+	if missingInput {
+		raw, _ := json.Marshal(options.tools)
+		resp.InputTokens += len(raw)
+	}
 	if err := h.settleSpend(customerID, reservation, estimateCostCentsFloat(string(prov), model, resp.InputTokens, resp.OutputTokens)); err != nil {
 		return nil, fmt.Errorf("spending settlement unavailable: %w", err)
 	}
@@ -648,6 +692,18 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		resp.Content = outDecision.SanitizedContent
 	}
 
+	metadata := encodeCitationsMetadata(citations)
+	if plan := callOptions(r.Context()).toolPlan; plan != nil && len(resp.ToolCalls) > 0 {
+		metadata, err = h.proposeAssistantTool(r, conversationID, plan, msgs, resp, metadata)
+		if err != nil {
+			metadata = encodeCitationsMetadata(citations)
+			resp.Content = "I couldn't offer that tool request: " + err.Error()
+			resp.FinishReason = "tool_blocked"
+		} else {
+			resp.Content = "Review this proposed tool request before it runs."
+			resp.FinishReason = "tool_approval"
+		}
+	}
 	finish := resp.FinishReason
 	asstMsg, err := h.store.AppendMessage(r.Context(), Message{
 		ConversationID:   conversationID,
@@ -661,10 +717,21 @@ func (h *Handler) runProvider(r *http.Request, customerID uuid.UUID, prov provid
 		CostCents:        estimateCostCents(string(prov), resp.Model, resp.InputTokens, resp.OutputTokens),
 		CostCentsExact:   estimateCostCentsFloat(string(prov), resp.Model, resp.InputTokens, resp.OutputTokens),
 		FinishReason:     &finish,
-		Metadata:         encodeCitationsMetadata(citations),
+		Metadata:         metadata,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if resp.FinishReason == "tool_approval" {
+		var meta struct {
+			Proposal toolProposal `json:"tool_proposal"`
+		}
+		if json.Unmarshal(metadata, &meta) != nil {
+			return nil, fmt.Errorf("tool approval unavailable")
+		}
+		if _, err = h.store.pool.Exec(r.Context(), `UPDATE workspace_tool_approvals SET message_id=$2 WHERE id=$1 AND customer_id=$3 AND user_id=$4 AND conversation_id=$5 AND status='pending'`, meta.Proposal.ID, asstMsg.ID, customerID, userID, conversationID); err != nil {
+			return nil, fmt.Errorf("tool approval unavailable")
+		}
 	}
 	h.recordChatTrace(r.Context(), chatTraceInput{
 		customerID:     customerID,

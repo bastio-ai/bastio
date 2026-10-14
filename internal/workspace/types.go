@@ -66,14 +66,15 @@ type AllowedModel struct {
 
 // Assistant is a named system-prompt preset with an optional KB attach.
 type Assistant struct {
-	Sharing         *ResourceSharing `json:"sharing,omitempty"`
-	ID              uuid.UUID        `json:"id"`
-	CustomerID      uuid.UUID        `json:"customer_id"`
-	Name            string           `json:"name"`
-	Description     string           `json:"description"`
-	SystemPrompt    string           `json:"system_prompt"`
-	DefaultProvider string           `json:"default_provider"`
-	DefaultModel    string           `json:"default_model"`
+	MCPConnectionIDs []uuid.UUID      `json:"mcp_connection_ids,omitempty"`
+	Sharing          *ResourceSharing `json:"sharing,omitempty"`
+	ID               uuid.UUID        `json:"id"`
+	CustomerID       uuid.UUID        `json:"customer_id"`
+	Name             string           `json:"name"`
+	Description      string           `json:"description"`
+	SystemPrompt     string           `json:"system_prompt"`
+	DefaultProvider  string           `json:"default_provider"`
+	DefaultModel     string           `json:"default_model"`
 	// Language: nil = auto-detect from user input, non-nil = always
 	// respond in this ISO code. The instruction is injected into the
 	// system prompt at message time (resolveAssistantConfig).

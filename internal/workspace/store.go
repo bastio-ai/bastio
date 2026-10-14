@@ -231,7 +231,7 @@ WHERE customer_id = $1 AND user_id = $2`,
 func (s *Store) ListAssistants(ctx context.Context, customerID uuid.UUID) ([]Assistant, error) {
 	const q = `SELECT id, customer_id, name, description, system_prompt,
 default_provider, default_model, language, suggested_prompts, is_default,
-created_at, updated_at
+created_at, updated_at, mcp_connection_ids
 FROM workspace_assistants
 WHERE customer_id = $1 AND archived_at IS NULL
 ORDER BY is_default DESC, created_at ASC`
@@ -245,7 +245,7 @@ ORDER BY is_default DESC, created_at ASC`
 		var a Assistant
 		if err := rows.Scan(&a.ID, &a.CustomerID, &a.Name, &a.Description,
 			&a.SystemPrompt, &a.DefaultProvider, &a.DefaultModel, &a.Language,
-			&a.SuggestedPrompts, &a.IsDefault, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			&a.SuggestedPrompts, &a.IsDefault, &a.CreatedAt, &a.UpdatedAt, &a.MCPConnectionIDs); err != nil {
 			return nil, fmt.Errorf("scan assistant: %w", err)
 		}
 		out = append(out, a)
@@ -256,14 +256,14 @@ ORDER BY is_default DESC, created_at ASC`
 func (s *Store) GetAssistant(ctx context.Context, customerID, id uuid.UUID) (*Assistant, error) {
 	const q = `SELECT id, customer_id, name, description, system_prompt,
 default_provider, default_model, language, suggested_prompts, is_default,
-created_at, updated_at
+created_at, updated_at, mcp_connection_ids
 FROM workspace_assistants
 WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 	var a Assistant
 	err := s.pool.QueryRow(ctx, q, customerID, id).Scan(&a.ID, &a.CustomerID,
 		&a.Name, &a.Description, &a.SystemPrompt, &a.DefaultProvider,
 		&a.DefaultModel, &a.Language, &a.SuggestedPrompts, &a.IsDefault,
-		&a.CreatedAt, &a.UpdatedAt)
+		&a.CreatedAt, &a.UpdatedAt, &a.MCPConnectionIDs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -337,6 +337,10 @@ WHERE customer_id = $1`, a.CustomerID, a.ID); err != nil {
 		}
 	}
 
+	if err := setAssistantMCP(ctx, tx, a.CustomerID, a.ID, a.MCPConnectionIDs); err != nil {
+		return nil, err
+	}
+
 	// Knowledge sources: insert join rows for each attached source.
 	// Done in the same tx so a partial failure rolls back the whole
 	// assistant — admins never end up with an assistant that's
@@ -385,7 +389,8 @@ default_provider  = COALESCE($6, default_provider),
 default_model     = COALESCE($7, default_model),
 language          = COALESCE($8, language),
 suggested_prompts = COALESCE($9, suggested_prompts),
-is_default        = COALESCE($10, is_default)
+is_default        = COALESCE($10, is_default),
+updated_at = now()
 WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 	tag, err := tx.Exec(ctx, q, customerID, id,
 		p.Name, p.Description, p.SystemPrompt, p.DefaultProvider,
@@ -395,6 +400,11 @@ WHERE customer_id = $1 AND id = $2 AND archived_at IS NULL`
 	}
 	if tag.RowsAffected() == 0 {
 		return nil, ErrNotFound
+	}
+	if p.MCPConnectionIDs != nil {
+		if err := setAssistantMCP(ctx, tx, customerID, id, *p.MCPConnectionIDs); err != nil {
+			return nil, err
+		}
 	}
 	// Knowledge sources: nil pointer → leave attachments untouched
 	// (partial PATCH semantics). Non-nil → replace the full set
@@ -466,6 +476,7 @@ ON CONFLICT (assistant_id, knowledge_source_id) DO NOTHING`,
 // without picking a new default; that's the correct safety
 // behavior since there should always be exactly one default.
 type AssistantPatch struct {
+	MCPConnectionIDs   *[]uuid.UUID     `json:"mcp_connection_ids,omitempty"`
 	Sharing            *ResourceSharing `json:"sharing,omitempty"`
 	Name               *string          `json:"name"`
 	Description        *string          `json:"description"`
@@ -1883,4 +1894,21 @@ LIMIT 3`
 		d.TopAssistants = append(d.TopAssistants, u)
 	}
 	return d, rows.Err()
+}
+
+func setAssistantMCP(ctx context.Context, tx pgx.Tx, cid, id uuid.UUID, ids []uuid.UUID) error {
+	if len(ids) > 10 {
+		return fmt.Errorf("attach at most 10 shared integrations")
+	}
+	for _, conn := range ids {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspace_mcp_connections WHERE customer_id=$1 AND id=$2 AND scope='workspace' AND revoked_at IS NULL)`, cid, conn).Scan(&exists); err != nil || !exists {
+			return fmt.Errorf("integration must be shared within this workspace")
+		}
+	}
+	if ids == nil {
+		ids = []uuid.UUID{}
+	}
+	_, err := tx.Exec(ctx, `UPDATE workspace_assistants SET mcp_connection_ids=$3 WHERE customer_id=$1 AND id=$2`, cid, id, ids)
+	return err
 }

@@ -199,6 +199,7 @@ func WithDashboardAPIExtension(fn func(r chi.Router)) Option {
 // rule blocks that across modules. Implemented by *workspace.Handler.
 type WorkspaceCustomizer interface {
 	SetKeyResolver(KeyResolver)
+	SetMCPOAuthOrigins(string, string)
 	SetEmbeddingClient(EmbeddingClient)
 	// SetBillingGate installs a chi-shaped middleware that runs at the
 	// root of the workspace router. Cloud uses this to gate paid-tier
@@ -807,6 +808,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	}
 	workspaceHandler.SetEmbeddingClient(s.workspaceEmbedder)
 	workspaceHandler.SetMCPCredentialEncryption(s.opts.encryption)
+	workspaceHandler.SetMCPOAuthOrigins(os.Getenv("BASTIO_MCP_OAUTH_BASE_URL"), os.Getenv("BASTIO_MCP_OAUTH_EMPLOYEE_URL"))
 	// Workspace invitation flow (email + public + invite base URLs)
 	// moved to bastio-cloud/internal/workspace alongside the member
 	// management handlers — see Service.WithEmailer / WithPublicBaseURL
@@ -847,6 +849,7 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	}
 
 	r.Route("/v1", func(r chi.Router) {
+		r.Get("/mcp/oauth/client-metadata", workspaceHandler.MCPOAuthClientMetadata)
 		r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"name": "bastio", "version": "0.1.0"})
 		})

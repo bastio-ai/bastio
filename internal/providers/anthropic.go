@@ -95,6 +95,9 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest, apiKey str
 
 	// Extract text content
 	for _, block := range anthropicResp.Content {
+		if block.Type == "tool_use" {
+			result.ToolCalls = append(result.ToolCalls, ToolCall{ID: block.ID, Name: block.Name, Arguments: block.Input})
+		}
 		if block.Type == "text" {
 			result.Content += block.Text
 		}
@@ -157,6 +160,8 @@ func (c *AnthropicClient) ChatStream(ctx context.Context, req *ChatRequest, apiK
 // Anthropic-specific types
 
 type anthropicMessagesRequest struct {
+	Tools       []anthropicTool    `json:"tools,omitempty"`
+	ToolChoice  any                `json:"tool_choice,omitempty"`
 	Model       string             `json:"model"`
 	Messages    []anthropicMessage `json:"messages"`
 	MaxTokens   int                `json:"max_tokens"`
@@ -200,8 +205,11 @@ type anthropicMessagesResponse struct {
 	Model      string `json:"model"`
 	StopReason string `json:"stop_reason"`
 	Content    []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type  string          `json:"type"`
+		Text  string          `json:"text"`
+		ID    string          `json:"id"`
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
 	} `json:"content"`
 	Usage struct {
 		InputTokens  int `json:"input_tokens"`
@@ -216,6 +224,21 @@ func toAnthropicRequest(req *ChatRequest) *anthropicMessagesRequest {
 	for _, m := range req.Messages {
 		if m.Role == "system" {
 			system = m.Content
+			continue
+		}
+		if m.Role == "tool" {
+			msgs = append(msgs, anthropicMessage{Role: "user", Content: []any{map[string]any{"type": "tool_result", "tool_use_id": m.ToolCallID, "content": m.Content}}})
+			continue
+		}
+		if len(m.ToolCalls) > 0 {
+			blocks := []any{}
+			if m.Content != "" {
+				blocks = append(blocks, anthropicTextBlock{Type: "text", Text: m.Content})
+			}
+			for _, c := range m.ToolCalls {
+				blocks = append(blocks, map[string]any{"type": "tool_use", "id": c.ID, "name": c.Name, "input": c.Arguments})
+			}
+			msgs = append(msgs, anthropicMessage{Role: "assistant", Content: blocks})
 			continue
 		}
 		// No images → plain string content. Most messages.
@@ -248,7 +271,16 @@ func toAnthropicRequest(req *ChatRequest) *anthropicMessagesRequest {
 		maxTokens = *req.MaxTokens
 	}
 
+	tools := []anthropicTool{}
+	for _, tool := range req.Tools {
+		tools = append(tools, anthropicTool{tool.Name, tool.Description, tool.Parameters})
+	}
+	var choice any
+	if len(tools) > 0 {
+		choice = map[string]any{"type": "auto", "disable_parallel_tool_use": true}
+	}
 	return &anthropicMessagesRequest{
+		Tools: tools, ToolChoice: choice,
 		Model:       req.Model,
 		Messages:    msgs,
 		MaxTokens:   maxTokens,
@@ -256,4 +288,10 @@ func toAnthropicRequest(req *ChatRequest) *anthropicMessagesRequest {
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
 	}
+}
+
+type anthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
 }
