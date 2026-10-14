@@ -118,7 +118,15 @@ func (d *InjectionDetector) initPatterns() {
 		// "Ignore all system prompts", "Override your instructions",
 		// "Disregard system prompts"). The [^.?!] class keeps matches inside
 		// a single sentence to avoid stretching across unrelated clauses.
-		{regexp.MustCompile(`(?i)\b(ignore|disregard|forget|skip|bypass|override)\b[^.?!]{0,30}?\b(system|previous|prior|above|all|the|your)\b[^.?!]{0,30}?\b(prompt|prompts|instruction|instructions|rule|rules|message|messages|context|guidelines?)\b`), "override", "override.imperative", security.SeverityHigh, 0.90},
+		{regexp.MustCompile(`(?i)\b(ignore|disregard|forget|skip|bypass|override)\b[^.?!]{0,30}?\b(system|previous|prior|above|all|the|your)\b[^.?!]{0,30}?\b(prompt|prompts|instruction|instructions|rule|rules|guidelines?)\b`), "override", "override.imperative", security.SeverityHigh, 0.90},
+
+		// Resetting the user's own previous message is ordinary conversation
+		// editing. Message/context overrides require operator-channel scope.
+		{regexp.MustCompile(`(?i)\b(?:ignore|disregard|forget|skip|bypass|override)\b[^.?!]{0,40}\b(?:system|developer|operator)\s+(?:messages?|context)\b`), "override", "override.operator_context", security.SeverityHigh, 0.90},
+
+		// A context reset paired with a request for the model's real/hidden
+		// operator purpose remains an attack, unlike editing a prior message.
+		{regexp.MustCompile(`(?i)\b(?:ignore|disregard|forget|override)\b[^.?!]{0,40}\b(?:prior|previous|above)\s+context\b[^.?!]{0,80}\b(?:tell|show|reveal|expose|give)\b[^.?!]{0,30}\byour\s+(?:real|actual|hidden|system|original)\s+(?:purpose|goal|instructions?|prompt|rules?)\b`), "override", "override.context_extraction", security.SeverityHigh, 0.90},
 
 		// Narrow override patterns — high confidence signatures kept for precision.
 		{regexp.MustCompile(`(?i)ignore\s+(all\s+)?previous\s+(instructions|prompts|rules)`), "override", "override.previous", security.SeverityCritical, 0.95},

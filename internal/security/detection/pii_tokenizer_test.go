@@ -18,7 +18,7 @@ func TestPIIDetector_Tokenize_RoundTrip(t *testing.T) {
 	}{
 		{"ssn only", "My SSN is 123-45-6789 please help"},
 		{"email only", "Email: john@example.com"},
-		{"phone only", "Call 555-123-4567 today"},
+		{"phone only", "Call 555-234-4567 today"},
 		{"multiple types", "John (john@example.com, SSN 123-45-6789) at 192.168.1.1"},
 		{"nested repeats", "SSN 123-45-6789 and again SSN 123-45-6789"},
 	}

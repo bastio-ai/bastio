@@ -19,6 +19,8 @@ package normalize
 
 import (
 	"encoding/base64"
+	"net/url"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -56,6 +58,7 @@ const (
 	FlagBase64Decoded       Flag = "decoded.base64"
 	FlagROT13Decoded        Flag = "decoded.rot13"
 	FlagLeetFolded          Flag = "decoded.leet"
+	FlagURLDecoded          Flag = "decoded.url"
 )
 
 // Result is what Normalize returns.
@@ -95,7 +98,7 @@ func Normalize(text string, opts Options) Result {
 	// normalization entirely. About 90% of real gateway traffic.
 	if opts.Unicode && isFastPathSafe(text) {
 		if opts.Decode {
-			return runDecodePass(r)
+			return runDecodePass(r, opts.Unicode)
 		}
 		return r
 	}
@@ -104,7 +107,7 @@ func Normalize(text string, opts Options) Result {
 		r = runUnicodePass(r)
 	}
 	if opts.Decode {
-		r = runDecodePass(r)
+		r = runDecodePass(r, opts.Unicode)
 	}
 	return r
 }
@@ -354,18 +357,27 @@ func collapseWhitespace(text string) (string, bool) {
 // the normalized text. We never replace — the original must still be
 // matchable, and we want the encoding flag to fire alongside content
 // findings on the decoded plaintext.
-func runDecodePass(r Result) Result {
-	appended := make([]string, 0, 3)
+func runDecodePass(r Result, unicodeEnabled bool) Result {
+	appended := make([]string, 0, 4)
+	decodeTarget := r.Normalized
+	if decoded, ok := DecodeURLText(r.Normalized); ok {
+		if unicodeEnabled {
+			decoded = runUnicodePass(Result{Normalized: decoded}).Normalized
+		}
+		r.Flags = append(r.Flags, FlagURLDecoded)
+		appended = append(appended, "[decoded:url] "+decoded)
+		decodeTarget += "\n" + decoded
+	}
 
-	if decoded, ok := tryDecodeBase64(r.Normalized); ok {
+	if decoded, ok := tryDecodeBase64(decodeTarget); ok {
 		r.Flags = append(r.Flags, FlagBase64Decoded)
 		appended = append(appended, "[decoded:base64] "+decoded)
 	}
-	if decoded, ok := tryDecodeROT13(r.Normalized); ok {
+	if decoded, ok := tryDecodeROT13(decodeTarget); ok {
 		r.Flags = append(r.Flags, FlagROT13Decoded)
 		appended = append(appended, "[decoded:rot13] "+decoded)
 	}
-	if decoded, ok := tryFoldLeet(r.Normalized); ok {
+	if decoded, ok := tryFoldLeet(decodeTarget); ok {
 		r.Flags = append(r.Flags, FlagLeetFolded)
 		appended = append(appended, "[decoded:leet] "+decoded)
 	}
@@ -531,4 +543,31 @@ func tryFoldLeet(text string) (string, bool) {
 		return "", false
 	}
 	return folded, true
+}
+
+var percentEscape = regexp.MustCompile(`%[0-9A-Fa-f]{2}`)
+var httpURL = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
+
+// DecodeURLText is a bounded detection-only view. Invalid escapes remain
+// literal instead of suppressing inspection of valid escapes elsewhere.
+// Plus signs mean spaces only in an HTTP URL's query, not in ordinary prose.
+func DecodeURLText(text string) (string, bool) {
+	original := text
+	for i := 0; i < 3; i++ {
+		// Resolve query pluses before percent escapes can introduce spaces
+		// that end URL matching (e.g. ignore%20previous+instructions).
+		next := httpURL.ReplaceAllStringFunc(text, func(s string) string {
+			q := strings.IndexByte(s, '?')
+			if q < 0 {
+				return s
+			}
+			return s[:q+1] + strings.ReplaceAll(s[q+1:], "+", " ")
+		})
+		next = percentEscape.ReplaceAllStringFunc(next, func(s string) string { v, _ := url.PathUnescape(s); return v })
+		if next == text {
+			break
+		}
+		text = next
+	}
+	return text, text != original
 }

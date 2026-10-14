@@ -25,8 +25,12 @@ var safeMCPRule = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,80}$`)
 func mcpBlockedInspection(decision *IngestScanDecision, code, reason string) error {
 	e := &mcpInspectionError{Code: code, Reason: reason, Categories: slices.Clone(decision.Categories), Rules: []string{}}
 	if decision.Result != nil {
+		if decision.Result.RewriteUnavailable {
+			e.Code = "encoded_rewrite"
+			e.Reason = "Sensitive data is encoded and could not be safely rewritten. The content was withheld."
+		}
 		e.BlockingDetectors = uniqueMCPDiagnostics(slices.Clone(decision.Result.BlockingDetectors))
-		if code == "policy_block" && slices.Contains(e.BlockingDetectors, "pii") {
+		if !decision.Result.RewriteUnavailable && code == "policy_block" && slices.Contains(e.BlockingDetectors, "pii") {
 			e.Reason = "Personal data (PII) detection is configured to block this content."
 		}
 		for _, f := range decision.Result.Findings {

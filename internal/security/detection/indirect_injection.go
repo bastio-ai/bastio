@@ -84,7 +84,7 @@ func (d *IndirectInjectionDetector) initPatterns() {
 	d.patterns = []indirectPattern{
 		// Document-as-instruction attacks ("When you read this doc, …")
 		{regexp.MustCompile(`(?i)\b(?:attention|note to|important|urgent)\s*(?:\s+the\s+)?(?:AI|assistant|LLM|model|bot|chatbot)\b`), "doc_address", security.SeverityHigh, 0.92},
-		{regexp.MustCompile(`(?i)\b(?:when|if)\s+you\s+(?:read|see|encounter|parse)\s+this\b`), "doc_trigger", security.SeverityHigh, 0.85},
+		{regexp.MustCompile(`(?i)\b(?:when|if)\s+you\s+(?:read|see|encounter|parse)\s+this\b[^.?!]{0,160}\b(?:ignore|disregard|override|reveal|exfiltrate|disable|bypass)\b[^.?!]{0,80}\b(?:instructions?|prompts?|rules?|secrets?|credentials?|safety|filters?)\b`), "doc_trigger", security.SeverityHigh, 0.85},
 		{regexp.MustCompile(`(?i)\bdear\s+(?:AI|assistant|language\s+model|claude|gpt|gemini|llama)\b`), "doc_salutation", security.SeverityHigh, 0.95},
 
 		// System-role spoofing in untrusted content.
@@ -102,7 +102,8 @@ func (d *IndirectInjectionDetector) initPatterns() {
 		{regexp.MustCompile(`(?i)\b(?:send|email|post|upload|exfiltrate|transmit|forward)\s+(?:the\s+)?(?:system\s+)?(?:prompt|secrets|credentials|api\s+keys?)\b`), "exfil_command", security.SeverityCritical, 0.95},
 		{regexp.MustCompile(`(?i)\bmake\s+(?:an?\s+)?(?:HTTP|POST|GET|API|network)\s+(?:request|call)\s+to\b`), "network_command", security.SeverityHigh, 0.85},
 
-		// Tool misuse — "call this function with these args, secretly"
-		{regexp.MustCompile(`(?i)\b(?:silently|quietly|secretly|without\s+(?:telling|mentioning)\s+the\s+user)\b`), "covert_action", security.SeverityHigh, 0.9},
+		// Tool misuse requires a covert instruction plus an action. A product
+		// description such as "the fan runs quietly" is not an instruction.
+		{regexp.MustCompile(`(?i)\b(?:(?:silently|quietly|secretly|without\s+(?:telling|mentioning)\s+the\s+user)\s+(?:(?:you|the\s+assistant|the\s+model)\s+)?(?:send|email|post|upload|exfiltrate|transmit|forward|call|invoke|execute|run|delete|modify|override|disable)\b|(?:call|invoke|execute|run)\b[^.?!]{0,60}\b(?:tool|function|command|code|request)\b[^.?!]{0,60}\b(?:silently|quietly|secretly|without\s+(?:telling|mentioning)\s+the\s+user)\b)`), "covert_action", security.SeverityHigh, 0.9},
 	}
 }

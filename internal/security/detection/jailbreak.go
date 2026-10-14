@@ -161,7 +161,7 @@ func (d *JailbreakDetector) initPatterns() {
 		{regexp.MustCompile(`(?i)(?:token|point|credit)s?\s*(?:system|remaining|left)`),
 			"dan_token_system", "persona.dan.tokens", security.SeverityHigh, 0.85,
 			"jailbreakchat DAN corpus", "DAN token-punishment mechanic"},
-		{regexp.MustCompile(`(?i)\b(?:stay|remain)\s+in\s+character|don['']?t\s+break\s+character\b`),
+		{regexp.MustCompile(`(?i)\b(?:(?:stay|remain)\s+in\s+character|don[\x27]?t\s+break\s+character)\b[^.?!]{0,80}\b(?:no\s+matter\s+what|at\s+all\s+costs|regardless\s+of\s+(?:rules|safety|restrictions)|even\s+if\s+you\s+must\s+(?:break|ignore|bypass))\b`),
 			"dan_character", "persona.character_lock", security.SeverityHigh, 0.80,
 			"jailbreakchat DAN corpus", "Character-lock command"},
 

@@ -46,13 +46,13 @@ func TestPIIDetector_Detect(t *testing.T) {
 		},
 		{
 			name:      "phone number",
-			content:   "Call me at (555) 123-4567",
+			content:   "Call me at (555) 234-4567",
 			wantTypes: []string{"phone"},
 			wantCount: 1,
 		},
 		{
 			name:      "multiple PII types",
-			content:   "Email john@test.com, SSN 123-45-6789, call 555-123-4567",
+			content:   "Email john@test.com, SSN 123-45-6789, call 555-234-4567",
 			wantCount: 3,
 		},
 		{
@@ -115,8 +115,8 @@ func TestPIIDetector_Redact(t *testing.T) {
 		},
 		{
 			name:  "redact phone",
-			input: "Call 555-123-4567",
-			check: func(s string) bool { return strings.Contains(s, "***-***-4567") && !strings.Contains(s, "555-123") },
+			input: "Call 555-234-4567",
+			check: func(s string) bool { return strings.Contains(s, "***-***-4567") && !strings.Contains(s, "555-234") },
 		},
 	}
 

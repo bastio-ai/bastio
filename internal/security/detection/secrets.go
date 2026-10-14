@@ -55,7 +55,7 @@ func (d *SecretsDetector) Detect(_ context.Context, content string) ([]security.
 	for _, p := range d.prefixes {
 		matches := p.regex.FindAllString(content, -1)
 		for _, m := range matches {
-			if p.minEntropy > 0 && shannonEntropy(m) < p.minEntropy {
+			if !p.accepts(m) {
 				continue
 			}
 			findings = append(findings, security.Finding{
@@ -81,8 +81,17 @@ func (d *SecretsDetector) Detect(_ context.Context, content string) ([]security.
 func (d *SecretsDetector) Mask(content string) string {
 	result := content
 	for _, p := range d.prefixes {
+		if p.kind == "private_key" {
+			result = maskPrivateKeyBlocks(result)
+			continue
+		}
 		tag := "[REDACTED_" + strings.ToUpper(p.kind) + "]"
-		result = p.regex.ReplaceAllString(result, tag)
+		result = p.regex.ReplaceAllStringFunc(result, func(match string) string {
+			if !p.accepts(match) {
+				return match
+			}
+			return tag
+		})
 	}
 	return result
 }
@@ -201,9 +210,10 @@ func (d *SecretsDetector) initPatterns() {
 			maskFn:     maskPrefix(8),
 		},
 
-		// Private keys — header line is distinctive enough alone.
+		// Private keys — withhold the complete block, including key material.
+		// If truncated, withhold through end of content; never mask only a header.
 		{
-			regex:      regexp.MustCompile(`-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE\s+KEY-----`),
+			regex:      regexp.MustCompile(`(?s)-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE\s+KEY-----.*?(?:-----END\s+(?:RSA|EC|DSA|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE\s+KEY-----|$)`),
 			kind:       "private_key",
 			severity:   security.SeverityCritical,
 			confidence: 0.99,
@@ -292,6 +302,17 @@ func (d *SecretsDetector) initPatterns() {
 	}
 }
 
+func (p secretPattern) accepts(match string) bool {
+	if p.minEntropy <= 0 {
+		return true
+	}
+	parts := p.regex.FindStringSubmatch(match)
+	if len(parts) < 2 {
+		return false
+	}
+	return shannonEntropy(parts[1]) >= p.minEntropy
+}
+
 // shannonEntropy computes bits per character for the value portion of
 // a candidate. ~3.5 corresponds to "looks random" — enough to
 // distinguish `API_KEY=hello` (low entropy) from a real secret.
@@ -310,4 +331,28 @@ func shannonEntropy(s string) float64 {
 		e -= p * math.Log2(p)
 	}
 	return e
+}
+
+var privateKeyHeader = regexp.MustCompile(`-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE\s+KEY-----`)
+
+func maskPrivateKeyBlocks(content string) string {
+	var out strings.Builder
+	for {
+		span := privateKeyHeader.FindStringIndex(content)
+		if span == nil {
+			out.WriteString(content)
+			break
+		}
+		out.WriteString(content[:span[0]])
+		header := content[span[0]:span[1]]
+		footer := strings.Replace(header, "BEGIN", "END", 1)
+		end := strings.Index(content[span[1]:], footer)
+		out.WriteString("[REDACTED_PRIVATE_KEY]")
+		// An incomplete or mismatched block is withheld to end of content.
+		if end < 0 {
+			break
+		}
+		content = content[span[1]+end+len(footer):]
+	}
+	return out.String()
 }
