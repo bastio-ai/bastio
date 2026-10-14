@@ -250,6 +250,9 @@ func (h *Handler) toolApprovalStatus(w http.ResponseWriter, r *http.Request) {
 	if status == "pending" && time.Now().After(expiry) {
 		status = "expired"
 	}
+	if status == "running" && time.Now().After(expiry) {
+		status = "unknown"
+	}
 	writeJSON(w, 200, map[string]any{"status": status})
 }
 func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {

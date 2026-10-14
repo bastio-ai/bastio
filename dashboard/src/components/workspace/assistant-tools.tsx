@@ -168,7 +168,7 @@ export function ToolApprovalCard({
   const state = useQuery({
     queryKey: ["workspace-tool-approval", conversationID, proposal.id],
     queryFn: () => workspaceApi.toolApprovalStatus(conversationID, proposal.id),
-    refetchInterval: busy ? 1000 : 5000,
+    refetchInterval: (query) => ["pending", "running"].includes(query.state.data?.status ?? "pending") ? (busy ? 1000 : 5000) : false,
     gcTime: 0,
   });
   const status = outcome?.status ?? state.data?.status ?? "loading";
@@ -265,9 +265,10 @@ export function ToolApprovalCard({
       ) : null}
       {status === "completed" && !outcome?.error ? (
         <p className="text-muted-foreground">
-          Tool completed. The assistant's continuation appears below.
+          Tool request completed. If no reply appears, check the service before making a new request.
         </p>
       ) : null}
+	  {status==="unknown"?<p role="alert" className="text-muted-foreground">The outcome could not be confirmed. The action may have run; check the connected service before making a new request.</p>:null}
       {outcome?.error ? (
         <p role="alert" className="leading-relaxed text-destructive">
           {outcome.error}
