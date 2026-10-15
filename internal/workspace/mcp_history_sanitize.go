@@ -47,6 +47,9 @@ func sanitizeMCPHistory(ctx context.Context, raw json.RawMessage) (json.RawMessa
 	return out, nil
 }
 func sanitizeHistoryText(ctx context.Context, text string) (string, error) {
+	if ctx.Err() != nil {
+		return "", errHistorySanitize
+	}
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(text)), "data:") || historyOpaque.MatchString(text) {
 		return "[OMITTED_BINARY_OR_OPAQUE_VALUE]", nil
 	}
@@ -67,6 +70,13 @@ func sanitizeHistoryText(ctx context.Context, text string) (string, error) {
 	})
 	scan := mcpHistorySanitizer.Scan(ctx, &security.ScanRequest{Content: text, Canonicalize: true, Steps: []security.Step{{Detector: "pii", Strategy: security.ActionTokenize}, {Detector: "secrets", Strategy: security.ActionMask}}})
 	if scan == nil || scan.RewriteUnavailable || scan.ShouldBlock {
+		return "", errHistorySanitize
+	}
+	// Verify the final snapshot independently. Canonicalization can expose a
+	// recognized value that a surface-form rewrite did not replace; never
+	// retain that value just because the first scan attempted a transformation.
+	verified := mcpHistorySanitizer.Scan(ctx, &security.ScanRequest{Content: scan.SanitizedContent, Canonicalize: true, Steps: []security.Step{{Detector: "pii", Strategy: security.ActionBlock}, {Detector: "secrets", Strategy: security.ActionBlock}}})
+	if ctx.Err() != nil || verified == nil || verified.ShouldBlock || verified.RewriteUnavailable {
 		return "", errHistorySanitize
 	}
 	// Never retain either the original token map or normalized side-channel text.

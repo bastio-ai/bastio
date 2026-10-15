@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/bastio-ai/bastio/internal/security"
 )
 
 func TestMCPHistorySanitization(t *testing.T) {
@@ -51,5 +53,35 @@ func TestMCPHistoryEncodedValuesAndBounds(t *testing.T) {
 		if _, err := sanitizeMCPHistory(context.Background(), json.RawMessage(raw)); err == nil {
 			t.Fatal("invalid, deeply nested or oversized payload was captured")
 		}
+	}
+}
+
+func TestMCPHistoryVerificationAndCanceledScans(t *testing.T) {
+	for _, text := range []string{
+		"Contact b\u200bob@example.test for yellow hats",
+		"Email bob@example.test and use gh\u200bp_" + strings.Repeat("a", 36),
+		"SSN １２３-４５-６７８９ and yellow hats",
+	} {
+		raw, _ := json.Marshal(text)
+		out, err := sanitizeMCPHistory(context.Background(), raw)
+		if err == nil {
+			var clean string
+			if json.Unmarshal(out, &clean) != nil {
+				t.Fatal("invalid sanitized string")
+			}
+			// Any recognizable value that survives a rewrite must withhold
+			// the snapshot, including canonical forms of obfuscated values.
+			canonical := security.Canonicalize(clean).Canonical
+			for _, forbidden := range []string{"bob@example.test", "ghp_" + strings.Repeat("a", 36), "123-45-6789", "１２３-４５-６７８９"} {
+				if strings.Contains(canonical, forbidden) {
+					t.Fatal("recognized sensitive value survived history sanitization")
+				}
+			}
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := sanitizeMCPHistory(ctx, json.RawMessage(`{"query":"yellow hats"}`)); err == nil {
+		t.Fatal("canceled scan allowed a retained snapshot")
 	}
 }
