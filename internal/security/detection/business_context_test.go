@@ -26,6 +26,7 @@ func TestPIIIdentifierValidation(t *testing.T) {
 		{"leap date", "290200-4234", true, cprDateValid},
 		{"non-leap century", "290200-1234", false, cprDateValid},
 		{"nino", "AB 12 34 56 C", true, ninoValid},
+		{"nino line wrapped", "AB\t12\n34 56 C", true, ninoValid},
 		{"forbidden prefix", "BG 12 34 56 A", false, ninoValid},
 		{"aadhaar checksum", "2345 6789 0124", true, aadhaarValid},
 		{"aadhaar invalid checksum", "2345 6789 0123", false, aadhaarValid},

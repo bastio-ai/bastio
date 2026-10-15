@@ -46,13 +46,12 @@ func cprDateValid(s string) bool {
 	}
 	date := time.Date(century+year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
 	return date.Day() == day && int(date.Month()) == month
-
 }
 
 // HMRC explicitly excludes these otherwise shape-valid prefixes.
 // https://www.gov.uk/hmrc-internal-manuals/national-insurance-manual/nim39110
 func ninoValid(s string) bool {
-	clean := strings.ToUpper(strings.ReplaceAll(s, " ", ""))
+	clean := strings.ToUpper(strings.Join(strings.Fields(s), ""))
 	if len(clean) != 9 {
 		return false
 	}
@@ -100,7 +99,7 @@ func init() {
 	}
 }
 func vatValid(s string) bool {
-	clean := strings.ToUpper(strings.ReplaceAll(s, " ", ""))
+	clean := strings.ToUpper(strings.Join(strings.Fields(s), ""))
 	if len(clean) < 3 {
 		return false
 	}
