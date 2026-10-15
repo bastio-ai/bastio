@@ -74,17 +74,18 @@ type KeyResolver interface {
 
 // Handler exposes all workspace HTTP routes.
 type Handler struct {
-	store                *Store
-	registry             *providers.Registry
-	keys                 KeyResolver
-	blobs                BlobStore
-	river                *river.Client[pgx.Tx]
-	txtResolver          TXTResolver     // nil → defaultTXTResolver
-	embedder             EmbeddingClient // nil → keyword-only RAG
-	mcpCipher            *encryption.Service
-	mcpHTTP              *http.Client
-	mcpOAuthBase         string
-	mcpOAuthEmployeeBase string
+	store                  *Store
+	registry               *providers.Registry
+	keys                   KeyResolver
+	blobs                  BlobStore
+	river                  *river.Client[pgx.Tx]
+	txtResolver            TXTResolver     // nil → defaultTXTResolver
+	embedder               EmbeddingClient // nil → keyword-only RAG
+	mcpCipher              *encryption.Service
+	mcpHTTP                *http.Client
+	mcpOAuthOriginResolver func(*http.Request) string
+	mcpOAuthBase           string
+	mcpOAuthEmployeeBase   string
 	// Security pipeline — same engine/profile/recorder the gateway uses.
 	// All optional: when nil the workspace falls back to its pre-pipeline
 	// behavior (direct provider call, no policy enforcement, no
