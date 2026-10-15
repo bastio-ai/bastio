@@ -156,6 +156,13 @@ func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
 	}
 	var conn MCPConnection
 	json.Unmarshal(saved.Body.Bytes(), &conn)
+	policy := defaultMCPHistoryPolicy()
+	policy.Mode = "sanitized"
+	policy.ConnectionIDs = []uuid.UUID{conn.ID}
+	admin := testIdentity(cid, "manager", RoleAdmin)
+	if out := request("PUT", "/mcp/history/policy", policy, admin); out.Code != 200 {
+		t.Fatalf("enable assistant history: %s", out.Body.String())
+	}
 	var proposal toolProposal
 	var conv *Conversation
 	propose := func(temporary bool) {
@@ -237,6 +244,10 @@ func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
 	if stored != 0 {
 		t.Fatal("temporary continuation stored")
 	}
+	var historyCount int
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM workspace_mcp_history WHERE customer_id=$1`, cid).Scan(&historyCount); err != nil || historyCount != 0 {
+		t.Fatal("temporary assistant tool history persisted")
+	}
 	propose(false)
 	// Saved content retains the protected card, never the provider's raw args.
 	messages, err := store.ListMessages(ctx, cid, conv.ID)
@@ -267,7 +278,6 @@ func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
 		t.Fatal("declined tool could execute")
 	}
 	// Attachments select tools without granting the employee extra access.
-	admin := testIdentity(cid, "manager", RoleAdmin)
 	a, err := store.CreateAssistant(admin, Assistant{CustomerID: cid, Name: "Handbook assistant", DefaultProvider: "openai", DefaultModel: "gpt-4.1-nano", MCPConnectionIDs: []uuid.UUID{conn.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -303,6 +313,19 @@ func TestAssistantToolApprovalsPrivacyAndSingleExecution(t *testing.T) {
 	}
 	if got := approve(ctx); got.Code != 403 || calls.Load() != 2 {
 		t.Fatal("assistant attachment bypassed revoked sharing")
+	}
+	if _, err = store.pool.Exec(ctx, `DELETE FROM workspace_resource_sharing WHERE customer_id=$1 AND resource_type='mcp' AND resource_id=$2`, cid, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	poison.Store(false)
+	propose(false)
+	got = approve(ctx)
+	if got.Code != 200 || calls.Load() != 3 {
+		t.Fatalf("saved assistant call failed: %s", got.Body.String())
+	}
+	history := request("GET", "/mcp/traces/"+got.Header().Get("X-Bastio-Trace-Id")+"/content", nil, admin)
+	if history.Code != 200 || !strings.Contains(history.Body.String(), `"state":"sanitized"`) || strings.Contains(history.Body.String(), "bob@example.test") || !strings.Contains(history.Body.String(), `"output_state":"sanitized"`) {
+		t.Fatalf("assistant history unavailable or unsafe: %d %s", history.Code, history.Body.String())
 	}
 }
 func TestToolSchemaNeverFetchesRemoteReferences(t *testing.T) {

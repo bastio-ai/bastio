@@ -1,5 +1,5 @@
 import type { McpTracePresentation } from "@/components/observe/mcp-trace-presentation";
-import { initialTraceTab, isWorkspaceMcpTrace, mcpCallDetails, mcpSecuritySummary } from "@/components/observe/mcp-trace-presentation";
+import { initialTraceTab, isWorkspaceMcpTrace, mcpCallDetails, mcpSecuritySummary, mcpRetentionSummary } from "@/components/observe/mcp-trace-presentation";
 import { onlyPassiveFindings } from "@/components/observe/security-decision";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -107,6 +107,7 @@ export function TraceDetailPage() {
   const spans = (data!.spans ?? []) as Observation[];
   const mcp: McpTracePresentation | undefined = isWorkspaceMcpTrace(trace) ? {
     details: mcpCallDetails(trace),
+    retention: mcpRetentionSummary(trace),
     security: mcpSecuritySummary(trace, spans, threats, findingsError ? "error" : findingsLoading ? "loading" : "ready"),
   } : undefined;
 
@@ -263,7 +264,7 @@ function KpiStrip({
         ? { label: "Tool", value: mcpCallDetails(trace).tool, detail: "MCP tool call" }
         : { label: "Tokens", value: tokens.toLocaleString(), detail: `${trace.input_tokens ?? 0} in · ${trace.output_tokens ?? 0} out` },
       isWorkspaceMcpTrace(trace)
-        ? { label: "Content retention", value: "Not retained", detail: "Tool arguments and results" }
+        ? { label: "Content retention", value: mcp?.retention?.label || "Metadata only", detail: "Policy applied to this call" }
         : { label: "Cost", value: formatCost(trace.cost_cents ?? 0), detail: trace.provider ?? "Unknown provider" },
       {
         label: "Gateway outcome",
@@ -302,7 +303,7 @@ function getTraceOutcome(
     return {
       label: actionable ? "Tool completed with security records" : "Tool completed",
       shortLabel: "Completed",
-      description: mcp ? "This trace records tool timing, outcomes and security decisions. Tool arguments and results are not retained." : "This trace records the tool call outcome and available security decisions.",
+      description: mcp ? mcp.retention?.description || "This trace records tool timing, outcomes and security decisions. Payload history follows the policy applied to this call." : "This trace records the tool call outcome and available security decisions.",
       detail: actionable ? `Effective strategy: ${trace.security_action}` : threats.length ? "Signals observed · no enforcement" : inspections?.tone === "success" ? "Security checks completed" : inspections?.title || "No security findings recorded",
       tone: (actionable || inspectionDetailsMissing ? "warning" : "success") as OutcomeTone,
       icon: actionable ? ShieldAlert : inspectionDetailsMissing ? Info : CheckCircle2,

@@ -1,3 +1,4 @@
+import { MCPHistorySettings } from "./mcp-history-settings";
 import { ModelConnections } from "./model-connections";
 import { workspaceModelChoices } from "./workspace-models";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -212,6 +213,7 @@ export function SettingsTab({
     onSuccess: async () => {
       const fresh = await workspaceApi.getSettings();
       qc.setQueryData(["workspace", "settings"], fresh);
+      qc.invalidateQueries({queryKey:["workspace","mcp-history-policy"]});
     },
   });
 
@@ -307,6 +309,7 @@ export function SettingsTab({
         }
       />
 
+      {section === "privacy" && <MCPHistorySettings />}
       {section === "privacy" && (
         <section className="rounded-xl border border-border bg-card p-5">
           <h2 className="text-[13px] font-bold tracking-tight">
@@ -327,7 +330,7 @@ export function SettingsTab({
             text, attachments or security snippets.
           </p>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            This applies to new writes. Previously saved content and archives
+            This applies to new conversation writes. Enabling it also deletes retained MCP payload history and disables new MCP capture. Previously saved conversation content and archives
             remain. Knowledge documents are stored separately. Model providers
             apply their own retention policies. Conversation content is not
             collected for training.

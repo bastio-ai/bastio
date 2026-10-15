@@ -2989,6 +2989,48 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WorkspaceMCPPolicy" }
+  /v1/workspace/mcp/history/policy:
+    get:
+      operationId: workspaceGetMCPHistoryPolicy
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Administrator-only history settings and storage capabilities
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPHistoryPolicyResponse" }
+    put:
+      operationId: workspaceSetMCPHistoryPolicy
+      tags: [Workspace]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkspaceMCPHistoryPolicy" }
+      responses:
+        "200":
+          description: Administrator updated the history policy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPHistoryPolicyResponse" }
+  /v1/workspace/mcp/history:
+    delete:
+      operationId: workspaceDeleteMCPHistory
+      tags: [Workspace]
+      responses:
+        "204": { description: Administrator deleted retained payloads and invalidated in-flight captures }
+  /v1/workspace/mcp/traces/{id}/content:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: workspaceGetMCPHistoryContent
+      tags: [Workspace]
+      responses:
+        "200":
+          description: Independently authorized, unexpired sanitized payloads; never HTTP-cached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMCPHistoryContent" }
   /v1/workspace/mcp/connections:
     post:
       operationId: workspaceCreateMCPConnection
@@ -3058,6 +3100,8 @@ paths:
               properties:
                 name: { type: string, maxLength: 128 }
                 arguments: { type: object, additionalProperties: true }
+                temporary: { type: boolean, description: Opt out of payload capture for this call }
+                conversation_id: { type: string, format: uuid, description: Owned conversation context; its privacy policy is enforced server-side }
       responses:
         "200":
           description: Security-processed textual result; raw arguments and results are not retained in audit records
@@ -3439,6 +3483,39 @@ components:
               checked_at: { type: string, format: date-time }
               check_status: { type: string, enum: [untested, passed, failed] }
               error_code: { type: string }
+    WorkspaceMCPHistoryPolicy:
+      type: object
+      required: [mode, retention_days, capture_all, connection_ids, viewer_user_ids, viewer_group_ids, version]
+      properties:
+        mode: { type: string, enum: [metadata_only, sanitized] }
+        retention_days: { type: integer, minimum: 1, maximum: 90 }
+        capture_all: { type: boolean }
+        connection_ids: { type: array, items: { type: string, format: uuid } }
+        viewer_user_ids: { type: array, items: { type: string } }
+        viewer_group_ids: { type: array, items: { type: string, format: uuid } }
+        version: { type: integer, format: int64 }
+    WorkspaceMCPHistoryPolicyResponse:
+      type: object
+      required: [policy, storage_allowed, encryption_available, tracing_available]
+      properties:
+        policy: { $ref: "#/components/schemas/WorkspaceMCPHistoryPolicy" }
+        storage_allowed: { type: boolean }
+        encryption_available: { type: boolean }
+        tracing_available: { type: boolean }
+    WorkspaceMCPHistoryContent:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [sanitized, restricted, expired, not_retained] }
+        expires_at: { type: string, format: date-time }
+        content:
+          type: object
+          required: [input_state, output_state]
+          properties:
+            input: {}
+            output: {}
+            input_state: { type: string, enum: [sanitized, withheld, size_limit, not_recorded] }
+            output_state: { type: string, enum: [sanitized, withheld, size_limit, not_recorded, not_run] }
     WorkspaceMCPPolicy:
       type: object
       required: [allow_personal]
@@ -3457,6 +3534,7 @@ components:
       properties:
         auth_type: { type: string, enum: [none, bearer, oauth] }
         oauth_connected: { type: boolean }
+        history_mode: { type: string, enum: [metadata_only, sanitized] }
         updated_at: { type: string, format: date-time }
         sharing: { $ref: '#/components/schemas/WorkspaceResourceSharing' }
         id: { type: string, format: uuid }

@@ -27,7 +27,7 @@ export function sharingLabel(sharing?: ResourceSharing) {
   return [groups ? `${groups} ${groups === 1 ? "group" : "groups"}` : "", people ? `${people} ${people === 1 ? "person" : "people"}` : ""].filter(Boolean).join(" + ");
 }
 
-export function SharingPicker({ value, onChange, disabled = false }: { value: ResourceSharing; onChange: (value: ResourceSharing) => void; disabled?: boolean }) {
+export function SharingPicker({ value, onChange, disabled = false, purpose = "use" }: { value: ResourceSharing; onChange: (value: ResourceSharing) => void; disabled?: boolean; purpose?: "use" | "history" }) {
   const [search, setSearch] = useState("");
   const access = useQuery({ queryKey: ["workspace", "access"], queryFn: () => unwrap(http.GET("/v1/workspace/access")), gcTime: 0 });
   const members = useQuery({ queryKey: ["workspace", "members"], queryFn: sharingMembers, gcTime: 0 });
@@ -35,9 +35,9 @@ export function SharingPicker({ value, onChange, disabled = false }: { value: Re
   const term = search.trim().toLowerCase();
   return (
     <fieldset disabled={disabled} className="space-y-3 rounded-lg border border-border bg-muted/10 p-3">
-      <legend className="px-1 text-xs font-medium">Who can use this?</legend>
-      <label className="flex items-center gap-2 text-xs"><input type="radio" checked={!value.restricted} onChange={() => onChange(everyoneSharing())} /> Everyone in this workspace</label>
-      <label className="flex items-center gap-2 text-xs"><input type="radio" checked={value.restricted} onChange={() => onChange(adminOnlySharing())} /> Selected groups or people</label>
+      <legend className="px-1 text-xs font-medium">{purpose === "history" ? "Who can view retained history?" : "Who can use this?"}</legend>
+      {purpose === "use" && <><label className="flex items-center gap-2 text-xs"><input type="radio" checked={!value.restricted} onChange={() => onChange(everyoneSharing())} /> Everyone in this workspace</label>
+      <label className="flex items-center gap-2 text-xs"><input type="radio" checked={value.restricted} onChange={() => onChange(adminOnlySharing())} /> Selected groups or people</label></>}
       {value.restricted && <>
         <Input aria-label="Find groups or people" placeholder="Find a group or person…" value={search} onChange={(event) => setSearch(event.target.value)} />
         {(access.isPending || members.isPending) && <p className="text-xs text-muted-foreground">Loading workspace recipients…</p>}
@@ -52,9 +52,9 @@ export function SharingPicker({ value, onChange, disabled = false }: { value: Re
             {members.data?.members.filter((member) => member.email.toLowerCase().includes(term)).map((member) => <label key={member.user_id} className="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-muted/40"><input type="checkbox" checked={value.user_ids.includes(member.user_id)} onChange={(event) => toggle("user_ids", member.user_id, event.target.checked)} /><span className="truncate">{member.email}</span></label>)}
           </div></div>
         </div>
-        <p className="text-[11px] text-muted-foreground">{value.group_ids.length} {value.group_ids.length === 1 ? "group" : "groups"} and {value.user_ids.length} {value.user_ids.length === 1 ? "person" : "people"} selected. Anyone in a selected group or selected individually can use this. No selections keeps it available only to owners and admins.</p>
+        <p className="text-[11px] text-muted-foreground">{value.group_ids.length} {value.group_ids.length === 1 ? "group" : "groups"} and {value.user_ids.length} {value.user_ids.length === 1 ? "person" : "people"} selected. Anyone in a selected group or selected individually can {purpose === "history" ? "view retained history for integrations they can access" : "use this"}. No selections keeps it available only to owners and admins.</p>
       </>}
-      <p className="text-[11px] text-muted-foreground">Owners and admins retain access to manage shared resources. Removing a group member removes that group’s grant; individual grants remain until removed.</p>
+      <p className="text-[11px] text-muted-foreground">{purpose === "history" ? "Owners and admins can view retained history across the workspace, including captured personal integrations." : "Owners and admins retain access to manage shared resources."} Removing a group member removes that group’s grant; individual grants remain until removed.</p>
     </fieldset>
   );
 }

@@ -1119,6 +1119,8 @@ export function ChatTab({ initialConversationID, manageUrl = true }: Props) {
                       }
                     />
                     <MCPIntegrationsButton
+                      temporary={temporary}
+                      conversationId={activeID}
                       disabled={sending}
                       onUseResult={(text) =>
                         setDraft((previous) =>

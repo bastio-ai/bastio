@@ -426,6 +426,7 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "privacy protection changed these arguments; send a new request to review them")
 		return
 	}
+	trace.captureHistoryPayload(r.Context(), "input", cont.Call.Arguments)
 	trace.startStage("span", "mcp.authorization")
 	if err = h.enforceMemberBudget(r.Context(), cid, uid); err != nil {
 		trace.outcome("error", "budget_denied", 403, "The workspace usage budget did not authorize this request.")
@@ -498,6 +499,11 @@ func (h *Handler) approveAssistantTool(w http.ResponseWriter, r *http.Request) {
 		trace.outcome("error", "unsupported_result", 200, "Tool text was empty, unsupported or larger than 32 KB.")
 		writeJSON(w, 200, map[string]any{"status": status, "error": "The tool ran, but its text result was empty, unsupported or larger than 32 KB. Narrow the request before trying again."})
 		return
+	}
+	if historyText, historyErr := supportedToolText(raw); historyErr == nil {
+		trace.captureHistoryPayload(r.Context(), "output", mustJSONString(historyText))
+	} else if trace.history != nil {
+		trace.history.content.OutputState = "size_limit"
 	}
 	trace.outcome("ok", "completed", 200, "")
 	var resultStatus struct {

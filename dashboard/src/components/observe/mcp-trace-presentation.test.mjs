@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialTraceTab, isWorkspaceMcpTrace, mcpCallDetails, mcpSecuritySummary } from './mcp-trace-presentation.ts';
+import { initialTraceTab, isWorkspaceMcpTrace, mcpCallDetails, mcpSecuritySummary, mcpRetentionSummary, mcpPayloadAppliesToSpan } from './mcp-trace-presentation.ts';
 
 const trace = {provider:'mcp', path:'/v1/workspace/mcp/connections/demo/call', status:'ok', tags:{'mcp.tool':'search_products','mcp.source':'manual',remote_action:'completed'}};
 const complete = [{name:'mcp.arguments',status:'ok'},{name:'mcp.result',status:'ok'}];
@@ -65,4 +65,22 @@ test('loading and failed findings requests cannot become an all-clear verdict', 
 test('historical findings without source do not imply either inspection had no findings', () => {
  const result=mcpSecuritySummary(trace,complete,[{action_taken:'warn'}]);
  assert.ok(result.stages.every(stage=>stage.state==='Completed · signal attribution unavailable'));
+});
+
+
+test('retention descriptions use the call snapshot and expose expiry without implying raw capture', () => {
+ const before={...trace,tags:{...trace.tags,'mcp.history.mode':'sanitized','mcp.history.state':'retained','mcp.history.expires_at':'2026-10-20T12:00:00Z'}};
+ assert.equal(mcpRetentionSummary(before,Date.parse('2026-10-19T12:00:00Z')).label,'Sanitized history');
+ assert.equal(mcpRetentionSummary(before,Date.parse('2026-10-21T12:00:00Z')).label,'Expired');
+ assert.equal(mcpRetentionSummary(trace).label,'Metadata only');
+ assert.equal(mcpRetentionSummary({...trace,tags:{'mcp.history.mode':'raw'}}).mode,'metadata_only');
+ const temporary={...trace,tags:{'mcp.history.reason':'temporary_chat'}};
+ assert.match(mcpRetentionSummary(temporary).description,/Temporary chat/);
+});
+test('payload history is scoped to the matching call and inspection direction', () => {
+ assert.equal(mcpPayloadAppliesToSpan({id:'t',trace_id:'t',type:'span'},'input'),true);
+ assert.equal(mcpPayloadAppliesToSpan({id:'s',trace_id:'t',type:'tool'},'output'),true);
+ assert.equal(mcpPayloadAppliesToSpan({id:'s',trace_id:'t',type:'guardrail',name:'mcp.arguments'},'input'),true);
+ assert.equal(mcpPayloadAppliesToSpan({id:'s',trace_id:'t',type:'guardrail',name:'mcp.arguments'},'output'),false);
+ assert.equal(mcpPayloadAppliesToSpan({id:'s',trace_id:'t',type:'span',name:'mcp.discovery'},'input'),false);
 });
