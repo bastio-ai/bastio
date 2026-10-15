@@ -9,12 +9,13 @@ import {
 import { useState } from "react";
 import { MCPSecurityError, mcpRuleLabel, mcpCategoryLabel } from "./mcp-security";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plug, ShieldCheck, Loader2, Pencil, Trash2, ExternalLink } from "lucide-react";
+import { Plug, History, ShieldCheck, Loader2, Pencil, Trash2, ExternalLink } from "lucide-react";
 import { http, unwrap } from "@/api/typed";
 import type { components } from "@/api/schema";
 import { workspaceApi } from "./types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -99,6 +100,7 @@ export function MCPIntegrations({
     null,
   );
   const [selected, setSelected] = useState<Connection | null>(null);
+  const [historyVisited, setHistoryVisited] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: integrationKey });
   const policy = useMutation({
     mutationFn: (allow_personal: boolean) =>
@@ -133,7 +135,7 @@ export function MCPIntegrations({
     );
   const data = connections.data;
   const canAdd = data.allow_personal || data.can_manage;
-  return (
+  const tools = (
     <div className="space-y-4">
       <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">
         <div className="mb-1 flex items-center gap-2 font-medium text-foreground">
@@ -145,7 +147,6 @@ export function MCPIntegrations({
         history is controlled by workspace admins. The integration audit log records decisions only.
         Tool runs appear in Observe → Traces with timing and security decisions.
       </div>
-      {data.can_manage && <MCPHistorySettings />}
       {data.can_manage && (
         <label className="flex items-center gap-2 text-xs">
           <input
@@ -309,6 +310,44 @@ export function MCPIntegrations({
         />
       )}
     </div>
+  );
+  if (!data.can_manage) return tools;
+  return (
+    <Tabs
+      defaultValue="tools"
+      onValueChange={(value) => {
+        if (value === "history") setHistoryVisited(true);
+      }}
+      className="gap-4"
+    >
+      <TabsList
+        variant="line"
+        aria-label="Integration sections"
+        className="h-11 w-full justify-start overflow-x-auto rounded-none border-b border-border p-0"
+      >
+        <TabsTrigger
+          value="tools"
+          className="h-11 flex-none cursor-pointer px-3 after:bottom-0 hover:bg-muted/30"
+        >
+          <Plug className="size-4" /> Connected tools
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {data.connections.length}
+          </span>
+        </TabsTrigger>
+        <TabsTrigger
+          value="history"
+          className="h-11 flex-none cursor-pointer px-3 after:bottom-0 hover:bg-muted/30"
+        >
+          <History className="size-4" /> Call history settings
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="tools" keepMounted>
+        {tools}
+      </TabsContent>
+      <TabsContent value="history" keepMounted>
+        {historyVisited && <MCPHistorySettings />}
+      </TabsContent>
+    </Tabs>
   );
 }
 
