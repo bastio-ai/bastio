@@ -20,12 +20,15 @@ import (
 )
 
 type oauthBundle struct {
-	Discovery mcp.OAuthDiscovery          `json:"discovery"`
-	Client    mcp.OAuthClientRegistration `json:"client"`
-	Token     mcp.OAuthToken              `json:"token"`
-	ExpiresAt time.Time                   `json:"expires_at"`
+	ClientRedirectURI string                      `json:"client_redirect_uri,omitempty"`
+	DynamicClient     bool                        `json:"dynamic_client,omitempty"`
+	Discovery         mcp.OAuthDiscovery          `json:"discovery"`
+	Client            mcp.OAuthClientRegistration `json:"client"`
+	Token             mcp.OAuthToken              `json:"token"`
+	ExpiresAt         time.Time                   `json:"expires_at"`
 }
 type oauthFlow struct {
+	Origin       string      `json:"origin,omitempty"`
 	ConnectionID uuid.UUID   `json:"connection_id"`
 	UpdatedAt    time.Time   `json:"updated_at"`
 	Verifier     string      `json:"verifier"`
@@ -46,13 +49,34 @@ func (h *Handler) SetMCPOAuthOrigins(admin, employee string) {
 		}
 	}
 }
+
+// SetMCPOAuthOriginResolver accepts only an operator-owned resolver. Cloud
+// returns an origin after verifying the custom domain or a canonical host;
+// the untrusted Host/Forwarded headers are never used as an origin by default.
+func (h *Handler) SetMCPOAuthOriginResolver(resolver func(*http.Request) string) {
+	h.mcpOAuthOriginResolver = resolver
+}
+func (h *Handler) mcpOAuthOrigin(r *http.Request) string {
+	if h.mcpOAuthOriginResolver != nil {
+		raw := h.mcpOAuthOriginResolver(r)
+		if raw != "" {
+			u, err := url.Parse(raw)
+			if err != nil || mcp.ValidateRemoteURL(raw) != nil || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+				return ""
+			}
+			return strings.TrimRight(raw, "/")
+		}
+	}
+	return h.mcpOAuthBase
+}
 func (h *Handler) MCPOAuthClientMetadata(w http.ResponseWriter, r *http.Request) {
-	if h.mcpOAuthBase == "" {
+	base := h.mcpOAuthOrigin(r)
+	if base == "" {
 		writeError(w, 404, "MCP OAuth is not configured")
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
-	writeJSON(w, 200, map[string]any{"client_id": h.mcpOAuthBase + "/v1/mcp/oauth/client-metadata", "client_name": "Bastio Workspace", "client_uri": h.mcpOAuthBase, "redirect_uris": []string{h.mcpOAuthBase + "/v1/workspace/mcp/oauth/callback"}, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}, "token_endpoint_auth_method": "none"})
+	writeJSON(w, 200, map[string]any{"client_id": base + "/v1/mcp/oauth/client-metadata", "client_name": "Bastio Workspace", "client_uri": base, "redirect_uris": []string{base + "/v1/workspace/mcp/oauth/callback"}, "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}, "token_endpoint_auth_method": "none"})
 }
 func (h *Handler) sealOAuth(cid, id uuid.UUID, b oauthBundle) ([]byte, error) {
 	if h.mcpCipher == nil {
@@ -106,7 +130,7 @@ func (h *Handler) editableOAuthConnection(w http.ResponseWriter, r *http.Request
 		writeError(w, 400, "choose OAuth authentication for this integration")
 		return c, false
 	}
-	if h.mcpOAuthBase == "" || h.mcpCipher == nil {
+	if h.mcpOAuthOrigin(r) == "" || h.mcpCipher == nil {
 		writeError(w, 503, "OAuth callback origin is not configured")
 		return c, false
 	}
@@ -134,7 +158,7 @@ func (h *Handler) discoverMCPOAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"issuer": d.Issuer, "resource": d.Resource, "scopes": d.Scopes, "discovery_stamp": oauthDiscoveryStamp(c, d), "redirect_uri": h.mcpOAuthBase + "/v1/workspace/mcp/oauth/callback"})
+	writeJSON(w, 200, map[string]any{"issuer": d.Issuer, "resource": d.Resource, "scopes": d.Scopes, "discovery_stamp": oauthDiscoveryStamp(c, d), "redirect_uri": h.mcpOAuthOrigin(r) + "/v1/workspace/mcp/oauth/callback"})
 }
 func randomOAuthValue() string {
 	raw := make([]byte, 32)
@@ -158,7 +182,7 @@ func (h *Handler) startMCPOAuth(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "review the authorization service first")
 		return
 	}
-	if body.Destination == "employee" && h.mcpOAuthEmployeeBase == "" {
+	if body.Destination == "employee" && h.mcpOAuthEmployeeBase == "" && h.mcpOAuthOrigin(r) == h.mcpOAuthBase {
 		writeError(w, 503, "employee callback destination unavailable")
 		return
 	}
@@ -190,9 +214,16 @@ func (h *Handler) startMCPOAuth(w http.ResponseWriter, r *http.Request) {
 	bundle.Discovery = d
 	bundle.Token = mcp.OAuthToken{}
 	bundle.ExpiresAt = time.Time{}
-	redirect := h.mcpOAuthBase + "/v1/workspace/mcp/oauth/callback"
+	origin := h.mcpOAuthOrigin(r)
+	redirect := origin + "/v1/workspace/mcp/oauth/callback"
+	// Dynamic registrations are tied to their redirect URI. Manually
+	// registered clients may support several callbacks; retain those IDs.
+	if (bundle.DynamicClient && bundle.ClientRedirectURI != "" && bundle.ClientRedirectURI != redirect) || (bundle.Client.ClientID == h.mcpOAuthBase+"/v1/mcp/oauth/client-metadata" && origin != h.mcpOAuthBase) {
+		bundle.Client = mcp.OAuthClientRegistration{}
+	}
 	if bundle.Client.ClientID == "" {
-		bundle.Client, err = mcp.RegisterOAuthClient(ctx, h.mcpHTTP, d, h.mcpOAuthBase+"/v1/mcp/oauth/client-metadata", redirect)
+		bundle.Client, err = mcp.RegisterOAuthClient(ctx, h.mcpHTTP, d, origin+"/v1/mcp/oauth/client-metadata", redirect)
+		bundle.DynamicClient = true
 		if err != nil {
 			writeError(w, 422, err.Error())
 			return
@@ -206,10 +237,11 @@ func (h *Handler) startMCPOAuth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	bundle.ClientRedirectURI = redirect
 	state, verifier := randomOAuthValue(), randomOAuthValue()
 	sum := sha256.Sum256([]byte(state))
 	challenge := sha256.Sum256([]byte(verifier))
-	flow := oauthFlow{ConnectionID: c.ID, UpdatedAt: c.UpdatedAt, Verifier: verifier, Bundle: bundle, Employee: body.Destination == "employee"}
+	flow := oauthFlow{Origin: origin, ConnectionID: c.ID, UpdatedAt: c.UpdatedAt, Verifier: verifier, Bundle: bundle, Employee: body.Destination == "employee"}
 	raw, _ := json.Marshal(flow)
 	sealed, err := h.mcpCipher.Encrypt(string(raw), cid.String(), "workspace-mcp-oauth-flow:"+hex.EncodeToString(sum[:]))
 	if err != nil {
@@ -273,8 +305,18 @@ func (h *Handler) mcpOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "invalid OAuth state")
 		return
 	}
+	origin := flow.Origin
+	if origin == "" {
+		origin = h.mcpOAuthBase
+	}
+	if origin != h.mcpOAuthOrigin(r) {
+		writeError(w, 403, "OAuth callback belongs to a different workspace address")
+		return
+	}
 	destination := h.mcpOAuthBase + "/workspace?view=integrations"
-	if flow.Employee {
+	if origin != h.mcpOAuthBase {
+		destination = origin + "/"
+	} else if flow.Employee {
 		destination = h.mcpOAuthEmployeeBase + "/"
 	}
 	finish := func(success bool) {
@@ -316,7 +358,7 @@ func (h *Handler) mcpOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	token, err := mcp.ExchangeOAuthToken(ctx, h.mcpHTTP, flow.Bundle.Discovery, flow.Bundle.Client, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "code_verifier": {flow.Verifier}, "redirect_uri": {h.mcpOAuthBase + "/v1/workspace/mcp/oauth/callback"}})
+	token, err := mcp.ExchangeOAuthToken(ctx, h.mcpHTTP, flow.Bundle.Discovery, flow.Bundle.Client, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "code_verifier": {flow.Verifier}, "redirect_uri": {origin + "/v1/workspace/mcp/oauth/callback"}})
 	if err != nil {
 		finish(false)
 		return

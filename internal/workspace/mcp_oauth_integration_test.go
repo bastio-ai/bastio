@@ -201,3 +201,120 @@ func TestMCPOAuthIssuerValidationExactAndMetadataFixed(t *testing.T) {
 		t.Fatal("untrusted Host influenced callback")
 	}
 }
+
+func TestMCPOAuthVerifiedWorkspaceOrigin(t *testing.T) {
+	store := workspaceToolsTestStore(t)
+	cid := uuid.New()
+	admin := testIdentity(cid, "manager", RoleAdmin)
+	if _, err := store.pool.Exec(admin, `INSERT INTO customers(id,name,slug) VALUES($1,'Custom OAuth',$2)`, cid, cid.String()); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(store, nil, nil)
+	cipher, _ := encryption.New("")
+	h.SetMCPCredentialEncryption(cipher)
+	h.SetMCPOAuthOrigins("https://cloud.example.com", "https://workspace.example.com")
+	type originKey struct{}
+	h.SetMCPOAuthOriginResolver(func(r *http.Request) string { origin, _ := r.Context().Value(originKey{}).(string); return origin })
+	var exchanges int
+	var expectedOrigin string
+	h.mcpHTTP = &http.Client{Transport: workspaceMCPTransport(func(r *http.Request) (*http.Response, error) {
+		body := `{}`
+		code := 200
+		headers := http.Header{"Content-Type": {"application/json"}}
+		switch r.URL.String() {
+		case "https://tools.example.com/mcp":
+			code = 401
+			headers.Set("WWW-Authenticate", `Bearer resource_metadata="https://tools.example.com/resource"`)
+		case "https://tools.example.com/resource":
+			body = `{"resource":"https://tools.example.com","authorization_servers":["https://auth.example.com"]}`
+		case "https://auth.example.com/.well-known/oauth-authorization-server":
+			body = `{"issuer":"https://auth.example.com","authorization_endpoint":"https://auth.example.com/authorize","token_endpoint":"https://auth.example.com/token","response_types_supported":["code"],"code_challenge_methods_supported":["S256"],"client_id_metadata_document_supported":true}`
+		case "https://auth.example.com/token":
+			exchanges++
+			raw, _ := io.ReadAll(r.Body)
+			form, _ := url.ParseQuery(string(raw))
+			if form.Get("redirect_uri") != expectedOrigin+"/v1/workspace/mcp/oauth/callback" {
+				t.Error("token exchange used the wrong callback URI", form.Get("redirect_uri"))
+			}
+			body = `{"access_token":"fixture-token","token_type":"Bearer","expires_in":3600}`
+		default:
+			t.Error("unexpected request", r.URL)
+		}
+		return &http.Response{StatusCode: code, Header: headers, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	routes := h.Routes()
+	request := func(method, path string, body map[string]string, ctx context.Context) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequest(method, path, strings.NewReader(string(raw))).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/json")
+		out := httptest.NewRecorder()
+		routes.ServeHTTP(out, req)
+		return out
+	}
+	saved := request("POST", "/mcp/connections", map[string]string{"name": "Custom domain tool", "endpoint": "https://tools.example.com/mcp", "scope": "workspace", "auth_type": "oauth"}, admin)
+	if saved.Code != 201 {
+		t.Fatal(saved.Code, saved.Body.String())
+	}
+	var connection MCPConnection
+	json.Unmarshal(saved.Body.Bytes(), &connection)
+	custom := context.WithValue(admin, originKey{}, "https://chat.customer.com")
+	start := func(ctx context.Context) url.Values {
+		discovered := request("POST", "/mcp/connections/"+connection.ID.String()+"/oauth/discover", map[string]string{}, ctx)
+		if discovered.Code != 200 {
+			t.Fatal(discovered.Code, discovered.Body.String())
+		}
+		var result struct {
+			Stamp    string `json:"discovery_stamp"`
+			Redirect string `json:"redirect_uri"`
+		}
+		json.Unmarshal(discovered.Body.Bytes(), &result)
+		if result.Redirect != expectedOrigin+"/v1/workspace/mcp/oauth/callback" {
+			t.Fatal("incorrect displayed callback", result.Redirect)
+		}
+		out := request("POST", "/mcp/connections/"+connection.ID.String()+"/oauth/start", map[string]string{"discovery_stamp": result.Stamp, "destination": "employee"}, ctx)
+		if out.Code != 200 {
+			t.Fatal(out.Code, out.Body.String())
+		}
+		var reply struct {
+			URL string `json:"authorization_url"`
+		}
+		json.Unmarshal(out.Body.Bytes(), &reply)
+		u, _ := url.Parse(reply.URL)
+		q := u.Query()
+		if q.Get("redirect_uri") != result.Redirect || q.Get("client_id") != expectedOrigin+"/v1/mcp/oauth/client-metadata" {
+			t.Fatal("dynamic client not bound to origin", q)
+		}
+		return q
+	}
+	callback := func(q url.Values, ctx context.Context) *httptest.ResponseRecorder {
+		return request("GET", "/mcp/oauth/callback?"+url.Values{"state": {q.Get("state")}, "code": {"fixture-code"}}.Encode(), nil, ctx)
+	}
+	expectedOrigin = "https://chat.customer.com"
+	q := start(custom)
+	if out := callback(q, admin); out.Code != 403 || exchanges != 0 {
+		t.Fatal("callback crossed origins", out.Code)
+	}
+	q = start(custom)
+	if out := callback(q, custom); out.Code != 303 || out.Header().Get("Location") != expectedOrigin+"/?mcp_oauth=connected" || exchanges != 1 {
+		t.Fatal("custom host callback failed", out.Code, out.Header().Get("Location"))
+	}
+	// A reconnect from another approved hostname must register a client for
+	// that hostname, not reuse an automatic registration with the old URI.
+	expectedOrigin = "https://ai.customer.com"
+	other := context.WithValue(admin, originKey{}, expectedOrigin)
+	q = start(other)
+	if out := callback(q, other); out.Code != 303 || out.Header().Get("Location") != expectedOrigin+"/?mcp_oauth=connected" || exchanges != 2 {
+		t.Fatal("origin change failed", out.Code)
+	}
+	metadata := httptest.NewRecorder()
+	h.MCPOAuthClientMetadata(metadata, httptest.NewRequest("GET", "https://attacker.example.com/metadata", nil).WithContext(other))
+	if metadata.Code != 200 || !strings.Contains(metadata.Body.String(), expectedOrigin) || strings.Contains(metadata.Body.String(), "attacker") {
+		t.Fatal("metadata trusts unverified Host", metadata.Body.String())
+	}
+	h.SetMCPOAuthOriginResolver(func(*http.Request) string { return "https://attacker.example.com/path?callback=evil" })
+	metadata = httptest.NewRecorder()
+	h.MCPOAuthClientMetadata(metadata, httptest.NewRequest("GET", "/metadata", nil))
+	if metadata.Code != 404 {
+		t.Fatal("invalid resolver origin accepted", metadata.Code)
+	}
+}

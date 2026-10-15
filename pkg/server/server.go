@@ -200,6 +200,7 @@ func WithDashboardAPIExtension(fn func(r chi.Router)) Option {
 type WorkspaceCustomizer interface {
 	SetKeyResolver(KeyResolver)
 	SetMCPOAuthOrigins(string, string)
+	SetMCPOAuthOriginResolver(func(*http.Request) string)
 	SetEmbeddingClient(EmbeddingClient)
 	// SetBillingGate installs a chi-shaped middleware that runs at the
 	// root of the workspace router. Cloud uses this to gate paid-tier
