@@ -1,3 +1,5 @@
+import type { McpTracePresentation } from "@/components/observe/mcp-trace-presentation";
+import { initialTraceTab, isWorkspaceMcpTrace, mcpCallDetails, mcpSecuritySummary } from "@/components/observe/mcp-trace-presentation";
 import { onlyPassiveFindings } from "@/components/observe/security-decision";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +17,7 @@ import {
   Copy,
   ExternalLink,
   FileJson,
+  Info,
   Plus,
   ShieldAlert,
   ShieldCheck,
@@ -73,7 +76,7 @@ export function TraceDetailPage() {
     retry: false,
   });
 
-  const { data: threats = [] } = useQuery({
+  const { data: threats = [], isPending: findingsLoading, isError: findingsError, refetch: retryFindings } = useQuery({
     queryKey: ["trace-threats", id],
     queryFn: () => api.traces.threats(id),
     enabled: Boolean(id) && Boolean(data?.trace),
@@ -102,18 +105,28 @@ export function TraceDetailPage() {
 
   const trace = data!.trace!;
   const spans = (data!.spans ?? []) as Observation[];
+  const mcp: McpTracePresentation | undefined = isWorkspaceMcpTrace(trace) ? {
+    details: mcpCallDetails(trace),
+    security: mcpSecuritySummary(trace, spans, threats, findingsError ? "error" : findingsLoading ? "loading" : "ready"),
+  } : undefined;
 
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-3">
       <TraceHeader trace={trace} threatCount={threats.length} />
       <TraceOutcomeBanner
         trace={trace}
+        mcp={mcp}
         threats={threats}
         onReviewFindings={() => setReviewFindingsRequest((request) => request + 1)}
       />
-      <KpiStrip trace={trace} threats={threats} />
+      <KpiStrip trace={trace} mcp={mcp} threats={threats} />
+      {findingsError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border-subtle bg-surface-1 px-4 py-3">
+        <p className="text-xs text-muted-foreground">Security findings could not be loaded. The tool outcome and recorded timings are still available.</p>
+        <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={() => void retryFindings()}>Retry security details</Button>
+      </div> : null}
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/70 bg-card">
         <TraceSplit
+          mcp={mcp}
           trace={trace}
           spans={spans}
           threats={threats}
@@ -234,18 +247,24 @@ function BackLink({ session }: { session?: string }) {
 
 function KpiStrip({
   trace,
+  mcp,
   threats,
 }: {
   trace: NonNullable<TraceDetail["trace"]>;
+  mcp?: McpTracePresentation;
   threats: import("@/api/client").TraceThreatDetection[];
 }) {
   const tokens = (trace.input_tokens ?? 0) + (trace.output_tokens ?? 0);
-  const outcome = getTraceOutcome(trace, threats);
+  const outcome = getTraceOutcome(trace, threats, mcp);
   return (
     <AdminSummaryStrip items={[
       { label: "Duration", value: formatDuration(trace.duration_ms ?? 0), detail: "End-to-end latency" },
-      { label: "Tokens", value: tokens.toLocaleString(), detail: `${trace.input_tokens ?? 0} in · ${trace.output_tokens ?? 0} out` },
-      { label: "Cost", value: formatCost(trace.cost_cents ?? 0), detail: trace.provider ?? "Unknown provider" },
+      isWorkspaceMcpTrace(trace)
+        ? { label: "Tool", value: mcpCallDetails(trace).tool, detail: "MCP tool call" }
+        : { label: "Tokens", value: tokens.toLocaleString(), detail: `${trace.input_tokens ?? 0} in · ${trace.output_tokens ?? 0} out` },
+      isWorkspaceMcpTrace(trace)
+        ? { label: "Content retention", value: "Not retained", detail: "Tool arguments and results" }
+        : { label: "Cost", value: formatCost(trace.cost_cents ?? 0), detail: trace.provider ?? "Unknown provider" },
       {
         label: "Gateway outcome",
         value: outcome.shortLabel,
@@ -261,6 +280,7 @@ type OutcomeTone = "success" | "warning" | "danger";
 function getTraceOutcome(
   trace: NonNullable<TraceDetail["trace"]>,
   threats: import("@/api/client").TraceThreatDetection[],
+  mcp?: McpTracePresentation,
 ) {
   const actionable = threats.length > 0 && !onlyPassiveFindings(threats);
   if (trace.provider === "mcp") {
@@ -277,13 +297,15 @@ function getTraceOutcome(
       description: trace.error_message || "The MCP tool request did not complete successfully.",
       detail, tone: "danger" as OutcomeTone, icon: AlertTriangle,
     };
+    const inspections = mcp?.security;
+    const inspectionDetailsMissing = Boolean(inspections && inspections.tone !== "success" && !threats.length);
     return {
-      label: actionable ? "Tool completed with policy actions" : "Tool completed",
+      label: actionable ? "Tool completed with security records" : "Tool completed",
       shortLabel: "Completed",
-      description: "Arguments and returned content passed through workspace security checks. Their content is not stored in this trace.",
-      detail: actionable ? `Effective strategy: ${trace.security_action}` : threats.length ? "Signals observed · no enforcement" : "Security checks passed",
-      tone: (actionable ? "warning" : "success") as OutcomeTone,
-      icon: actionable ? ShieldAlert : CheckCircle2,
+      description: mcp ? "This trace records tool timing, outcomes and security decisions. Tool arguments and results are not retained." : "This trace records the tool call outcome and available security decisions.",
+      detail: actionable ? `Effective strategy: ${trace.security_action}` : threats.length ? "Signals observed · no enforcement" : inspections?.tone === "success" ? "Security checks completed" : inspections?.title || "No security findings recorded",
+      tone: (actionable || inspectionDetailsMissing ? "warning" : "success") as OutcomeTone,
+      icon: actionable ? ShieldAlert : inspectionDetailsMissing ? Info : CheckCircle2,
     };
   }
 
@@ -344,14 +366,16 @@ function getTraceOutcome(
 
 function TraceOutcomeBanner({
   trace,
+  mcp,
   threats,
   onReviewFindings,
 }: {
   trace: NonNullable<TraceDetail["trace"]>;
   threats: import("@/api/client").TraceThreatDetection[];
+  mcp?: McpTracePresentation;
   onReviewFindings: () => void;
 }) {
-  const outcome = getTraceOutcome(trace, threats);
+  const outcome = getTraceOutcome(trace, threats, mcp);
   const Icon = outcome.icon;
   const [reviewFeedback, setReviewFeedback] = useState(0);
 
@@ -424,6 +448,7 @@ function TraceOutcomeBanner({
 }
 
 function TraceSplit({
+  mcp,
   trace,
   spans,
   threats,
@@ -435,6 +460,7 @@ function TraceSplit({
   threats: import("@/api/client").TraceThreatDetection[];
   traceId: string;
   reviewFindingsRequest: number;
+  mcp?: McpTracePresentation;
 }) {
   const syntheticRoot = useMemo<Observation>(
     () => ({
@@ -442,7 +468,7 @@ function TraceSplit({
       trace_id: traceId,
       parent_id: "",
       type: "span",
-      name: trace.path || trace.method || "request",
+      name: isWorkspaceMcpTrace(trace) ? `MCP tool call · ${mcpCallDetails(trace).tool}` : trace.path || trace.method || "request",
       depth: 0,
       started_at: trace.started_at ?? new Date().toISOString(),
       completed_at: trace.completed_at ?? new Date().toISOString(),
@@ -454,6 +480,7 @@ function TraceSplit({
       output: trace.response_body ?? "",
       status: trace.status ?? "ok",
       error_message: trace.error_message,
+      status_message: trace.error_message,
     }),
     [trace, traceId],
   );
@@ -467,7 +494,7 @@ function TraceSplit({
   }, [spans, syntheticRoot, traceId]);
 
   const [selectedId, setSelectedId] = useState<string>(traceId);
-  const [tab, setTab] = useState<string>(threats.length ? "security" : "input");
+  const [tab, setTab] = useState<string>(() => initialTraceTab(trace, threats.length));
   const [tabWasChosen, setTabWasChosen] = useState(false);
   const [selectedThreatId, setSelectedThreatId] = useState<string | null>(threats[0]?.id ?? null);
   const firstThreatId = threats[0]?.id;
@@ -479,6 +506,10 @@ function TraceSplit({
     setSelectedId(traceId);
     setTabWasChosen(false);
   }, [traceId]);
+
+  useEffect(() => {
+    if (!tabWasChosen) setTab(initialTraceTab(trace, threats.length));
+  }, [trace, threats.length, tabWasChosen]);
 
   useEffect(() => {
     if (!threats.length) {
@@ -563,6 +594,7 @@ function TraceSplit({
           <main className="min-w-0 flex-1">
             <SpanDetailTabs
               span={selected}
+              mcp={mcp}
               threats={threats}
               activeTab={tab}
               onTabChange={(nextTab) => {
@@ -576,6 +608,7 @@ function TraceSplit({
           </main>
           <TraceSecurityInspector
             trace={trace}
+            mcp={mcp}
             threats={threats}
             selectedThreat={selectedThreat}
             onSelectThreat={selectThreat}
@@ -588,15 +621,18 @@ function TraceSplit({
 
 function TraceSecurityInspector({
   trace,
+  mcp,
   threats,
   selectedThreat,
   onSelectThreat,
 }: {
   trace: NonNullable<TraceDetail["trace"]>;
   threats: import("@/api/client").TraceThreatDetection[];
+  mcp?: McpTracePresentation;
   selectedThreat: import("@/api/client").TraceThreatDetection | null;
   onSelectThreat: (threat: import("@/api/client").TraceThreatDetection) => void;
 }) {
+  const noFindingTone = mcp?.security.tone || "success";
   const selectedIndex = selectedThreat ? threats.findIndex((threat) => threat.id === selectedThreat.id) : -1;
   const weighted = selectedThreat
     ? weightedThreatScore(selectedThreat.score ?? 0, selectedThreat.confidence ?? 0, selectedThreat.weighted_score)
@@ -616,15 +652,15 @@ function TraceSecurityInspector({
       className="hidden h-full w-[316px] flex-shrink-0 flex-col border-l border-border-subtle bg-background 2xl:flex"
     >
       <div className="flex items-start gap-2 border-b border-border-subtle px-3 py-3">
-        <span className={cn("mt-1 flex size-6 items-center justify-center rounded-md border", selectedThreat ? "border-danger/20 bg-danger-bg text-danger" : "border-success-border bg-success-bg text-success")}>
-          {selectedThreat ? <ShieldAlert className="size-3.5" /> : <ShieldCheck className="size-3.5" />}
+        <span className={cn("mt-1 flex size-6 items-center justify-center rounded-md border", selectedThreat || noFindingTone === "danger" ? "border-danger/20 bg-danger-bg text-danger" : noFindingTone === "success" ? "border-success-border bg-success-bg text-success" : "border-border-subtle text-muted-foreground")}>
+          {selectedThreat || noFindingTone === "danger" ? <ShieldAlert className="size-3.5" /> : noFindingTone === "success" ? <ShieldCheck className="size-3.5" /> : <Info className="size-3.5" />}
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[11px] font-semibold tracking-tight">
-            {selectedThreat ? selectedThreat.threat_type : "No security findings"}
+            {selectedThreat ? selectedThreat.threat_type : mcp?.security.title || "No security findings"}
           </h2>
-          <p className="mt-0.5 truncate text-[9px] text-muted-foreground">
-            {selectedThreat ? `Detected by ${selectedThreat.detector_name}` : "This trace passed all configured checks"}
+          <p className="mt-0.5 text-[9px] leading-relaxed text-muted-foreground">
+            {selectedThreat ? `Detected by ${selectedThreat.detector_name}` : mcp?.security.description || "This trace passed all configured checks"}
           </p>
         </div>
         {selectedThreat ? (

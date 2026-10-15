@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Braces, MessageSquareText } from "lucide-react";
+import { Braces, Info, LockKeyhole, MessageSquareText, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { Observation, TraceThreatDetection } from "@/api/client";
+import { Button } from "@/components/ui/button";
+import type { McpTracePresentation } from "./mcp-trace-presentation";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn, formatCost, formatDuration } from "@/lib/utils";
@@ -16,6 +18,7 @@ type Props = {
   selectedThreatId?: string | null;
   onThreatSelect?: (threat: TraceThreatDetection) => void;
   securityReviewSignal?: number;
+  mcp?: McpTracePresentation;
 };
 
 // Right-pane detail for the currently selected span. Tabs adapt to span
@@ -30,10 +33,13 @@ export function SpanDetailTabs({
   selectedThreatId,
   onThreatSelect,
   securityReviewSignal = 0,
+  mcp,
 }: Props) {
   const tokens = (span.input_tokens ?? 0) + (span.output_tokens ?? 0);
   const isGeneration = span.type === "generation";
   const isTool = span.type === "tool";
+  const input = isTool ? span.tool_input || span.input || "" : span.input || "";
+  const output = isTool ? span.tool_output || span.output || "" : span.output || "";
   const [securitySpotlight, setSecuritySpotlight] = useState(0);
 
   useEffect(() => {
@@ -92,34 +98,51 @@ export function SpanDetailTabs({
       </div>
 
       <Tabs value={activeTab} onValueChange={onTabChange} className="flex-1 min-h-0">
-        <TabsList variant="line" className="mx-4 mt-2">
+        <TabsList variant="line" className="mx-4 mt-2 max-w-[calc(100%-2rem)] overflow-x-auto" aria-label="Span details">
+          {mcp ? <TabsTrigger value="metadata">Overview</TabsTrigger> : null}
           <TabsTrigger value="input">Input</TabsTrigger>
           <TabsTrigger value="output">Output</TabsTrigger>
-          <TabsTrigger value="metadata">Metadata</TabsTrigger>
+          {!mcp ? <TabsTrigger value="metadata">Metadata</TabsTrigger> : null}
           <TabsTrigger value="security">
             Security {threats.length ? `(${threats.length})` : ""}
           </TabsTrigger>
         </TabsList>
         <div className="flex-1 overflow-auto px-4 pb-4">
           <TabsContent value="input" className="pt-3">
-            <EvidenceViewer
+            {mcp && !input.trim() ? <McpPayloadNotice direction="input" onTabChange={onTabChange} /> : <EvidenceViewer
               key={`${span.id}-input`}
-              raw={isTool ? span.tool_input ?? span.input ?? "" : span.input ?? ""}
+              raw={input}
               label={isGeneration ? "Messages" : "Request"}
               direction="in"
               forceRaw={isTool}
-            />
+            />}
           </TabsContent>
           <TabsContent value="output" className="pt-3">
-            <EvidenceViewer
+            {mcp && !output.trim() ? <McpPayloadNotice direction="output" toolDidNotRun={mcp.details.remoteAction === "Not executed"} onTabChange={onTabChange} /> : <EvidenceViewer
               key={`${span.id}-output`}
-              raw={isTool ? span.tool_output ?? span.output ?? "" : span.output ?? ""}
+              raw={output}
               label={isGeneration ? "Completion" : "Response"}
               direction="out"
               forceRaw={isTool}
-            />
+            />}
           </TabsContent>
           <TabsContent value="metadata" className="pt-3 space-y-3">
+            {mcp ? <section aria-label="MCP call overview" className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold tracking-tight">MCP call overview</h3>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">This trace records timing, outcomes and security decisions. Tool arguments and results are not retained.</p>
+              </div>
+              <div className="grid gap-px overflow-hidden rounded-md border border-border-subtle bg-border-subtle sm:grid-cols-2">
+                <MetadataItem label="Tool" value={mcp.details.tool} mono />
+                <MetadataItem label="Started by" value={mcp.details.source} />
+                <MetadataItem label="Remote action" value={mcp.details.remoteAction} />
+                <MetadataItem label="Content retention" value="Arguments and results not retained" />
+                <MetadataItem label="Connection ID" value={mcp.details.connection} mono />
+              </div>
+              <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={() => onTabChange("security")}>
+                <ShieldCheck className="size-3.5" /> View security checks
+              </Button>
+            </section> : null}
             {parsedParameters ? (
               <section>
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
@@ -134,6 +157,7 @@ export function SpanDetailTabs({
               </h3>
               <div className="grid gap-px overflow-hidden rounded-md border border-border-subtle bg-border-subtle sm:grid-cols-2">
                 <MetadataItem label="Span type" value={span.type} />
+                <MetadataItem label="Status" value={span.status || "Not recorded"} />
                 {span.status_message ? <MetadataItem label="Decision" value={span.status_message} /> : null}
                 <MetadataItem label="Depth" value={String(span.depth ?? 0)} />
                 <MetadataItem label="Started" value={new Date(span.started_at).toLocaleString()} />
@@ -181,15 +205,58 @@ export function SpanDetailTabs({
                 className="pointer-events-none absolute inset-1 z-10 rounded-lg ring-2 ring-warn/60 animate-pulse"
               />
             ) : null}
-            <ThreatCascade
+            {mcp ? <McpInspectionSummary summary={mcp.security} /> : null}
+            {threats.length || !mcp ? <ThreatCascade
               threats={threats}
               selectedThreatId={selectedThreatId}
               onSelect={onThreatSelect}
-            />
+            /> : null}
           </TabsContent>
         </div>
       </Tabs>
     </div>
+  );
+}
+
+function McpPayloadNotice({ direction, toolDidNotRun = false, onTabChange }: { direction: "input" | "output"; toolDidNotRun?: boolean; onTabChange: (tab: string) => void }) {
+  return (
+    <section aria-label={`${direction === "input" ? "Input" : "Output"} retention`} className="rounded-lg border border-border-subtle bg-surface-1 p-5">
+      <LockKeyhole className="mb-3 size-5 text-muted-foreground" />
+      <h3 className="text-sm font-semibold tracking-tight">{toolDidNotRun ? "No tool response" : `${direction === "input" ? "Input" : "Output"} content not retained`}</h3>
+      <p className="mt-2 max-w-xl text-xs leading-relaxed text-muted-foreground">
+        {toolDidNotRun ? "The recorded remote action is ‘Not executed’, so there is no tool response to inspect. " : ""}
+        To protect sensitive data, workspace MCP traces do not store raw tool arguments or results. Timing, outcomes and recorded security decisions are available in this trace.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={() => onTabChange("metadata")}>View call overview</Button>
+        <Button type="button" variant="ghost" size="sm" className="cursor-pointer" onClick={() => onTabChange("security")}>View security checks</Button>
+      </div>
+    </section>
+  );
+}
+
+function McpInspectionSummary({ summary }: { summary: McpTracePresentation["security"] }) {
+  const Icon = summary.tone === "success" ? ShieldCheck : summary.tone === "danger" ? ShieldAlert : Info;
+  return (
+    <section aria-label="MCP security checks" className="mb-4 space-y-4 rounded-lg border border-border-subtle bg-surface-1 p-4">
+      <div className="flex items-start gap-3">
+        <Icon className={cn("mt-0.5 size-4 shrink-0", summary.tone === "success" ? "text-success" : summary.tone === "danger" ? "text-danger" : "text-muted-foreground")} />
+        <div>
+          <h3 className="text-sm font-semibold tracking-tight">{summary.title}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{summary.description}</p>
+        </div>
+      </div>
+      <div className="divide-y divide-border-subtle">
+        {summary.stages.map((stage) => <div key={stage.name} className="flex flex-wrap items-center justify-between gap-2 py-3">
+          <div>
+            <p className="text-xs font-medium">{stage.label}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{stage.detail}</p>
+          </div>
+          <Badge variant={stage.tone === "danger" ? "destructive" : stage.tone === "success" ? "success" : "outline"} className="text-[10px]">{stage.state}</Badge>
+        </div>)}
+      </div>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">Checks cover the whole MCP call. Inspected content is not stored in this trace.</p>
+    </section>
   );
 }
 
