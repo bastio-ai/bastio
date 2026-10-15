@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:security": "node --experimental-strip-types --test src/components/observe/security-decision.test.mjs",
     "test:artifacts": "node --experimental-strip-types --test src/components/workspace/artifact-document.test.mjs",
     "test:gateways": "node --experimental-strip-types --test src/components/gateway-setup.test.mjs src/components/gateways/gateway-test.test.mjs",
     "typecheck": "tsc --noEmit",

@@ -97,8 +97,8 @@ export function FilterBar({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="any">Any security</SelectItem>
-                <SelectItem value="clean">Clean</SelectItem>
-                <SelectItem value="threat">Threat detected</SelectItem>
+                <SelectItem value="clean">No signals</SelectItem>
+                <SelectItem value="threat">Security signals</SelectItem>
               </SelectContent>
             </Select>
           ) : null}

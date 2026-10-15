@@ -93,6 +93,9 @@ jobs:
       - name: Workspace model discovery tests
         run: npm run test:workspace-models
 
+      - name: Security decision labels tests
+        run: npm run test:security
+
       - name: Workspace MCP diagnostics tests
         run: npm run test:workspace-mcp
 

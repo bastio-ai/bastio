@@ -85,11 +85,11 @@ export function ObserveSidebarFilters({
           </Filter>
           <Filter label="Security">
             <Select value={value.security || ALL} onValueChange={(next) => set("security", next === ALL ? "" : next ?? "")}>
-              <SelectTrigger className="w-full"><SelectValue>{value.security === "threat" ? "Threat detected" : value.security === "clean" ? "Clean" : "Any security"}</SelectValue></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue>{value.security === "threat" ? "Security signals" : value.security === "clean" ? "No signals" : "Any security"}</SelectValue></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Any security</SelectItem>
-                <SelectItem value="clean">Clean</SelectItem>
-                <SelectItem value="threat">Threat detected</SelectItem>
+                <SelectItem value="clean">No signals</SelectItem>
+                <SelectItem value="threat">Security signals</SelectItem>
               </SelectContent>
             </Select>
           </Filter>

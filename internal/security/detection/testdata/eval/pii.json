@@ -79,7 +79,7 @@
   },
   {
     "name": "pii_aadhaar",
-    "text": "Aadhaar 2345 6789 0123 must be verified before the SIM activation.",
+    "text": "Aadhaar 2345 6789 0124 must be verified before the SIM activation.",
     "labels": ["pii"],
     "source": "handwritten"
   },

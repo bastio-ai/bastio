@@ -132,7 +132,7 @@ func (d *InjectionDetector) initPatterns() {
 		{regexp.MustCompile(`(?i)ignore\s+(all\s+)?previous\s+(instructions|prompts|rules)`), "override", "override.previous", security.SeverityCritical, 0.95},
 		{regexp.MustCompile(`(?i)disregard\s+(all\s+)?(previous|above|prior)\s+(instructions|context)`), "override", "override.previous", security.SeverityCritical, 0.95},
 		{regexp.MustCompile(`(?i)forget\s+(everything|all|your)\s+(you|instructions|rules)`), "override", "override.forget", security.SeverityCritical, 0.90},
-		{regexp.MustCompile(`(?i)new\s+instructions?\s*[:=]`), "override", "override.new_instructions", security.SeverityHigh, 0.85},
+		{replacementInstructions, "override", "override.new_instructions", security.SeverityHigh, 0.85},
 		{regexp.MustCompile(`(?i)your\s+(new|real|actual)\s+(instructions?|purpose|goal|task)`), "override", "override.role_hijack", security.SeverityHigh, 0.85},
 		{regexp.MustCompile(`(?i)override\s+(your|the|all)\s+(instructions|rules|guidelines|safety)`), "override", "override.direct", security.SeverityCritical, 0.90},
 

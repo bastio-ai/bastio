@@ -11,7 +11,7 @@ import (
 
 // SecretsDetector catches API keys, cloud credentials, and private
 // material that developers paste into LLMs more often than anyone
-// admits. Distinct from the PII detector's toy "api_key" rule because:
+// admits. Credentials are classified here, separately from personal data:
 //
 //   - Real providers have stable, documented prefixes (sk-, ghp_,
 //     AKIA, xoxb-) that we can match with low false-positive rate.
@@ -310,7 +310,7 @@ func (p secretPattern) accepts(match string) bool {
 	if len(parts) < 2 {
 		return false
 	}
-	return shannonEntropy(parts[1]) >= p.minEntropy
+	return shannonEntropy(parts[1]) >= p.minEntropy && !documentationIdentifier(parts[1])
 }
 
 // shannonEntropy computes bits per character for the value portion of
@@ -355,4 +355,37 @@ func maskPrivateKeyBlocks(content string) string {
 		content = content[span[1]+end+len(footer):]
 	}
 	return out.String()
+}
+
+// Ordinary snake_case/kebab-case documentation identifiers can have high
+// character entropy. Require several readable words before distinguishing
+// those from opaque credentials. Provider-specific formats bypass this
+// generic-only check and always retain their existing protection.
+func documentationIdentifier(value string) bool {
+	words := strings.FieldsFunc(value, func(r rune) bool { return r == '_' || r == '-' })
+	if len(words) < 4 {
+		return false
+	}
+	for _, word := range words {
+		if len(word) < 2 || len(word) > 24 {
+			return false
+		}
+		for i := range len(word) {
+			if word[i] < 'a' || word[i] > 'z' {
+				return false
+			}
+		}
+	}
+	// A word-separated password remains a credential candidate. Only a
+	// lifecycle explanation gets this generic-assignment exemption.
+	for i := 1; i+1 < len(words); i++ {
+		if words[i] != "are" && words[i] != "is" {
+			continue
+		}
+		switch words[i+1] {
+		case "rotated", "generated", "refreshed", "stored", "revoked", "expired":
+			return true
+		}
+	}
+	return false
 }

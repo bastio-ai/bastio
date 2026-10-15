@@ -68,8 +68,9 @@ func (d *ExfilDetector) initPatterns() {
 		{regexp.MustCompile(`(?i)\bmy\s+(?:system|hidden|internal|developer|original)\s+(?:prompt|instructions)\s+(?:is|are|says?|states?)\b`), "prompt_reveal", security.SeverityCritical, 0.92},
 		{regexp.MustCompile(`(?i)\b(?:I\s+was|I\s+am|you\s+are)\s+(?:instructed|told|programmed|trained)\b[^.?!]{0,80}\b(?:system|hidden|internal|developer)\s+(?:prompt|instructions?|directives?)\b`), "instruction_reveal", security.SeverityHigh, 0.8},
 
-		// Classic leaked-prompt openers.
-		{regexp.MustCompile(`(?i)^\s*you\s+are\s+(?:a|an)\s+(?:helpful|harmless|honest)\s+(?:AI|assistant)\b`), "canonical_sysprompt", security.SeverityHigh, 0.85},
+		// A generic assistant-template opener is public text and does not
+		// establish disclosure. Explicit private-prompt announcements above
+		// remain protected, as do actual credentials in the secrets detector.
 
 		// Echoing API keys / secrets in the response. Light touch —
 		// the secrets detector catches the actual values; this rule
