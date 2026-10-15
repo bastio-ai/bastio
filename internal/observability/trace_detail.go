@@ -201,7 +201,7 @@ func (h *Handler) ListTraceThreats(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.ch.Conn.Query(r.Context(), `
 		SELECT toString(id), toString(trace_id), threat_type, severity, score, action_taken,
 			detector_name, matched_pattern, matched_content, confidence,
-			end_user_id, ip_address, detected_at
+			end_user_id, ip_address, detected_at, threat_subtype, source
 		FROM bastio.security_threat_logs
 		WHERE customer_id = toUUID(?) AND trace_id = toUUID(?)
 		ORDER BY
@@ -226,27 +226,30 @@ func (h *Handler) ListTraceThreats(w http.ResponseWriter, r *http.Request) {
 			confidence                    float32
 			endUserID, ipAddress          string
 			detectedAt                    time.Time
+			threatSubtype, source         string
 		)
 		if err := rows.Scan(&id, &tid, &threatType, &severity, &score, &actionTaken,
 			&detectorName, &matchedPattern, &matchedCont, &confidence,
-			&endUserID, &ipAddress, &detectedAt); err != nil {
+			&endUserID, &ipAddress, &detectedAt, &threatSubtype, &source); err != nil {
 			continue
 		}
 		threats = append(threats, map[string]any{
-			"id":               id,
-			"trace_id":         tid,
-			"threat_type":      threatType,
-			"severity":         severity,
-			"score":            score,
-			"weighted_score":   weightedThreatScore(score, confidence),
-			"action_taken":     actionTaken,
-			"detector_name":    detectorName,
-			"matched_pattern":  matchedPattern,
-			"matched_content":  matchedCont,
-			"confidence":       confidence,
-			"end_user_id":      endUserID,
-			"ip_address":       ipAddress,
-			"detected_at":      detectedAt.UTC().Format(time.RFC3339Nano),
+			"id":              id,
+			"trace_id":        tid,
+			"threat_type":     threatType,
+			"threat_subtype":  threatSubtype,
+			"source":          source,
+			"severity":        severity,
+			"score":           score,
+			"weighted_score":  weightedThreatScore(score, confidence),
+			"action_taken":    actionTaken,
+			"detector_name":   detectorName,
+			"matched_pattern": matchedPattern,
+			"matched_content": matchedCont,
+			"confidence":      confidence,
+			"end_user_id":     endUserID,
+			"ip_address":      ipAddress,
+			"detected_at":     detectedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
 

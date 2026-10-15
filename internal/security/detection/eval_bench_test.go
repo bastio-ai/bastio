@@ -52,17 +52,15 @@ type evalSample struct {
 	KnownGap bool     `json:"known_gap,omitempty"`
 }
 
-// Floors were raised on 2026-10-14 after adding business controls and
-// correcting phone, conversation-editing and character-lock false positives.
-// Observed precision: injection .917, jailbreak .857, PII 1.000, secrets .947.
-// Recall is 1.000 on required labeled samples; the existing three injection
-// and two jailbreak known-gap samples remain reported separately, not hidden.
-// These scores measure this small curated corpus, not real-world accuracy.
+// Business controls expanded on 2026-10-15; secrets precision floor raised
+// after correcting lifecycle-documentation false positives. Recall floors
+// remain unchanged. The three injection and two jailbreak known gaps remain
+// visible. These scores measure a small curated corpus, not real-world accuracy.
 var evalFloors = map[string]struct{ precision, recall float64 }{
 	"injection": {precision: 0.91, recall: 0.95},
 	"jailbreak": {precision: 0.85, recall: 0.95},
 	"pii":       {precision: 0.99, recall: 0.95},
-	"secrets":   {precision: 0.94, recall: 0.95},
+	"secrets":   {precision: 0.99, recall: 0.95},
 }
 
 func loadEvalCorpus(t testing.TB) []evalSample {

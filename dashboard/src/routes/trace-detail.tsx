@@ -1,3 +1,4 @@
+import { onlyPassiveFindings } from "@/components/observe/security-decision";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
@@ -162,8 +163,8 @@ function TraceHeader({
           {trace.status}
         </Badge>
         {threatCount > 0 ? (
-          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-            {threatCount} finding{threatCount === 1 ? "" : "s"}
+          <Badge variant={trace.status === "blocked" ? "destructive" : "outline"} className="text-[10px] px-1.5 py-0">
+            {threatCount} security signal{threatCount === 1 ? "" : "s"}
           </Badge>
         ) : null}
         {trace.environment ? (
@@ -261,6 +262,7 @@ function getTraceOutcome(
   trace: NonNullable<TraceDetail["trace"]>,
   threats: import("@/api/client").TraceThreatDetection[],
 ) {
+  const actionable = threats.length > 0 && !onlyPassiveFindings(threats);
   if (trace.provider === "mcp") {
     const remote = trace.tags?.remote_action;
     const detail = remote === "completed" ? "Remote action completed" : remote === "unknown" ? "Remote outcome unknown" : "Tool did not run";
@@ -276,12 +278,12 @@ function getTraceOutcome(
       detail, tone: "danger" as OutcomeTone, icon: AlertTriangle,
     };
     return {
-      label: threats.length ? "Tool completed with security findings" : "Tool completed",
+      label: actionable ? "Tool completed with policy actions" : "Tool completed",
       shortLabel: "Completed",
       description: "Arguments and returned content passed through workspace security checks. Their content is not stored in this trace.",
-      detail: threats.length ? `Effective strategy: ${trace.security_action}` : "Security checks passed",
-      tone: (threats.length ? "warning" : "success") as OutcomeTone,
-      icon: threats.length ? ShieldAlert : CheckCircle2,
+      detail: actionable ? `Effective strategy: ${trace.security_action}` : threats.length ? "Signals observed · no enforcement" : "Security checks passed",
+      tone: (actionable ? "warning" : "success") as OutcomeTone,
+      icon: actionable ? ShieldAlert : CheckCircle2,
     };
   }
 
@@ -309,6 +311,12 @@ function getTraceOutcome(
       icon: AlertTriangle,
     };
   }
+
+  if (threats.length && !actionable) return {
+    label: "Request allowed · signals observed", shortLabel: "Allowed",
+    description: "Detector signals were recorded without a policy action. These signals alone do not confirm an attack.",
+    detail: "No enforcement", tone: "success" as OutcomeTone, icon: CheckCircle2,
+  };
 
   if (threats.length) {
     const mismatch = blockedFindings > 0

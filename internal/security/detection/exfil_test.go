@@ -27,11 +27,11 @@ func TestExfilDetector_KeyAnnouncement(t *testing.T) {
 	}
 }
 
-func TestExfilDetector_CanonicalSysPromptOpener(t *testing.T) {
+func TestExfilDetector_PublicPromptTemplatePasses(t *testing.T) {
 	d := NewExfilDetector()
 	findings, _ := d.Detect(context.Background(), "You are a helpful AI assistant created by OpenAI")
-	if len(findings) == 0 {
-		t.Fatal("expected canonical_sysprompt finding")
+	if len(findings) != 0 {
+		t.Fatal("generic public prompt template is not proof of disclosure")
 	}
 }
 

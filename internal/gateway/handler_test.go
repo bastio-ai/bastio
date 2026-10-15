@@ -387,14 +387,14 @@ func TestSanitizeOutboundBody_TokenizeProducesMap(t *testing.T) {
 
 	body := []byte(`{"model":"gpt-4o","messages":[` +
 		`{"role":"user","content":"first SSN 123-45-6789"},` +
-		`{"role":"user","content":"same SSN again 123-45-6789 plus new 987-65-4321"}` +
+		`{"role":"user","content":"same SSN again 123-45-6789 plus new 487-65-4321"}` +
 		`]}`)
 
 	out, ok := sanitizeOutboundBody(body, engine, security.ActionTokenize, tm)
 	if !ok {
 		t.Fatal("expected rewrite")
 	}
-	if strings.Contains(string(out), "123-45-6789") || strings.Contains(string(out), "987-65-4321") {
+	if strings.Contains(string(out), "123-45-6789") || strings.Contains(string(out), "487-65-4321") {
 		t.Errorf("raw SSN leaked: %s", string(out))
 	}
 	// Two distinct SSNs → two placeholders; repeated value collapses.
@@ -414,10 +414,10 @@ func TestSanitizeOutboundBody_TokenizeProducesMap(t *testing.T) {
 	}
 	combined := env.Messages[0].Content + "\n" + env.Messages[1].Content
 	restored, n := tm.Restore(combined)
-	if !strings.Contains(restored, "123-45-6789") || !strings.Contains(restored, "987-65-4321") {
+	if !strings.Contains(restored, "123-45-6789") || !strings.Contains(restored, "487-65-4321") {
 		t.Errorf("round-trip failed: %q", restored)
 	}
-	if n != 3 { // 123-45-6789 appears twice, 987-65-4321 once
+	if n != 3 { // 123-45-6789 appears twice, 487-65-4321 once
 		t.Errorf("expected 3 restorations, got %d", n)
 	}
 }
@@ -482,7 +482,7 @@ func TestPostProcessResponse_ScanMasksNewPII(t *testing.T) {
 	ctx := security.WithProfile(context.Background(), &profile)
 
 	// Model hallucinated an SSN that was never in the request.
-	respBody := []byte(`{"choices":[{"message":{"role":"assistant","content":"leaked SSN 987-65-4321 oops"}}]}`)
+	respBody := []byte(`{"choices":[{"message":{"role":"assistant","content":"leaked SSN 487-65-4321 oops"}}]}`)
 	out, blocked, _ := h.postProcessResponse(ctx, respBody)
 	if blocked {
 		t.Fatal("mask-mode response scan must not block")
@@ -490,7 +490,7 @@ func TestPostProcessResponse_ScanMasksNewPII(t *testing.T) {
 	if out == nil {
 		t.Fatal("expected response to be rewritten")
 	}
-	if strings.Contains(string(out), "987-65-4321") {
+	if strings.Contains(string(out), "487-65-4321") {
 		t.Errorf("raw SSN leaked through response scan: %s", string(out))
 	}
 }

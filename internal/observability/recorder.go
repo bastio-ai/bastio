@@ -272,6 +272,10 @@ func (r *Recorder) RecordThreats(traceID, customerID, proxyID uuid.UUID, scanRes
 	}
 	now := time.Now().UTC()
 	for _, f := range scanResult.Findings {
+		action := f.Action
+		if effective, ok := scanResult.DetectorActions[f.DetectorName]; ok {
+			action = effective
+		}
 		ev := &ThreatEvent{
 			ID:             uuid.New(),
 			TraceID:        traceID,
@@ -281,7 +285,7 @@ func (r *Recorder) RecordThreats(traceID, customerID, proxyID uuid.UUID, scanRes
 			ThreatSubtype:  f.SubCategory,
 			Severity:       string(f.Severity),
 			Score:          float32(f.Score),
-			Action:         string(f.Action),
+			Action:         string(action),
 			DetectorName:   f.DetectorName,
 			MatchedPattern: f.MatchedPattern,
 			MatchedContent: f.MatchedContent,

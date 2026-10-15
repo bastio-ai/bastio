@@ -196,7 +196,7 @@ func TestPrivateKeyMaskRejectsMismatchedFooter(t *testing.T) {
 }
 
 func FuzzDetectorRewriteConsistency(f *testing.F) {
-	for _, seed := range []string{"9788743604457", "https://example.test/images/9788743604457-scaled.jpg", "lampe til natbordet", "https://cdn.example.test/lamp.png?v=1763400017", "Call +1 (202) 555-0143", "SSN 123-45-6789", "secret=" + strings.Repeat("a", 24), "-----BEGIN RSA PRIVATE KEY-----\nAQIDBAUG\n-----END RSA PRIVATE KEY-----"} {
+	for _, seed := range []string{"DESCRIPTION", "DEPRECATED", "SEQUENTIAL", "CPR 310290-1234", "Aadhaar 2345 6789 0124", "Aadhaar 2345 6789 0123", "token: refresh_tokens_are_rotated_daily_in_prod", "9788743604457", "https://example.test/images/9788743604457-scaled.jpg", "lampe til natbordet", "https://cdn.example.test/lamp.png?v=1763400017", "Call +1 (202) 555-0143", "SSN 123-45-6789", "secret=" + strings.Repeat("a", 24), "-----BEGIN RSA PRIVATE KEY-----\nAQIDBAUG\n-----END RSA PRIVATE KEY-----"} {
 		f.Add(seed)
 	}
 	pii, secrets := NewPIIDetector(), NewSecretsDetector()

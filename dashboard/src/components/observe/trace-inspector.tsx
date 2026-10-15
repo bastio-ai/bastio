@@ -39,9 +39,9 @@ export function TraceInspector({ trace, onClose }: { trace: Trace; onClose: () =
         </InspectorCard>
 
         <InspectorCard title="Security">
-          <Metric label="Verdict" value={trace.threat_detected ? "Threat detected" : "Clean"} />
-          <Metric label="Threat score" value={trace.threat_detected ? `${Math.round((trace.threat_score ?? 0) * 100)}%` : "—"} mono />
-          <Metric label="Threat types" value={(trace.threat_types ?? []).join(", ") || "—"} mono />
+          <Metric label="Verdict" value={trace.status === "blocked" ? "Blocked" : trace.threat_detected ? (trace.security_action === "pass" ? "Signals · no enforcement" : "Security event recorded") : "No signals"} />
+          <Metric label="Signal score" value={trace.threat_detected ? `${Math.round((trace.threat_score ?? 0) * 100)}%` : "—"} mono />
+          <Metric label="Signal types" value={(trace.threat_types ?? []).join(", ") || "—"} mono />
         </InspectorCard>
 
         <InspectorCard title="Context">

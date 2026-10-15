@@ -311,7 +311,7 @@ func (d *JailbreakDetector) initPatterns() {
 		{regexp.MustCompile(`(?i)\breset\s+(?:your|the)\s+(?:context|memory|conversation|instructions?|prompt)\b`),
 			"context_reset", "override.wipe_context", security.SeverityHigh, 0.86,
 			"derived from public jailbreak corpora", "Reset-the-context instruction"},
-		{regexp.MustCompile(`(?i)\b(?:new|updated|revised)\s+(?:rules?|instructions?|guidelines?|system\s+prompt)\s*[:.]\s*`),
+		{replacementInstructions,
 			"new_rules_announcement", "override.replace_rules", security.SeverityHigh, 0.84,
 			"derived from public jailbreak corpora", "Announces replacement rules"},
 

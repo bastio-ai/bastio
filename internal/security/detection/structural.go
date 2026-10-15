@@ -33,10 +33,6 @@ var (
 	// treats the next content as a new assistant turn.
 	chatTemplateCloser = regexp.MustCompile(`(?:<\|(?:im_end|eot_id|end_of_turn)\|>|<\/s>|\[/INST\])\s*(?:<\|(?:im_start|start_header_id)\|>\s*)?(?:assistant|user|system)?\s*$`)
 
-	// metaImperatives are verbs in the meta-instruction space.
-	metaImperatives = []string{"ignore", "forget", "disregard", "override", "bypass", "skip", "discard", "wipe"}
-	// metaTargets are the nouns those verbs act on in a jailbreak.
-	metaTargets     = []string{"instructions", "rules", "prompt", "guidelines", "restrictions", "policies", "constraints", "directives", "safeguards"}
 	encodingHTTPURL = regexp.MustCompile(`(?i)\bhttps?://[^\s<>"']+`)
 )
 
@@ -72,7 +68,7 @@ func structuralFindings(content string) []security.Finding {
 func detectManyShot(content string) *security.Finding {
 	matches := fakeTurnMarker.FindAllStringIndex(content, -1)
 	n := len(matches)
-	if n < 3 {
+	if n < 3 || !hostileInstruction.MatchString(content) {
 		return nil
 	}
 	// Scale severity with turn count.
@@ -240,38 +236,19 @@ func readableURLSlug(s string) bool {
 // verbs ("ignore", "forget", ...) with meta-targets ("instructions",
 // "rules", ...) within a short window. Catches phrasings the regex
 // patterns missed because word order was unusual.
+var metaInstructionPair = regexp.MustCompile(`(?i)\b(ignore|forget|disregard|override|bypass|skip|discard|wipe)\b[^.?!\n]{0,40}\b(instructions?|rules?|prompts?|guidelines?|restrictions|policies|constraints|directives|safeguards)\b`)
+
 func detectMetaInstructionCluster(content string) *security.Finding {
-	lc := strings.ToLower(content)
-	for _, verb := range metaImperatives {
-		vi := strings.Index(lc, verb)
-		if vi < 0 {
-			continue
-		}
-		// Look ahead up to 40 chars for a meta-target.
-		end := vi + len(verb) + 40
-		if end > len(lc) {
-			end = len(lc)
-		}
-		window := lc[vi:end]
-		for _, target := range metaTargets {
-			if strings.Contains(window, target) {
-				return &security.Finding{
-					ThreatType:     security.ThreatJailbreak,
-					DetectorName:   "jailbreak",
-					Severity:       security.SeverityHigh,
-					Score:          severityToScore(security.SeverityHigh),
-					Confidence:     0.78,
-					SubCategory:    "structural.meta_imperative",
-					MatchedPattern: verb + "_near_" + target,
-					MatchedContent: window,
-					Action:         security.ActionBlock,
-					Message:        "Meta-instruction cluster: " + verb + " ... " + target,
-					Source:         "derived from Wei et al. 2023 \"Jailbroken\"",
-				}
-			}
-		}
+	match := metaInstructionPair.FindStringSubmatch(content)
+	if len(match) < 3 {
+		return nil
 	}
-	return nil
+	return &security.Finding{
+		ThreatType: security.ThreatJailbreak, DetectorName: "jailbreak", Severity: security.SeverityHigh,
+		Score: severityToScore(security.SeverityHigh), Confidence: .78, SubCategory: "structural.meta_imperative",
+		MatchedPattern: strings.ToLower(match[1]) + "_near_" + strings.ToLower(match[2]), MatchedContent: match[0],
+		Action: security.ActionBlock, Message: "Meta-instruction cluster targets model instructions", Source: "derived from Wei et al. 2023 Jailbroken",
+	}
 }
 
 // itoa is a tiny non-strconv helper so we don't import strconv for a

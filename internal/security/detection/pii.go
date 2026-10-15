@@ -222,6 +222,7 @@ func (d *PIIDetector) initPatterns() {
 		{
 			regex:    regexp.MustCompile(`\b\d{3}[- ]?\d{2}[- ]?\d{4}\b`),
 			piiType:  "ssn",
+			validate: ssnValid,
 			severity: security.SeverityCritical,
 			maskFn: func(s string) string {
 				digits := regexp.MustCompile(`\d`).FindAllString(s, -1)
@@ -290,20 +291,6 @@ func (d *PIIDetector) initPatterns() {
 				return "[IP]"
 			},
 		},
-		// API key patterns (high). Kept for back-compat — real coverage
-		// lives in the dedicated SecretsDetector which has per-provider
-		// prefixes and entropy gating.
-		{
-			regex:    regexp.MustCompile(`(?i)\b(?:sk|pk|api[_-]?key|token|secret)[_-][a-zA-Z0-9]{20,}\b`),
-			piiType:  "api_key",
-			severity: security.SeverityHigh,
-			maskFn: func(s string) string {
-				if len(s) > 8 {
-					return s[:8] + "..." + "[REDACTED]"
-				}
-				return "[API_KEY]"
-			},
-		},
 
 		// IBAN (International Bank Account Number) — ISO 13616.
 		// 2 letters country code + 2 check digits + up to 30 BBAN
@@ -330,6 +317,7 @@ func (d *PIIDetector) initPatterns() {
 		{
 			regex:    regexp.MustCompile(`\b(?i)[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z]\s?\d{2}\s?\d{2}\s?\d{2}\s?[A-D]\b`),
 			piiType:  "uk_nino",
+			validate: ninoValid,
 			severity: security.SeverityHigh,
 			maskFn: func(s string) string {
 				clean := strings.ToUpper(strings.ReplaceAll(s, " ", ""))
@@ -345,7 +333,10 @@ func (d *PIIDetector) initPatterns() {
 			regex:    regexp.MustCompile(`\b\d{3}[- ]?\d{3}[- ]?\d{3}\b`),
 			piiType:  "canadian_sin",
 			severity: security.SeverityHigh,
-			validate: func(s string) bool { return luhnValidLength(s, 9, 9) },
+			validate: func(s string) bool {
+				d := identifierDigits(s)
+				return len(d) == 9 && d[0] != '0' && luhnValidLength(s, 9, 9)
+			},
 			maskFn: func(s string) string {
 				digits := regexp.MustCompile(`\d`).FindAllString(s, -1)
 				if len(digits) >= 3 {
@@ -355,12 +346,12 @@ func (d *PIIDetector) initPatterns() {
 			},
 		},
 
-		// EU VAT — country prefix + 8-12 digits/letters. The VIES
-		// rules differ per country; we accept the common shape and
-		// leave deep validation to the cloud tier.
+		// EU VAT — country prefix + a national-format body. Validate the country-specific structure;
+		// uppercase prose such as DESCRIPTION must not be treated as VAT.
 		{
-			regex:    regexp.MustCompile(`\b(?:AT|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|FR|GB|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK|XI)\s?[A-Z0-9]{8,12}\b`),
+			regex:    regexp.MustCompile(`(?i)\b(?:AT|BE|BG|CY|CZ|DE|DK|EE|EL|ES|FI|FR|GB|HR|HU|IE|IT|LT|LU|LV|MT|NL|PL|PT|RO|SE|SI|SK|XI) ?[A-Z0-9*+]{2,12}\b`),
 			piiType:  "eu_vat",
+			validate: vatValid,
 			severity: security.SeverityMedium,
 			maskFn: func(s string) string {
 				clean := strings.ToUpper(strings.ReplaceAll(s, " ", ""))
@@ -372,12 +363,11 @@ func (d *PIIDetector) initPatterns() {
 		},
 
 		// Aadhaar (India) — 12-digit identifier, commonly written
-		// as three groups of four. High false-positive potential if
-		// validation isn't applied; the Verhoeff checksum lives in
-		// the cloud tier. Kept at Medium severity in OSS.
+		// as three groups of four. Validate the Verhoeff checksum before detecting or rewriting.
 		{
 			regex:    regexp.MustCompile(`\b[2-9]\d{3}[- ]?\d{4}[- ]?\d{4}\b`),
 			piiType:  "aadhaar",
+			validate: aadhaarValid,
 			severity: security.SeverityMedium,
 			maskFn: func(s string) string {
 				digits := regexp.MustCompile(`\d`).FindAllString(s, -1)
@@ -391,10 +381,11 @@ func (d *PIIDetector) initPatterns() {
 		// Danish CPR (personnummer). Hyphenated and space-separated
 		// forms only — the hyphenless 10-digit form collides with
 		// order IDs and is left to the extension-era paste detector.
-		// Day is anchored 01-31 so random digit runs don't fire.
+		// Validate the calendar date without imposing obsolete check digits.
 		{
 			regex:    regexp.MustCompile(`\b(0[1-9]|[12]\d|3[01])\d{4}-\d{4}\b`),
 			piiType:  "danish_cpr",
+			validate: cprDateValid,
 			severity: security.SeverityHigh,
 			maskFn: func(s string) string {
 				if len(s) >= 4 {
@@ -406,6 +397,7 @@ func (d *PIIDetector) initPatterns() {
 		{
 			regex:    regexp.MustCompile(`\b(0[1-9]|[12]\d|3[01])\s+\d{2}\s+\d{2}\s+\d{4}\b`),
 			piiType:  "danish_cpr",
+			validate: cprDateValid,
 			severity: security.SeverityHigh,
 			maskFn: func(s string) string {
 				return "[CPR]"

@@ -1,3 +1,4 @@
+import { securityDecision } from "@/components/observe/security-decision";
 import { useEffect, useMemo, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
@@ -102,8 +103,8 @@ export function TracesPage() {
       views: [
         { label: "All traces", count: traces.length, icon: Activity, active: !filters.status && !filters.security, onClick: () => setFilters(emptyFilters) },
         { label: "Failed / blocked", count: failed, icon: CircleX, active: filters.status === "blocked", onClick: () => setFilters({ ...filters, status: "blocked" }) },
-        { label: "Threat detected", count: threatened, icon: ShieldAlert, active: filters.security === "threat", onClick: () => setFilters({ ...filters, security: "threat" }) },
-        { label: "Clean", count: clean, icon: CheckCircle2, active: filters.security === "clean", onClick: () => setFilters({ ...filters, security: "clean" }) },
+        { label: "Security signals", count: threatened, icon: ShieldAlert, active: filters.security === "threat", onClick: () => setFilters({ ...filters, security: "threat" }) },
+        { label: "No signals", count: clean, icon: CheckCircle2, active: filters.security === "clean", onClick: () => setFilters({ ...filters, security: "clean" }) },
       ],
       filters: <ObserveSidebarFilters value={filters} onChange={setFilters} environments={controls.environments} mode="traces" range={controls.range} onRangeChange={controls.setRange} environment={controls.environment} onEnvironmentChange={controls.setEnvironment} />,
     }),
@@ -171,12 +172,12 @@ export function TracesPage() {
               </TableHeader>
               <TableBody>
                 {filtered.map((trace) => (
-                  <TableRow key={trace.id} onClick={() => openTrace(trace)} className={cn("cursor-pointer border-border-subtle hover:bg-surface-2/70", selected?.id === trace.id && "bg-surface-2", trace.threat_detected ? "border-l-2 border-l-danger" : "border-l-2 border-l-transparent")}>
+                  <TableRow key={trace.id} onClick={() => openTrace(trace)} className={cn("cursor-pointer border-border-subtle hover:bg-surface-2/70", selected?.id === trace.id && "bg-surface-2", trace.status === "blocked" ? "border-l-2 border-l-danger" : "border-l-2 border-l-transparent")}>
                     <MonoCell title={new Date(trace.started_at).toLocaleString()}>{formatTimestamp(trace.started_at)}</MonoCell>
                     <MonoCell className="max-w-[220px] truncate text-foreground">{trace.trace_name || trace.path || trace.model}</MonoCell>
                     {showEnvironment ? <TableCell><EnvironmentBadge environment={trace.environment} /></TableCell> : null}
                     <TableCell><Badge variant={trace.status === "ok" ? "success" : trace.status === "blocked" ? "destructive" : "warning"} className="px-1.5 py-0 text-[9px]">{trace.status}</Badge></TableCell>
-                    <TableCell>{trace.threat_detected ? <Badge variant="destructive" className="px-1.5 py-0 text-[9px]">{(trace.threat_types ?? []).slice(0, 1).join("") || "threat"}</Badge> : <Badge variant="outline" className="px-1.5 py-0 text-[9px] text-muted-foreground">clean</Badge>}</TableCell>
+                    <TableCell>{trace.threat_detected ? <Badge variant={trace.status === "blocked" ? "destructive" : securityDecision(trace.security_action).tone === "warning" ? "warning" : "outline"} title={securityDecision(trace.security_action).explanation} className="px-1.5 py-0 text-[9px]">{(trace.threat_types ?? []).slice(0, 1).join("") || "security"} · {securityDecision(trace.security_action).label}</Badge> : <Badge variant="outline" className="px-1.5 py-0 text-[9px] text-muted-foreground">no signals</Badge>}</TableCell>
                     <TableCell className="text-[10px] text-muted-foreground"><span className="text-foreground/85">{trace.provider}</span> <span className="font-mono">{trace.model}</span></TableCell>
                     <MonoCell className="text-right">{formatDuration(trace.duration_ms)}</MonoCell>
                     <MonoCell className="text-right">{formatNumber((trace.input_tokens ?? 0) + (trace.output_tokens ?? 0))}</MonoCell>
