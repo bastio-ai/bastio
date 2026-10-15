@@ -253,6 +253,10 @@ func (h *Handler) Routes() chi.Router {
 	r.With(RequireRole(RoleMember)).Get("/mcp", h.listMCPConnections)
 	r.With(RequireRole(RoleMember)).Get("/mcp/oauth/callback", h.mcpOAuthCallback)
 	r.With(RequireRole(RoleAdmin)).Put("/mcp/policy", h.putMCPPolicy)
+	r.With(RequireRole(RoleAdmin)).Get("/mcp/history/policy", h.getMCPHistoryPolicy)
+	r.With(RequireRole(RoleAdmin)).Put("/mcp/history/policy", h.putMCPHistoryPolicy)
+	r.With(RequireRole(RoleAdmin)).Delete("/mcp/history", h.deleteMCPHistory)
+	r.With(RequireRole(RoleViewer)).Get("/mcp/traces/{id}/content", h.getMCPHistoryContent)
 	r.Route("/mcp/connections", func(r chi.Router) {
 		r.Use(RequireRole(RoleMember))
 		r.Post("/", h.saveMCPConnection)

@@ -1,3 +1,4 @@
+import { MCPHistorySettings } from "./mcp-history-settings";
 import {
   ResourceSharingButton,
   SharingPicker,
@@ -30,9 +31,13 @@ const integrationKey = ["workspace-mcp-integrations"];
 export function MCPIntegrationsButton({
   onUseResult,
   disabled,
+  temporary=false,
+  conversationId,
 }: {
   onUseResult: (text: string) => void;
   disabled?: boolean;
+  temporary?: boolean;
+  conversationId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -58,6 +63,8 @@ export function MCPIntegrationsButton({
           </DialogHeader>
           {open && (
             <MCPIntegrations
+              temporary={temporary}
+              conversationId={conversationId}
               onUseResult={(text) => {
                 onUseResult(text);
                 setOpen(false);
@@ -72,8 +79,12 @@ export function MCPIntegrationsButton({
 
 export function MCPIntegrations({
   onUseResult,
+  temporary=false,
+  conversationId,
 }: {
   onUseResult?: (text: string) => void;
+  temporary?: boolean;
+  conversationId?: string | null;
 }) {
   const qc = useQueryClient();
   const connections = useQuery({
@@ -131,9 +142,10 @@ export function MCPIntegrations({
         Workspace policies inspect arguments before forwarding and inspect
         returned text before you see or use it. Mask and Tokenize rewrite
         detected values; Warn and Log only allow originals through. Tool
-        arguments and results are not stored in traces or the integration audit log.
+        history is controlled by workspace admins. The integration audit log records decisions only.
         Tool runs appear in Observe → Traces with timing and security decisions.
       </div>
+      {data.can_manage && <MCPHistorySettings />}
       {data.can_manage && (
         <label className="flex items-center gap-2 text-xs">
           <input
@@ -189,6 +201,7 @@ export function MCPIntegrations({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium">
                   {c.name}{" "}
+                  {c.history_mode === "sanitized" ? <span className="ml-1 text-[10px] text-muted-foreground">Sanitized history enabled</span> : null}
                   <span className="ml-1 text-[10px] font-normal text-muted-foreground">
                     {c.scope === "workspace"
                       ? c.sharing
@@ -287,6 +300,8 @@ export function MCPIntegrations({
       )}
       {selected && !showForm && (
         <ToolRunner
+          temporary={temporary}
+          conversationId={conversationId}
           key={selected.id}
           connection={selected}
           canManage={data.can_manage}
@@ -543,10 +558,14 @@ function ToolRunner({
   connection,
   canManage,
   onUseResult,
+  temporary=false,
+  conversationId,
 }: {
   connection: Connection;
   canManage: boolean;
   onUseResult?: (text: string) => void;
+  temporary?: boolean;
+  conversationId?: string | null;
 }) {
   const [tool, setTool] = useState<Tool | null>(null);
   const [argumentsText, setArgumentsText] = useState("{}");
@@ -567,7 +586,7 @@ function ToolRunner({
     mutationFn: async (argumentsObject: Record<string, unknown>) => {
       const { data, error, response } = await http.POST("/v1/workspace/mcp/connections/{id}/call", {
         params: { path: { id: connection.id } },
-        body: { name: tool!.name, arguments: argumentsObject },
+        body: { name: tool!.name, arguments: argumentsObject, temporary, ...(conversationId ? {conversation_id:conversationId} : {}) },
       });
       setTraceID(response.headers.get("X-Bastio-Trace-Id") ?? "");
       if (!response.ok) {

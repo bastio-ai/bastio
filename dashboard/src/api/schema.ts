@@ -1888,6 +1888,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/mcp/history/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceGetMCPHistoryPolicy"];
+        put: operations["workspaceSetMCPHistoryPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["workspaceDeleteMCPHistory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace/mcp/traces/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["workspaceGetMCPHistoryContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspace/mcp/connections": {
         parameters: {
             query?: never;
@@ -2203,6 +2253,37 @@ export interface components {
                 error_code?: string;
             }[];
         };
+        WorkspaceMCPHistoryPolicy: {
+            /** @enum {string} */
+            mode: "metadata_only" | "sanitized";
+            retention_days: number;
+            capture_all: boolean;
+            connection_ids: string[];
+            viewer_user_ids: string[];
+            viewer_group_ids: string[];
+            /** Format: int64 */
+            version: number;
+        };
+        WorkspaceMCPHistoryPolicyResponse: {
+            policy: components["schemas"]["WorkspaceMCPHistoryPolicy"];
+            storage_allowed: boolean;
+            encryption_available: boolean;
+            tracing_available: boolean;
+        };
+        WorkspaceMCPHistoryContent: {
+            /** @enum {string} */
+            state: "sanitized" | "restricted" | "expired" | "not_retained";
+            /** Format: date-time */
+            expires_at?: string;
+            content?: {
+                input?: unknown;
+                output?: unknown;
+                /** @enum {string} */
+                input_state: "sanitized" | "withheld" | "size_limit" | "not_recorded";
+                /** @enum {string} */
+                output_state: "sanitized" | "withheld" | "size_limit" | "not_recorded" | "not_run";
+            };
+        };
         WorkspaceMCPPolicy: {
             allow_personal: boolean;
         };
@@ -2215,6 +2296,8 @@ export interface components {
             /** @enum {string} */
             auth_type?: "none" | "bearer" | "oauth";
             oauth_connected?: boolean;
+            /** @enum {string} */
+            history_mode?: "metadata_only" | "sanitized";
             /** Format: date-time */
             updated_at?: string;
             sharing?: components["schemas"]["WorkspaceResourceSharing"];
@@ -8083,6 +8166,90 @@ export interface operations {
             };
         };
     };
+    workspaceGetMCPHistoryPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrator-only history settings and storage capabilities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPHistoryPolicyResponse"];
+                };
+            };
+        };
+    };
+    workspaceSetMCPHistoryPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceMCPHistoryPolicy"];
+            };
+        };
+        responses: {
+            /** @description Administrator updated the history policy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPHistoryPolicyResponse"];
+                };
+            };
+        };
+    };
+    workspaceDeleteMCPHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrator deleted retained payloads and invalidated in-flight captures */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    workspaceGetMCPHistoryContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Independently authorized, unexpired sanitized payloads; never HTTP-cached */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMCPHistoryContent"];
+                };
+            };
+        };
+    };
     workspaceCreateMCPConnection: {
         parameters: {
             query?: never;
@@ -8193,6 +8360,13 @@ export interface operations {
                     arguments: {
                         [key: string]: unknown;
                     };
+                    /** @description Opt out of payload capture for this call */
+                    temporary?: boolean;
+                    /**
+                     * Format: uuid
+                     * @description Owned conversation context; its privacy policy is enforced server-side
+                     */
+                    conversation_id?: string;
                 };
             };
         };

@@ -19,6 +19,7 @@ import (
 )
 
 type MCPConnection struct {
+	HistoryMode    string `json:"history_mode,omitempty"`
 	AuthType       string `json:"auth_type"`
 	OAuthConnected bool   `json:"oauth_connected"`
 	oauth          []byte
@@ -96,6 +97,14 @@ FROM workspace_mcp_connections c WHERE customer_id=$1 AND revoked_at IS NULL AND
 					return
 				}
 			}
+		}
+	}
+	historyPolicy, historyErr := h.store.mcpHistoryPolicy(r.Context(), cid)
+	settings, settingsErr := h.store.GetSettings(r.Context(), cid)
+	for i := range items {
+		items[i].HistoryMode = "metadata_only"
+		if historyErr == nil && settingsErr == nil && settings.StoreConversationContent && h.mcpCipher != nil && h.obsRecorder != nil && historyPolicy.Mode == "sanitized" && (historyPolicy.CaptureAll || slices.Contains(historyPolicy.ConnectionIDs, items[i].ID)) {
+			items[i].HistoryMode = "sanitized"
 		}
 	}
 	writeJSON(w, 200, mcpPolicyResponse{items, allowed, RoleFromCtx(r.Context()).AtLeast(RoleAdmin)})
@@ -424,12 +433,32 @@ func (h *Handler) listMCPTools(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	var b struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
+		Name           string          `json:"name"`
+		Arguments      json.RawMessage `json:"arguments"`
+		Temporary      bool            `json:"temporary,omitempty"`
+		ConversationID *uuid.UUID      `json:"conversation_id,omitempty"`
 	}
 	if decodeMCP(r, &b) != nil || !mcp.ValidToolName(b.Name) || len(b.Arguments) == 0 || bytes.TrimSpace(b.Arguments)[0] != '{' || !json.Valid(b.Arguments) {
 		writeError(w, 400, "provide a tool name and JSON object arguments")
 		return
+	}
+	var conversationID uuid.UUID
+	if b.Temporary {
+		r = r.WithContext(WithTemporaryChat(r.Context(), true))
+	}
+	if b.ConversationID != nil {
+		conversationID = *b.ConversationID
+		if h.requireConversationWrite(w, r, conversationID) == nil {
+			return
+		}
+		conversation, err := h.store.GetConversation(r.Context(), customerIDFromCtx(r.Context()), conversationID)
+		if err != nil {
+			writeError(w, 404, "conversation unavailable")
+			return
+		}
+		if !conversation.ContentStored {
+			r = r.WithContext(WithTemporaryChat(r.Context(), true))
+		}
 	}
 	c, client, err := h.mcpClient(r)
 	if err != nil {
@@ -437,7 +466,7 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer closeMCP(client)
-	r, trace := h.beginMCPTrace(w, r, c, b.Name, "manual", uuid.Nil)
+	r, trace := h.beginMCPTrace(w, r, c, b.Name, "manual", conversationID)
 	defer trace.complete()
 	trace.startStage("guardrail", "mcp.arguments")
 	cid := customerIDFromCtx(r.Context())
@@ -457,6 +486,7 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	trace.inspected(categories)
+	trace.captureHistoryPayload(r.Context(), "input", b.Arguments)
 	trace.startStage("span", "mcp.discovery")
 	tools, err := h.protectedMCPTools(r.Context(), cid, c, client)
 	if err != nil {
@@ -525,6 +555,11 @@ func (h *Handler) callMCPTool(w http.ResponseWriter, r *http.Request) {
 		trace.outcome("error", "unsupported_result", 422, "The tool returned no supported text content.")
 		writeError(w, 422, "this tool returned no supported text content")
 		return
+	}
+	if historyText, historyErr := supportedToolText(raw); historyErr == nil {
+		trace.captureHistoryPayload(r.Context(), "output", mustJSONString(historyText))
+	} else if trace.history != nil {
+		trace.history.content.OutputState = "size_limit"
 	}
 	if categories == nil {
 		categories = []string{}

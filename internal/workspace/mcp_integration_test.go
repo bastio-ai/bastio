@@ -137,6 +137,13 @@ func TestWorkspaceMCPSharingSecurityAndCredentialsIntegration(t *testing.T) {
 			t.Fatalf("scope %s %s=%d want %d", entry.method, entry.path, w.Code, entry.code)
 		}
 	}
+	historyPolicy := defaultMCPHistoryPolicy()
+	historyPolicy.Mode = "sanitized"
+	historyPolicy.ConnectionIDs = []uuid.UUID{shared.ID}
+	historyJSON, _ := json.Marshal(historyPolicy)
+	if saved := request("PUT", "/mcp/history/policy", string(historyJSON), "manager", RoleAdmin, cid); saved.Code != 200 {
+		t.Fatalf("enable history %d %s", saved.Code, saved.Body.String())
+	}
 	callPath := "/mcp/connections/" + shared.ID.String() + "/call"
 	for _, args := range []string{`{"name":"delete","arguments":{}}`, `{"name":"search","arguments":{"command":"\u0072\u006d -rf /tmp/example"}}`, `{"name":"search","arguments":{"card":4111111111111111}}`} {
 		before := httpRequests
@@ -152,12 +159,44 @@ func TestWorkspaceMCPSharingSecurityAndCredentialsIntegration(t *testing.T) {
 	if w.Code != 200 || len(forwarded) != 1 || strings.Contains(forwarded[0], "alice@example.test") || !strings.Contains(forwarded[0], "a***@example.test") || strings.Contains(w.Body.String(), "bob@example.test") {
 		t.Fatalf("PII crossed security gate: %d %s %v", w.Code, w.Body.String(), forwarded)
 	}
+	history := request("GET", "/mcp/traces/"+w.Header().Get("X-Bastio-Trace-Id")+"/content", "", "manager", RoleAdmin, cid)
+	if history.Code != 200 || !strings.Contains(history.Body.String(), `"state":"sanitized"`) || strings.Contains(history.Body.String(), "alice@example.test") || strings.Contains(history.Body.String(), "bob@example.test") || strings.Contains(history.Body.String(), "a***@example.test") {
+		t.Fatalf("real call history not captured safely: %d %s", history.Code, history.Body.String())
+	}
 	poison = true
 	w = request("POST", callPath, `{"name":"search","arguments":{"query":"holiday policy"}}`, "employee", RoleMember, cid)
 	if w.Code != 403 || strings.Contains(w.Body.String(), "ATTENTION AI") {
 		t.Fatal("poisoned tool result was exposed")
 	}
+	blockedHistory := request("GET", "/mcp/traces/"+w.Header().Get("X-Bastio-Trace-Id")+"/content", "", "manager", RoleAdmin, cid)
+	if !strings.Contains(blockedHistory.Body.String(), `"output_state":"withheld"`) || strings.Contains(blockedHistory.Body.String(), "ATTENTION AI") {
+		t.Fatal("blocked output was retained")
+	}
 	poison = false
+	// Both explicit temporary calls and server-owned private conversation state
+	// override capture, even when the browser omits the temporary flag.
+	privateConversation, err := s.CreateConversation(ctx, Conversation{CustomerID: cid, UserID: "employee", Title: "Private tool test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE workspace_conversations SET content_stored=FALSE WHERE id=$1`, privateConversation.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, privacy := range []string{`"temporary":true`, `"conversation_id":"` + privateConversation.ID.String() + `"`} {
+		w = request("POST", callPath, `{"name":"search","arguments":{"query":"private handbook"},`+privacy+`}`, "employee", RoleMember, cid)
+		if w.Code != 200 {
+			t.Fatalf("private manual call failed: %d %s", w.Code, w.Body.String())
+		}
+		content := request("GET", "/mcp/traces/"+w.Header().Get("X-Bastio-Trace-Id")+"/content", "", "manager", RoleAdmin, cid)
+		if strings.Contains(content.Body.String(), `"content"`) {
+			t.Fatal("private manual call retained history")
+		}
+	}
+	beforePrivate := httpRequests
+	w = request("POST", callPath, `{"name":"search","arguments":{},"conversation_id":"`+privateConversation.ID.String()+`"}`, "another-employee", RoleMember, cid)
+	if w.Code == 200 || httpRequests != beforePrivate {
+		t.Fatal("another employee attached a private conversation")
+	}
 	for _, scenario := range []struct {
 		mode string
 		code int

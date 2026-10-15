@@ -20,14 +20,15 @@ type mcpTraceRecorder interface {
 	RecordThreatEvent(*observability.ThreatEvent)
 }
 
-// MCP telemetry is operational metadata only, even when conversation storage
-// is enabled. Never pass arguments, results, endpoints or remote errors here.
+// General MCP telemetry is operational metadata only. Optional sanitized
+// history uses a separate encrypted store and independently authorized endpoint.
 type mcpToolTrace struct {
 	recorder mcpTraceRecorder
 	trace    observability.TraceRecord
 	spans    []*observability.ObservationRecord
 	stage    *observability.ObservationRecord
 	findings map[string]*observability.ThreatEvent
+	history  *mcpHistoryCapture
 	done     bool
 }
 
@@ -57,6 +58,7 @@ func (h *Handler) beginMCPTrace(w http.ResponseWriter, r *http.Request, c MCPCon
 	if recorder != nil {
 		w.Header().Set("X-Bastio-Trace-Id", t.trace.ID.String())
 	}
+	h.prepareMCPHistory(r, t, c, conversationID)
 	return r.WithContext(context.WithValue(r.Context(), mcpTraceKey{}, t)), t
 }
 
@@ -179,6 +181,8 @@ func (t *mcpToolTrace) complete() {
 	if t.done {
 		return
 	}
+	t.retainHistory()
+	t.history = nil
 	t.done = true
 	t.endStage(t.trace.Status, t.trace.ErrorMessage)
 	t.trace.CompletedAt = time.Now().UTC()
@@ -205,8 +209,8 @@ func (t *mcpToolTrace) inspected(categories []string) {
 	if t.stage == nil {
 		return
 	}
-	t.stage.StatusMessage = "Security checks passed. Tool arguments and results are not stored."
+	t.stage.StatusMessage = "Security inspection completed. Payload history follows the workspace retention policy."
 	if len(categories) > 0 {
-		t.stage.StatusMessage = "Security findings: " + strings.Join(uniqueMCPDiagnostics(slices.Clone(categories)), ", ") + ". Tool arguments and results are not stored."
+		t.stage.StatusMessage = "Security findings: " + strings.Join(uniqueMCPDiagnostics(slices.Clone(categories)), ", ") + ". Payload history follows the workspace retention policy."
 	}
 }

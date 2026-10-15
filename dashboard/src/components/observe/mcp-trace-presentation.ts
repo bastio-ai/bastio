@@ -1,5 +1,5 @@
-// These workspace MCP routes always record operational metadata only.
-// Do not apply that storage policy to imported MCP traces or other providers.
+// Workspace MCP traces record operational metadata. Optional payload history
+// is independently authorized; imported MCP traces retain their own policy.
 type TraceContext = {
   provider?: string;
   path?: string;
@@ -79,4 +79,28 @@ export function mcpSecuritySummary(trace: TraceContext, spans: InspectionSpan[],
 export type McpTracePresentation = {
   details: ReturnType<typeof mcpCallDetails>;
   security: ReturnType<typeof mcpSecuritySummary>;
+  retention?: ReturnType<typeof mcpRetentionSummary>;
 };
+
+// Policy tags describe capture at call time, never the workspace's current
+// policy. Payloads are fetched separately only when a payload tab is opened.
+export function mcpRetentionSummary(trace: TraceContext, now = Date.now()) {
+  const mode = trace.tags?.["mcp.history.mode"] === "sanitized" ? "sanitized" : "metadata_only";
+  const state = trace.tags?.["mcp.history.state"] || "not_retained";
+  const expiresAt = trace.tags?.["mcp.history.expires_at"];
+  const expired = Boolean(expiresAt && Date.parse(expiresAt) <= now);
+  const reason = trace.tags?.["mcp.history.reason"];
+  const label = mode === "metadata_only" ? "Metadata only" : expired ? "Expired" : state === "retained" ? "Sanitized history" : "Not captured";
+  const description = mode === "sanitized" && state === "retained"
+    ? expired ? "The captured content has expired and is no longer available." : "Sanitized snapshots were retained under the workspace policy. Viewing them requires separate authorization."
+    : reason === "temporary_chat" ? "Temporary chat privacy disabled payload capture for this call."
+    : reason === "workspace_no_store" || reason === "storage_policy_changed" ? "The workspace privacy policy prevented payload capture for this call."
+    : reason === "policy_changed" ? "The history policy changed during this call, so its payloads were not retained."
+    : mode === "sanitized" ? "Sanitized history was enabled, but this call's payload was not retained."
+    : "This call retained timing, outcomes and security decisions only. Payload content was not captured.";
+  return {mode, state, expiresAt, expired, label, description};
+}
+
+export function mcpPayloadAppliesToSpan(span: { id: string; trace_id: string; name?: string; type: string }, direction: "input" | "output") {
+  return span.id === span.trace_id || span.type === "tool" || span.name === (direction === "input" ? "mcp.arguments" : "mcp.result");
+}

@@ -519,6 +519,9 @@ func (s *Server) Start(ctx context.Context) error {
 
 	handler := s.Handler()
 	if s.workspaceHandler != nil {
+		historyDone := make(chan struct{})
+		go func() { defer close(historyDone); s.workspaceHandler.RunMCPHistoryMaintenance(maintenance) }()
+		defer func() { stopMaintenance(); <-historyDone }()
 		indexingDone := make(chan struct{})
 		go func() { defer close(indexingDone); s.workspaceHandler.RunKnowledgeMaintenance(maintenance) }()
 		defer func() { stopMaintenance(); <-indexingDone }()
