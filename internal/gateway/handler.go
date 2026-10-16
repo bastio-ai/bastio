@@ -1396,6 +1396,10 @@ func isRetryableError(err error) bool {
 // llmpipeline.RecordChatTrace) so gateway and workspace produce
 // exactly one threat row per finding, from a single code path.
 func (h *Handler) runSecurityScan(r *http.Request, info *auth.APIKeyInfo, content string, traceID uuid.UUID, profile *security.Profile) *security.ScanResult {
+	return h.runSecurityScanFrom(r, info, content, traceID, profile, "input")
+}
+
+func (h *Handler) runSecurityScanFrom(r *http.Request, info *auth.APIKeyInfo, content string, traceID uuid.UUID, profile *security.Profile, source string) *security.ScanResult {
 	if h.security == nil || content == "" {
 		return nil
 	}
@@ -1455,6 +1459,15 @@ func (h *Handler) runSecurityScan(r *http.Request, info *auth.APIKeyInfo, conten
 	}
 
 	security.ObserveGatewayResult(r.Context(), result, content)
+	if result != nil {
+		for i := range result.Findings {
+			// Keep detector provenance when supplied; otherwise record which
+			// side of the AI call was inspected. This contains no payload data.
+			if result.Findings[i].Source == "" {
+				result.Findings[i].Source = source
+			}
+		}
+	}
 	status := "ok"
 	msg := ""
 	if result != nil && result.ShouldBlock {
@@ -1561,8 +1574,8 @@ func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
 		environment = in.Headers.Get("X-Bastio-Environment")
 		release = in.Headers.Get("X-Bastio-Release")
 		traceName = in.Headers.Get("X-Bastio-Trace-Name")
-		tags = tagsFromHeaders(in.Headers)
 	}
+	tags = gatewayTraceTags(ctx, in.Headers)
 	cost := llmpipeline.EstimateCostCents(in.Model, in.InputTokens, in.OutputTokens)
 	if in.CostCents != nil {
 		cost = *in.CostCents

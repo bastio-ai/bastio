@@ -15,6 +15,7 @@ import { AllowPatternAction } from "@/components/observe/allow-pattern-action";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn, weightedThreatScore } from "@/lib/utils";
+import { ConnectedFindingExplanation } from "./finding-explanation-card";
 
 export function ThreatInspector({
   threat,
@@ -47,6 +48,7 @@ export function ThreatInspector({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <ConnectedFindingExplanation key={threat.id} finding={threat} />
         <InspectorCard title="Outcome">
           <MetricRow label="Action"><Badge variant={threat.action_taken === "block" ? "destructive" : "outline"} className="px-1.5 py-0 text-[9px]">{threat.action_taken}</Badge></MetricRow>
           <MetricRow label="Score (weighted)" mono>{(weighted * 100).toFixed(0)}%</MetricRow>

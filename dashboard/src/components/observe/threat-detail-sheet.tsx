@@ -15,6 +15,7 @@ import {
 import type { ThreatEvent } from "@/api/client";
 import { AllowPatternAction } from "@/components/observe/allow-pattern-action";
 import { weightedThreatScore } from "@/lib/utils";
+import { ConnectedFindingExplanation } from "./finding-explanation-card";
 
 const severityVariant = (s: string) => {
   switch (s) {
@@ -82,6 +83,7 @@ function ThreatDetailBody({ threat }: { threat: ThreatEvent }) {
       </SheetHeader>
 
       <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+        <ConnectedFindingExplanation key={threat.id} finding={threat} />
         <ScoreRow
           confidence={threat.confidence}
           score={threat.score}

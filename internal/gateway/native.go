@@ -309,7 +309,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		responseBody, inTokens, outTokens, status = h.forwardNativeStream(w, r, resp, metadata)
 		if gatewaypolicy.From(r.Context()).MonitorOnly {
-			scan = mergeMonitorScans(scan, h.runSecurityScan(r, info, OutputText(responseBody), traceID, profile))
+			scan = mergeMonitorScans(scan, h.runSecurityScanFrom(r, info, OutputText(responseBody), traceID, profile, "response"))
 		}
 		return
 	}
@@ -329,7 +329,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 			route.model = reported.Model
 		}
 		if gatewaypolicy.From(r.Context()).MonitorOnly {
-			scan = mergeMonitorScans(scan, h.runSecurityScan(r, info, OutputText(responseBody), traceID, profile))
+			scan = mergeMonitorScans(scan, h.runSecurityScanFrom(r, info, OutputText(responseBody), traceID, profile, "response"))
 		}
 		processed, blocked, reason := h.postProcessNativeResponse(r, responseBody)
 		if blocked {

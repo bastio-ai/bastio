@@ -20,6 +20,7 @@ import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-pri
 import { AllowPatternAction } from "@/components/observe/allow-pattern-action";
 import { SkeletonRows } from "@/components/skeleton";
 import { weightedThreatScore } from "@/lib/utils";
+import { ConnectedFindingExplanation } from "@/components/observe/finding-explanation-card";
 
 const severityVariant = (s: string) => {
   switch (s) {
@@ -115,6 +116,7 @@ export function ThreatDetailPage() {
 
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="space-y-3">
+          <ConnectedFindingExplanation key={threat.id} finding={threat} />
           <Section title="Matched pattern">
             <pre className="overflow-x-auto whitespace-pre rounded-md border border-border/50 bg-muted/40 px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground/90">
               {threat.matched_pattern}

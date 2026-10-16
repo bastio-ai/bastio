@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn, weightedThreatScore } from "@/lib/utils";
 
 import { securityDecision } from "./security-decision";
+import { findingExplanation } from "./finding-explanation";
 
 type Props = {
   threats: TraceThreatDetection[];
@@ -52,7 +53,7 @@ export function ThreatCascade({ threats, onSelect, selectedThreatId }: Props) {
             <Icon className={cn("mt-0.5 h-4 w-4", decision.tone === "danger" ? "text-danger" : decision.tone === "warning" ? "text-warn" : decision.tone === "success" ? "text-success" : "text-muted-foreground")} />
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs font-semibold">{t.threat_type}</span>
+                <span className="text-xs font-semibold">{findingExplanation(t).title}</span>
                 <Badge
                   className={`text-[10px] px-1.5 py-0 ${decision.tone === "neutral" ? "bg-muted text-muted-foreground" : severityClass[t.severity] ?? "bg-muted"}`}
                 >
@@ -71,6 +72,7 @@ export function ThreatCascade({ threats, onSelect, selectedThreatId }: Props) {
                 </span>
               </div>
               <p className="text-[11px] text-muted-foreground">{decision.explanation}</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">{findingExplanation(t).description}</p>
               {t.threat_subtype || t.source ? <p className="font-mono text-[11px] text-muted-foreground">{[t.source, t.threat_subtype].filter(Boolean).join(" · ")}</p> : null}
               {t.matched_pattern ? (
                 <p className="truncate font-mono text-[11px] text-muted-foreground">
