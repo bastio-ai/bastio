@@ -129,6 +129,9 @@ type piiPattern struct {
 	// A word boundary also occurs at '-' and can expose a suffix of a
 	// longer numeric identifier as a seemingly complete national ID.
 	wholeNumber bool
+	// Bare national-ID shapes in URLs need a relevant parameter/path label;
+	// an unlabelled nine-digit catalogue ID is not evidence of personal data.
+	urlLabel *regexp.Regexp
 }
 
 // NewPIIDetector creates a PII detector with standard patterns.
@@ -226,6 +229,7 @@ func (d *PIIDetector) initPatterns() {
 			piiType:     "ssn",
 			validate:    ssnValid,
 			wholeNumber: true,
+			urlLabel:    regexp.MustCompile(`(?i)(?:^|[/?&;])(?:ssn|social[_-]*security(?:[_-]*(?:number|no))?)[/=:]$`),
 			severity:    security.SeverityCritical,
 			maskFn: func(s string) string {
 				digits := regexp.MustCompile(`\d`).FindAllString(s, -1)
@@ -336,6 +340,7 @@ func (d *PIIDetector) initPatterns() {
 			regex:       regexp.MustCompile(`\b\d{3}[- ]?\d{3}[- ]?\d{3}\b`),
 			piiType:     "canadian_sin",
 			wholeNumber: true,
+			urlLabel:    regexp.MustCompile(`(?i)(?:^|[/?&;])(?:sin|social[_-]*insurance(?:[_-]*(?:number|no))?)[/=:]$`),
 			severity:    security.SeverityHigh,
 			validate: func(s string) bool {
 				d := identifierDigits(s)
@@ -423,9 +428,20 @@ func (p piiPattern) matches(content string) [][]int {
 		return p.findIndices(content)
 	}
 	matches := p.regex.FindAllStringIndex(content, -1)
+	var urls [][]int
+	if p.urlLabel != nil {
+		urls = encodingHTTPURL.FindAllStringIndex(content, -1)
+	}
+	urlIndex := 0
 	out := matches[:0]
 	for _, span := range matches {
 		if p.wholeNumber && !wholeNumericIdentifier(content, span[0], span[1]) {
+			continue
+		}
+		for urlIndex < len(urls) && urls[urlIndex][1] <= span[0] {
+			urlIndex++
+		}
+		if urlIndex < len(urls) && urls[urlIndex][0] <= span[0] && span[1] <= urls[urlIndex][1] && span[1]-span[0] == 9 && !p.urlLabel.MatchString(content[max(urls[urlIndex][0], span[0]-64):span[0]]) {
 			continue
 		}
 		if p.validate == nil || p.validate(content[span[0]:span[1]]) {

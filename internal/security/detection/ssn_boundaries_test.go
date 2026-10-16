@@ -38,13 +38,16 @@ func TestSSNRejectsFragmentsOfLongerHyphenatedIdentifiers(t *testing.T) {
 func TestCompleteSSNsRemainProtectedAlongsideProductIdentifiers(t *testing.T) {
 	d := NewPIIDetector()
 	for _, ssn := range []string{"123-45-6789", "123 45 6789", "123456789"} {
-		for _, text := range []string{
+		texts := []string{
 			"SSN: " + ssn,
 			"https://example.test/search?ssn=" + ssn,
-			"https://example.test/images/" + ssn + ".jpg",
 			"Product 123-456-78-9012; SSN: " + ssn,
 			"SSN: " + ssn + ". Product 123-456-78-9012",
-		} {
+		}
+		if strings.ContainsAny(ssn, "- ") {
+			texts = append(texts, "https://example.test/images/"+ssn+".jpg")
+		}
+		for _, text := range texts {
 			findings, err := d.Detect(context.Background(), text)
 			if err != nil || len(findings) != 1 || findings[0].MatchedPattern != "ssn" {
 				t.Fatalf("complete SSN was not detected: %+v %v", findings, err)
@@ -89,7 +92,11 @@ func TestSINRejectsLongerIdentifiersWithoutLosingCompleteNumbers(t *testing.T) {
 				t.Fatal("partial SIN tokenized")
 			}
 		}
-		for _, text := range []string{"SIN: " + value, "https://example.test/files/" + value + ".jpg"} {
+		texts := []string{"SIN: " + value, "https://example.test/files?sin=" + value}
+		if strings.Contains(value, "-") {
+			texts = append(texts, "https://example.test/files/"+value+".jpg")
+		}
+		for _, text := range texts {
 			findings, err := d.Detect(context.Background(), text)
 			if err != nil || len(findings) != 1 || findings[0].MatchedPattern != "canadian_sin" || d.Mask(text) == text {
 				t.Fatalf("complete SIN not protected: %+v %v", findings, err)

@@ -56,9 +56,12 @@ const (
 	FlagHomoglyphFolded     Flag = "homoglyph.folded"
 	FlagWhitespaceCollapsed Flag = "whitespace.collapsed"
 	FlagBase64Decoded       Flag = "decoded.base64"
-	FlagROT13Decoded        Flag = "decoded.rot13"
-	FlagLeetFolded          Flag = "decoded.leet"
-	FlagURLDecoded          Flag = "decoded.url"
+	// URL wrappers are ordinary transport syntax, not an attack finding.
+	// The decoded content is still inspected and participates in rewrite checks.
+	FlagBase64URLDecoded Flag = "decoded.base64_url"
+	FlagROT13Decoded     Flag = "decoded.rot13"
+	FlagLeetFolded       Flag = "decoded.leet"
+	FlagURLDecoded       Flag = "decoded.url"
 )
 
 // Result is what Normalize returns.
@@ -373,6 +376,13 @@ func runDecodePass(r Result, unicodeEnabled bool) Result {
 		r.Flags = append(r.Flags, FlagBase64Decoded)
 		appended = append(appended, "[decoded:base64] "+decoded)
 	}
+	if decoded, ok := decodeEmbeddedBase64URLs(decodeTarget); ok {
+		if unicodeEnabled {
+			decoded = runUnicodePass(Result{Normalized: decoded}).Normalized
+		}
+		r.Flags = append(r.Flags, FlagBase64URLDecoded)
+		appended = append(appended, "[decoded:base64_url] "+decoded)
+	}
 	if decoded, ok := tryDecodeROT13(decodeTarget); ok {
 		r.Flags = append(r.Flags, FlagROT13Decoded)
 		appended = append(appended, "[decoded:rot13] "+decoded)
@@ -386,6 +396,58 @@ func runDecodePass(r Result, unicodeEnabled bool) Result {
 		r.Normalized = r.Normalized + "\n" + strings.Join(appended, "\n")
 	}
 	return r
+}
+
+// A path's '/' characters are valid base64 characters too, so extracting one
+// long run from the whole URL merges its routing prefix with the payload.
+// Decode individual components that represent HTTP URLs, with bounded nesting.
+// No network requests are made. Keep both the encoded original and decoded
+// views so other detectors can inspect credentials and instructions inside.
+func decodeEmbeddedBase64URLs(text string) (string, bool) {
+	seen := make(map[string]bool)
+	var output []string
+	for depth := 0; depth < 3; depth++ {
+		var next []string
+		for _, raw := range httpURL.FindAllString(text, -1) {
+			u, err := url.Parse(raw)
+			if err != nil {
+				continue
+			}
+			parts := strings.Split(u.EscapedPath(), "/")
+			for _, pair := range strings.Split(u.RawQuery, "&") {
+				_, value, _ := strings.Cut(pair, "=")
+				parts = append(parts, value)
+			}
+			for _, part := range parts {
+				if len(part) < 16 || len(part) > 8192 || seen[part] {
+					continue
+				}
+				seen[part] = true
+				for _, encoding := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.StdEncoding} {
+					value, err := encoding.DecodeString(part)
+					if err != nil {
+						continue
+					}
+					decoded := string(value)
+					target, err := url.Parse(decoded)
+					if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Hostname() == "" {
+						continue
+					}
+					output = append(output, decoded)
+					next = append(next, decoded)
+					if expanded, changed := DecodeURLText(decoded); changed {
+						output = append(output, expanded)
+					}
+					break
+				}
+			}
+		}
+		if len(next) == 0 {
+			break
+		}
+		text = strings.Join(next, "\n")
+	}
+	return strings.Join(output, "\n"), len(output) > 0
 }
 
 // tryDecodeBase64 scans for base64-like runs of 20+ chars and decodes
