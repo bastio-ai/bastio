@@ -37,6 +37,7 @@ test("replies are extracted across provider formats without treating reasoning-o
     { content: [{ type: "text", text: "Hello" }] },
     { candidates: [{ content: { parts: [{ text: "Hello" }] } }] },
     { message: { content: "Hello" } },
+    { answers: { greeting: { noul: "Hello" } } },
     { output: { message: { content: [{ text: "Hello" }] } } },
   ])
     assert.equal(gatewayTestReply(body), "Hello");

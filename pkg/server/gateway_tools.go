@@ -159,6 +159,9 @@ func (g *gatewayTools) Test(w http.ResponseWriter, r *http.Request) {
 		body["max_tokens"] = 512
 	}
 	switch p.TargetProvider {
+	case providers.ProviderTypeSafe:
+		path = "/v1/guard/" + p.ID.String() + "/v1/systemone"
+		body = map[string]any{"model": input.Model, "state": "Hello from Bastio", "questions": map[string]map[string]string{"greeting": {"type": "noul", "instructions": "Does the state contain a greeting?"}}}
 	case providers.ProviderOpenAI, providers.ProviderOpenRouter, providers.ProviderXAI:
 		path = "/v1/guard/" + p.ID.String() + "/v1/chat/completions"
 	case providers.ProviderAnthropic:
@@ -180,7 +183,7 @@ func (g *gatewayTools) Models(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !g.native(p.TargetProvider) {
+	if p.TargetProvider == providers.ProviderTypeSafe || !g.native(p.TargetProvider) {
 		writeJSON(w, 200, gatewayModelListing{string(p.TargetProvider), "catalog", []gatewayListedModel{}})
 		return
 	}

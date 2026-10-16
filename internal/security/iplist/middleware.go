@@ -7,6 +7,7 @@ import (
 	"net/netip"
 
 	"github.com/bastio-ai/bastio/internal/security"
+	"github.com/bastio-ai/bastio/pkg/gatewaypolicy"
 )
 
 // MiddlewareConfig controls what happens on a threat-list hit.
@@ -46,7 +47,7 @@ func Middleware(m *Manager, cfg MiddlewareConfig) func(http.Handler) http.Handle
 				next.ServeHTTP(w, r)
 				return
 			}
-			if cfg.Block {
+			if cfg.Block && !gatewaypolicy.From(r.Context()).MonitorOnly {
 				slog.Info("iplist: blocked listed client ip",
 					"ip", addr.String(),
 					"lists", verdict.Lists,

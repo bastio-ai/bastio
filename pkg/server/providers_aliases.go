@@ -50,6 +50,7 @@ type NativeClient = providers.NativeClient
 const (
 	ProviderOpenAI     = providers.ProviderOpenAI
 	ProviderOpenRouter = providers.ProviderOpenRouter
+	ProviderTypeSafe   = providers.ProviderTypeSafe
 	ProviderAnthropic  = providers.ProviderAnthropic
 	ProviderBedrock    = providers.ProviderBedrock
 	ProviderVertex     = providers.ProviderVertex

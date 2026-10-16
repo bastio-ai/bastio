@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bastio-ai/bastio/pkg/gatewaypolicy"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
@@ -214,7 +215,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	w.Header().Set("X-Bastio-Trace-Id", traceID.String())
 	w.Header().Set("X-Bastio-Request-Id", traceID.String())
 	profile, snap, ident, profileErr := h.resolveProfileWithOverlay(r.Context(), info.CustomerID, route.proxyID)
-	if (profileErr != nil || h.security == nil) && h.failClosed() {
+	if (profileErr != nil || h.security == nil) && h.failClosed() && !gatewaypolicy.From(r.Context()).MonitorOnly {
 		h.writeFailClosedBlock(w, traceID, "security scan unavailable")
 		return
 	}
@@ -233,7 +234,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	var inTokens, outTokens int
 	metadata := &nativeMetadata{HTTPStatus: 200}
 	defer func() {
-		h.recordTrace(recordInput{TraceID: traceID, ProxyID: route.proxyID, Method: r.Method, HTTPStatus: metadata.HTTPStatus, CostCents: metadata.CostCents, Info: info, Model: route.model, Provider: string(route.provider), Path: r.URL.Path,
+		h.recordTrace(r.Context(), recordInput{TraceID: traceID, ProxyID: route.proxyID, Method: r.Method, HTTPStatus: metadata.HTTPStatus, CostCents: metadata.CostCents, Info: info, Model: route.model, Provider: string(route.provider), Path: r.URL.Path,
 			Start: start, Status: status, Scan: scan, ReqBody: body, RespBody: responseBody, InputTokens: inTokens, OutputTokens: outTokens,
 			Headers: r.Header, IPAddress: r.RemoteAddr, UserAgent: r.UserAgent()})
 	}()
@@ -307,6 +308,9 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	w.Header().Set("X-Bastio-Latency-Ms", fmt.Sprint(time.Since(start).Milliseconds()))
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		responseBody, inTokens, outTokens, status = h.forwardNativeStream(w, r, resp, metadata)
+		if gatewaypolicy.From(r.Context()).MonitorOnly {
+			scan = mergeMonitorScans(scan, h.runSecurityScan(r, info, OutputText(responseBody), traceID, profile))
+		}
 		return
 	}
 	responseBody, err = io.ReadAll(resp.Body)
@@ -323,6 +327,9 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		}
 		if json.Unmarshal(responseBody, &reported) == nil && reported.Model != "" {
 			route.model = reported.Model
+		}
+		if gatewaypolicy.From(r.Context()).MonitorOnly {
+			scan = mergeMonitorScans(scan, h.runSecurityScan(r, info, OutputText(responseBody), traceID, profile))
 		}
 		processed, blocked, reason := h.postProcessNativeResponse(r, responseBody)
 		if blocked {
@@ -455,7 +462,11 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 	var kind string
 	_ = json.Unmarshal(obj["type"], &kind)
 	changed := false
-	for _, key := range []string{"content", "output", "text", "arguments", "refusal", "reasoning", "reasoning_content", "reasoning_details", "thinking", "partial_json"} {
+	if answers, ok := obj["answers"]; ok {
+		next, ch := mapDataStrings(answers, transform)
+		obj["answers"], changed = next, changed || ch
+	}
+	for _, key := range []string{"content", "output", "text", "response", "arguments", "refusal", "reasoning", "reasoning_content", "reasoning_details", "thinking", "partial_json"} {
 		if value, exists := obj[key]; exists {
 			apply := transform
 			if (kind == "thinking" || kind == "thinking_delta") && key == "thinking" {
@@ -514,6 +525,9 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 }
 
 func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte, bool, string) {
+	if gatewaypolicy.From(r.Context()).MonitorOnly {
+		return nil, false, ""
+	}
 	profile, ok := security.ProfileFromContext(r.Context())
 	if !ok {
 		return nil, false, ""
@@ -548,7 +562,9 @@ func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte
 
 // RegisterNativeRoutes installs provider-native APIs inside the caller's authenticated gateway group.
 func (h *Handler) RegisterNativeRoutes(r chi.Router) {
+	r.Post("/observe", h.Observe)
 	r.Handle("/guard/{proxyId}/v1/*", h.NativeAPI("", ""))
+	r.Handle("/typesafe/*", h.NativeAPI(providers.ProviderTypeSafe, ""))
 	r.Handle("/openrouter/*", h.NativeAPI(providers.ProviderOpenRouter, ""))
 	r.Handle("/xai/*", h.NativeAPI(providers.ProviderXAI, ""))
 	r.Handle("/openai/*", h.NativeAPI(providers.ProviderOpenAI, ""))

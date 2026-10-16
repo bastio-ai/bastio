@@ -47,6 +47,7 @@ export function gatewayTestReply(body: unknown): string {
   return (
     textParts(record(choice.message).content) ||
     textParts(data.content) ||
+    textParts(record(record(data.answers).greeting).noul) ||
     textParts(record(candidate.content).parts) ||
     textParts(record(data.message).content) ||
     textParts(record(record(data.output).message).content)
