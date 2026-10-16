@@ -37,6 +37,7 @@ export function UsersPage() {
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users", orderBy],
+    meta: { dashboardLive: true }, refetchOnWindowFocus: false,
     queryFn: () => api.users.list({ limit: 200, order_by: orderBy }),
   });
 

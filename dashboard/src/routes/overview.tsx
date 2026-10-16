@@ -64,34 +64,47 @@ const EMPTY_ANALYTICS = {
 };
 
 export function OverviewPage() {
-  const { range, setRange, environment } = useDashboardControls();
+  const { range, setRange, environment, timeWindow } = useDashboardControls();
   const [connectOpen, setConnectOpen] = useState(false);
-  const window = useMemo(() => makeWindow(range), [range]);
+  const window = useMemo(() => makeWindow(range, timeWindow.to), [range, timeWindow.to]);
   const overviewExtension = useOverviewExtension();
 
   const health = useQuery({ queryKey: ["health"], queryFn: api.health });
   const analytics = useQuery({
     queryKey: ["overview", "analytics", range, environment, window.current.from, window.current.to],
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
     queryFn: async () => (await api.analytics.overview({ ...window.current, environment: environment || undefined })) ?? EMPTY_ANALYTICS,
   });
   const previousAnalytics = useQuery({
     queryKey: ["overview", "analytics", "previous", range, environment, window.previous.from, window.previous.to],
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
     queryFn: async () => (await api.analytics.overview({ ...window.previous, environment: environment || undefined })) ?? EMPTY_ANALYTICS,
   });
   const traces = useQuery({
     queryKey: ["overview", "traces", range, environment, window.current.from, window.current.to],
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
     queryFn: () => api.traces.list({ limit: 500, ...window.current, environment: environment || undefined }),
   });
   const threats = useQuery({
     queryKey: ["overview", "threats", range, environment, window.current.from, window.current.to],
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
     queryFn: () => api.threats.list({ limit: 500, ...window.current, environment: environment || undefined }),
   });
   const sessions = useQuery({
     queryKey: ["overview", "sessions", range, environment, window.current.from, window.current.to],
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
     queryFn: () => api.sessions.list({ limit: 200, ...window.current, environment: environment || undefined }),
   });
   const users = useQuery({
     queryKey: ["overview", "users"],
+    meta: { dashboardLive: true },
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
     queryFn: () => api.users.list({ limit: 5, order_by: "threats" }),
   });
   const apiKeys = useQuery({ queryKey: ["overview", "api-keys"], queryFn: api.apiKeys.list });
@@ -610,9 +623,9 @@ function bucketAverage(traces: Trace[], window: { from: string; to: string }, bu
   return totals.map((total, index) => counts[index] ? Math.round(total / (counts[index] ?? 1)) : 0);
 }
 
-function makeWindow(range: RangePreset) {
+function makeWindow(range: RangePreset, end: string) {
   const duration = RANGE_META[range].durationMs;
-  const to = new Date();
+  const to = new Date(end);
   const from = new Date(to.getTime() - duration);
   const previousTo = new Date(from);
   const previousFrom = new Date(previousTo.getTime() - duration);

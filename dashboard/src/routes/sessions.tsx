@@ -35,7 +35,7 @@ export function SessionsPage() {
     return params;
   }, [controls.environment, controls.timeWindow, filters]);
 
-  const { data: sessions = [], isLoading } = useQuery({ queryKey: ["sessions", queryParams], queryFn: () => api.sessions.list(queryParams) });
+  const { data: sessions = [], isLoading } = useQuery({ queryKey: ["sessions", queryParams], refetchOnWindowFocus: false, placeholderData: (previous) => previous, queryFn: () => api.sessions.list(queryParams) });
   const visibleSessions = useMemo(() => {
     if (filters.security === "threat") return sessions.filter((session) => (session.threat_count ?? 0) > 0);
     if (filters.security === "clean") return sessions.filter((session) => !session.threat_count);

@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -9,6 +10,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type CreateEnvironmentRequest, type Environment } from "@/api/client";
+import { parseRefreshInterval, shouldRefreshDashboard, type RefreshInterval } from "./dashboard-refresh-policy";
 
 export type DashboardRange = "1h" | "24h" | "7d" | "30d";
 
@@ -25,6 +27,9 @@ type DashboardControls = {
   createEnvironment: (input: CreateEnvironmentRequest) => Promise<Environment>;
   live: boolean;
   setLive: (live: boolean) => void;
+  refreshInterval: RefreshInterval;
+  setRefreshInterval: (interval: RefreshInterval) => void;
+  refresh: () => void;
 };
 
 const RANGE_META: Record<DashboardRange, { label: string; durationMs: number }> = {
@@ -37,6 +42,7 @@ const RANGE_META: Record<DashboardRange, { label: string; durationMs: number }> 
 const RANGE_KEY = "bastio-dashboard-range";
 const ENVIRONMENT_KEY = "bastio-dashboard-environment";
 const LIVE_KEY = "bastio-dashboard-live";
+const INTERVAL_KEY = "bastio-dashboard-refresh-interval";
 
 const DashboardControlsContext = createContext<DashboardControls | null>(null);
 
@@ -45,12 +51,13 @@ export function DashboardControlsProvider({ children }: { children: ReactNode })
   const [range, setRangeState] = useState<DashboardRange>(() => readRange());
   const [environment, setEnvironmentState] = useState(() => readStored(ENVIRONMENT_KEY));
   const [live, setLiveState] = useState(() => readStored(LIVE_KEY) !== "false");
+  const [refreshInterval, setIntervalState] = useState(() => parseRefreshInterval(readStored(INTERVAL_KEY)));
   const [now, setNow] = useState(() => Date.now());
 
   const observedEnvironmentQuery = useQuery({
     queryKey: ["dashboard-controls", "observed-environments"],
-    queryFn: () => api.traces.list({ limit: 500 }),
-    staleTime: 60_000,
+    queryFn: () => api.traces.facets(),
+    staleTime: 300_000,
   });
 
   const managedEnvironmentQuery = useQuery({
@@ -61,8 +68,8 @@ export function DashboardControlsProvider({ children }: { children: ReactNode })
 
   const managedEnvironments = managedEnvironmentQuery.data ?? [];
   const observedEnvironments = useMemo(() => Array.from(new Set(
-    (observedEnvironmentQuery.data ?? [])
-      .map((trace) => trace.environment?.trim() ?? "")
+    (observedEnvironmentQuery.data?.environments ?? [])
+      .map((environment) => environment.trim())
       .filter(Boolean),
   )).sort((a, b) => a.localeCompare(b)), [observedEnvironmentQuery.data]);
 
@@ -87,14 +94,22 @@ export function DashboardControlsProvider({ children }: { children: ReactNode })
     return { from: from.toISOString(), to: to.toISOString() };
   }, [now, range]);
 
+  const refresh = useCallback(() => {
+    setNow(Date.now());
+    // Moving-window queries refresh through their new time-window key.
+    // Only explicitly opted-in static dashboard metrics need invalidation.
+    void queryClient.invalidateQueries({ type: "active", predicate: (query) => query.meta?.dashboardLive === true });
+  }, [queryClient]);
+
   useEffect(() => {
     if (!live) return;
-    const interval = window.setInterval(() => {
-      setNow(Date.now());
-      void queryClient.invalidateQueries({ type: "active" });
-    }, 10_000);
-    return () => window.clearInterval(interval);
-  }, [live, queryClient]);
+    const tick = () => {
+      if (shouldRefreshDashboard(live, document.visibilityState, Date.now() - now, refreshInterval)) refresh();
+    };
+    const timer = window.setInterval(tick, refreshInterval);
+    document.addEventListener("visibilitychange", tick);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
+  }, [live, now, refresh, refreshInterval]);
 
   const setRange = (next: DashboardRange) => {
     setRangeState(next);
@@ -109,9 +124,12 @@ export function DashboardControlsProvider({ children }: { children: ReactNode })
     setLiveState(next);
     store(LIVE_KEY, String(next));
     if (next) {
-      setNow(Date.now());
-      void queryClient.invalidateQueries({ type: "active" });
+      refresh();
     }
+  };
+  const setRefreshInterval = (next: RefreshInterval) => {
+    setIntervalState(next);
+    store(INTERVAL_KEY, String(next));
   };
 
   return (
@@ -129,6 +147,9 @@ export function DashboardControlsProvider({ children }: { children: ReactNode })
         createEnvironment,
         live,
         setLive,
+        refreshInterval,
+        setRefreshInterval,
+        refresh,
       }}
     >
       {children}

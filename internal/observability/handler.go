@@ -48,6 +48,7 @@ func NewHandler(ch *clickhouse.CH) *Handler {
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/traces", h.ListTraces)
+	r.Get("/traces/facets", h.TraceFacets)
 	r.Get("/traces/{id}", h.GetTrace)
 	r.Get("/traces/{id}/threats", h.ListTraceThreats)
 	r.Post("/traces/{id}/scores", h.CreateScore)
@@ -65,79 +66,7 @@ func (h *Handler) Routes() chi.Router {
 
 // ListTraces queries traces from ClickHouse.
 func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	offset, _ := strconv.Atoi(q.Get("offset"))
-
-	query := `SELECT
-		toString(id), toString(customer_id), toString(proxy_id),
-		method, path, provider, model,
-		started_at, completed_at, duration_ms,
-		input_tokens, output_tokens, total_tokens, cost_cents,
-		status, threat_detected, threat_types, threat_score, security_action,
-		end_user_id, session_id, environment, release, trace_name, tags
-	FROM bastio.traces
-	WHERE customer_id = toUUID(?)`
-
-	args := []any{tenantIDFromCtx(r.Context())}
-
-	// Exact-match filters.
-	for _, f := range []struct{ param, column string }{
-		{"status", "status"},
-		{"provider", "provider"},
-		{"model", "model"},
-		{"end_user_id", "end_user_id"},
-		{"proxy_id", "proxy_id"},
-		{"environment", "environment"},
-		{"release", "release"},
-		{"trace_name", "trace_name"},
-	} {
-		if v := q.Get(f.param); v != "" {
-			if f.param == "proxy_id" {
-				query += " AND " + f.column + " = toUUID(?)"
-			} else {
-				query += " AND " + f.column + " = ?"
-			}
-			args = append(args, v)
-		}
-	}
-
-	// Tag filters: `?tag=key:value` pairs. Repeat the param for AND-ing
-	// multiple tags, e.g. ?tag=feature:checkout&tag=tier:pro.
-	for _, raw := range q["tag"] {
-		if raw == "" {
-			continue
-		}
-		sep := strings.Index(raw, ":")
-		if sep <= 0 {
-			continue
-		}
-		query += " AND tags[?] = ?"
-		args = append(args, raw[:sep], raw[sep+1:])
-	}
-
-	// Time range (RFC3339 or any ClickHouse-parseable datetime).
-	if v := q.Get("from"); v != "" {
-		query += " AND started_at >= parseDateTime64BestEffort(?)"
-		args = append(args, v)
-	}
-	if v := q.Get("to"); v != "" {
-		query += " AND started_at <= parseDateTime64BestEffort(?)"
-		args = append(args, v)
-	}
-
-	// Search operational names as well as paths so tool runs are discoverable.
-	if v := q.Get("search"); v != "" {
-		query += " AND (positionCaseInsensitive(path, ?) > 0 OR positionCaseInsensitive(trace_name, ?) > 0 OR toString(id) = ?)"
-		args = append(args, v, v, v)
-	}
-
-	query += " ORDER BY started_at DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, offset)
+	query, args := buildTracesQuery(tenantIDFromCtx(r.Context()), r.URL.Query())
 
 	rows, err := h.ch.Conn.Query(r.Context(), query, args...)
 	if err != nil {
@@ -203,6 +132,85 @@ func (h *Handler) ListTraces(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(traces)
+}
+
+func buildTracesQuery(customerID string, q url.Values) (string, []any) {
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := `SELECT
+		toString(id), toString(customer_id), toString(proxy_id),
+		method, path, provider, model,
+		started_at, completed_at, duration_ms,
+		input_tokens, output_tokens, total_tokens, cost_cents,
+		status, threat_detected, threat_types, threat_score, security_action,
+		end_user_id, session_id, environment, release, trace_name, tags
+	FROM bastio.traces
+	WHERE customer_id = toUUID(?)`
+
+	args := []any{customerID}
+
+	// Exact-match filters.
+	for _, f := range []struct{ param, column string }{
+		{"provider", "provider"},
+		{"model", "model"},
+		{"end_user_id", "end_user_id"},
+		{"proxy_id", "proxy_id"},
+		{"environment", "environment"},
+		{"release", "release"},
+		{"trace_name", "trace_name"},
+	} {
+		if v := q.Get(f.param); v != "" {
+			if f.param == "proxy_id" {
+				query += " AND " + f.column + " = toUUID(?)"
+			} else {
+				query += " AND " + f.column + " = ?"
+			}
+			args = append(args, v)
+		}
+	}
+
+	// Tag filters: `?tag=key:value` pairs. Repeat the param for AND-ing
+	// multiple tags, e.g. ?tag=feature:checkout&tag=tier:pro.
+	for _, raw := range q["tag"] {
+		if raw == "" {
+			continue
+		}
+		sep := strings.Index(raw, ":")
+		if sep <= 0 {
+			continue
+		}
+		query += " AND tags[?] = ?"
+		args = append(args, raw[:sep], raw[sep+1:])
+	}
+
+	// Time range (RFC3339 or any ClickHouse-parseable datetime).
+	if v := q.Get("from"); v != "" {
+		query += " AND started_at >= parseDateTime64BestEffort(?)"
+		args = append(args, v)
+	}
+	if v := q.Get("to"); v != "" {
+		query += " AND started_at <= parseDateTime64BestEffort(?)"
+		args = append(args, v)
+	}
+
+	// Search operational names as well as paths so tool runs are discoverable.
+	if v := q.Get("search"); v != "" {
+		query += " AND (positionCaseInsensitive(path, ?) > 0 OR positionCaseInsensitive(trace_name, ?) > 0 OR toString(id) = ?)"
+		args = append(args, v, v, v)
+	}
+
+	query, args = appendTraceExplorerFilters(query, args, q)
+	query += " ORDER BY started_at DESC, id DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	return query, args
 }
 
 // splitNonEmpty splits s on sep and drops empty segments. Used to parse

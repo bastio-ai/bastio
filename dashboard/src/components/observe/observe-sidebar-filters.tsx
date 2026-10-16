@@ -22,6 +22,7 @@ export function ObserveSidebarFilters({
   onRangeChange,
   environment,
   onEnvironmentChange,
+  scopeOnly = false,
 }: {
   value: ObserveFilters;
   onChange: (value: ObserveFilters) => void;
@@ -31,6 +32,7 @@ export function ObserveSidebarFilters({
   onRangeChange?: (range: DashboardRange) => void;
   environment?: string;
   onEnvironmentChange?: (environment: string) => void;
+  scopeOnly?: boolean;
 }) {
   const set = <K extends keyof ObserveFilters>(key: K, next: ObserveFilters[K]) =>
     onChange({ ...value, [key]: next });
@@ -69,7 +71,7 @@ export function ObserveSidebarFilters({
         </Select>
       </Filter>
 
-      {mode === "traces" ? (
+      {mode === "traces" && !scopeOnly ? (
         <>
           <Filter label="Status">
             <Select value={value.status || ALL} onValueChange={(next) => set("status", next === ALL ? "" : next ?? "")}>
@@ -106,7 +108,7 @@ export function ObserveSidebarFilters({
         </Select>
       </Filter>
 
-      {mode === "traces" ? (
+      {mode === "traces" && !scopeOnly ? (
         <>
           <TextFilter label="Provider" placeholder="e.g. openai" value={value.provider} onChange={(next) => set("provider", next)} />
           <TextFilter label="Model" placeholder="e.g. gpt-4o" value={value.model} onChange={(next) => set("model", next)} />
@@ -116,8 +118,8 @@ export function ObserveSidebarFilters({
         </>
       ) : null}
 
-      <TextFilter label="End user" placeholder="Search end user…" value={value.endUser} onChange={(next) => set("endUser", next)} />
-      <TextFilter label={mode === "traces" ? "Content" : "Session"} placeholder={mode === "traces" ? "Search traces…" : "Search sessions…"} value={value.search} onChange={(next) => set("search", next)} />
+      {!scopeOnly ? <><TextFilter label="End user" placeholder="Search end user…" value={value.endUser} onChange={(next) => set("endUser", next)} />
+      <TextFilter label={mode === "traces" ? "Content" : "Session"} placeholder={mode === "traces" ? "Search traces…" : "Search sessions…"} value={value.search} onChange={(next) => set("search", next)} /></> : null}
 
       <button
         type="button"

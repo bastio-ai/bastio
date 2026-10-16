@@ -24,7 +24,8 @@ export type TracesExtension = {
   //
   // The fetcher receives the current ObserveFilters so it can apply
   // matching server-side filters where possible (time-window, severity,
-  // etc). Filters that don't apply to extension data are fine to ignore.
+  // etc). Projected rows must respect applicable filters. Incompatible
+  // provider/type/release filters should return an empty result.
   fetchExtra?: (filters: ObserveFilters) => Promise<Trace[]>;
 
   // Detail-fetcher used by the /traces/:id route. The OSS detail page

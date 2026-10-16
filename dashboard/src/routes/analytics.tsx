@@ -23,7 +23,7 @@ export function AnalyticsPage() {
   const { range, setRange, environment, timeWindow } = useDashboardControls();
   const [view, setView] = useState<AnalyticsView>("traffic");
   const queryParams = useMemo(() => ({ ...timeWindow, environment: environment || undefined }), [environment, timeWindow]);
-  const { data, isLoading } = useQuery({ queryKey: ["analytics", queryParams], queryFn: () => api.analytics.overview(queryParams) });
+  const { data, isLoading } = useQuery({ queryKey: ["analytics", queryParams], refetchOnWindowFocus: false, placeholderData: (previous) => previous, queryFn: () => api.analytics.overview(queryParams) });
 
   const d = data ?? { total_requests: 0, total_threats: 0, total_blocked: 0, total_cost_cents: 0, avg_duration_ms: 0, requests_by_hour: [], threats_by_type: [], top_models: [] };
   const sidebarConfig = useMemo(() => ({
@@ -121,7 +121,7 @@ function TopModels({ models }: { models: Array<{ model: string; count: number; c
 
 function TopUsersSection() {
   const [sort, setSort] = useState<UserSort>("cost");
-  const { data: users = [], isLoading } = useQuery({ queryKey: ["analytics", "users", { sort }], queryFn: () => api.analytics.users({ limit: 20, order_by: sort }) });
+  const { data: users = [], isLoading } = useQuery({ queryKey: ["analytics", "users", { sort }], meta: { dashboardLive: true }, refetchOnWindowFocus: false, queryFn: () => api.analytics.users({ limit: 20, order_by: sort }) });
   return <DataPanel title="Top end-users" sub="Cost, performance, and security attribution" action={<Select value={sort} onValueChange={(value) => setSort(value as UserSort)}><SelectTrigger className="h-7 w-36 text-[10px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cost">Sort by cost</SelectItem><SelectItem value="requests">Sort by requests</SelectItem><SelectItem value="threats">Sort by threats</SelectItem><SelectItem value="latency">Sort by latency</SelectItem></SelectContent></Select>}>
     {isLoading ? <div className="p-4"><Skeleton className="h-56" /></div> : users.length === 0 ? <EmptyState icon={<Users className="h-5 w-5" />} title="No end-user activity" description="Pass X-End-User-Id on gateway requests to populate attribution." /> : <div className="overflow-auto"><div className="min-w-[720px]"><div className="grid grid-cols-[1.5rem_1fr_6rem_6rem_6rem_6rem] gap-3 border-b border-border-subtle px-3 py-2 text-[9px] uppercase tracking-wider text-muted-foreground"><span>#</span><span>End user</span><span className="text-right">Requests</span><span className="text-right">Cost</span><span className="text-right">Latency</span><span className="text-right">Threats</span></div>{users.map((user: UserAnalytics, index) => <div key={user.end_user_id} className="grid grid-cols-[1.5rem_1fr_6rem_6rem_6rem_6rem] items-center gap-3 border-b border-border-subtle px-3 py-2.5 font-mono text-[10px] hover:bg-surface-2"><span className="text-muted-foreground">{index + 1}</span><span className="truncate text-foreground">{user.end_user_id}</span><span className="text-right">{formatNumber(user.total_requests)}</span><span className="text-right">{formatCost(user.total_cost_cents)}</span><span className="text-right">{formatDuration(user.avg_duration_ms)}</span><span className={user.total_threats ? "text-right text-danger" : "text-right text-muted-foreground"}>{user.total_threats || "—"}</span></div>)}</div></div>}
   </DataPanel>;

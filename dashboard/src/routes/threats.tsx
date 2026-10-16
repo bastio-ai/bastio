@@ -132,9 +132,10 @@ export function ThreatsPage() {
   );
 
   const { data: threats, isLoading } = useQuery({
-    queryKey: ["threats", queryParams, controls.live],
+    queryKey: ["threats", queryParams],
     queryFn: () => api.threats.list(queryParams),
-    refetchInterval: controls.live ? 10_000 : false,
+    meta: { dashboardLive: Boolean(filters.from && filters.to) },
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
   });
 

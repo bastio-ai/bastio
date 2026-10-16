@@ -102,6 +102,7 @@ export const api = {
   config: () => unwrap(http.GET("/v1/config", {})),
 
   traces: {
+    facets: (params?: { from?: string; to?: string; environment?: string }) => unwrap(http.GET("/v1/traces/facets", { params: { query: params ?? {} } })),
     list: (params?: {
       limit?: number;
       offset?: number;
@@ -116,6 +117,9 @@ export const api = {
       environment?: string;
       release?: string;
       trace_name?: string;
+      trace_name_contains?: string;
+      trace_type?: "llm" | "embedding" | "mcp" | "local" | "extension" | "other";
+      security?: "clean" | "threat";
       tag?: string[];
     }) =>
       unwrap(
