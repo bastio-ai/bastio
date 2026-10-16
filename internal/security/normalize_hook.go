@@ -151,7 +151,7 @@ func flagToFinding(f normalize.Flag) (Finding, bool) {
 // declared rewrites on the original, then inspect decoded remaining content.
 // Withhold encoded sensitive data when rewriting it safely is unsupported.
 func (e *Engine) finishEncodedScan(ctx context.Context, req *ScanRequest, result *ScanResult, nr normalize.Result) {
-	if !(nr.HasFlag(normalize.FlagURLDecoded) || nr.HasFlag(normalize.FlagBase64Decoded) || nr.HasFlag(normalize.FlagROT13Decoded) || nr.HasFlag(normalize.FlagLeetFolded)) || result.ShouldBlock {
+	if !(nr.HasFlag(normalize.FlagURLDecoded) || nr.HasFlag(normalize.FlagBase64Decoded) || nr.HasFlag(normalize.FlagBase64URLDecoded) || nr.HasFlag(normalize.FlagROT13Decoded) || nr.HasFlag(normalize.FlagLeetFolded)) || result.ShouldBlock {
 		return
 	}
 	if result.Action != ActionMask && result.Action != ActionTokenize {

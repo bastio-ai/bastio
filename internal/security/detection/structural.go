@@ -1,6 +1,7 @@
 package detection
 
 import (
+	"encoding/base64"
 	"net/url"
 	"regexp"
 	"strings"
@@ -183,6 +184,10 @@ func detectEncodingDensity(content string) *security.Finding {
 }
 
 func encodingURLComponents(raw string) string {
+	return encodingURLComponentsDepth(raw, 0)
+}
+
+func encodingURLComponentsDepth(raw string, depth int) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
 		return raw
@@ -192,8 +197,16 @@ func encodingURLComponents(raw string) string {
 		parts = append(parts, u.User.String())
 	}
 	for _, part := range strings.Split(u.EscapedPath(), "/") {
-		if readableURLSlug(part) {
+		if readableURLSlug(part) || imageAssetIdentifiers(part) {
 			part = strings.NewReplacer("-", " ", "_", " ", ".", " ").Replace(part)
+		} else if depth < 3 {
+			// Image proxies commonly encode their source URL in one path
+			// component. Inspect the decoded URL's components, rather than
+			// labelling the encoding itself a jailbreak. Opaque/non-URL data
+			// stays eligible; other detectors still scan the original input.
+			if decoded := encodedHTTPComponent(part); decoded != "" {
+				part = encodingURLComponentsDepth(decoded, depth+1)
+			}
 		}
 		parts = append(parts, part)
 	}
@@ -203,6 +216,76 @@ func encodingURLComponents(raw string) string {
 	}
 	parts = append(parts, u.EscapedFragment())
 	return strings.Join(parts, " ")
+}
+
+func encodedHTTPComponent(part string) string {
+	if len(part) < 16 || len(part) > 8192 {
+		return ""
+	}
+	for _, encoding := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.StdEncoding} {
+		decoded, err := encoding.DecodeString(part)
+		if err != nil {
+			continue
+		}
+		u, err := url.Parse(string(decoded))
+		if err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Hostname() != "" {
+			return string(decoded)
+		}
+	}
+	return ""
+}
+
+// Recognize image filenames composed of bounded hashes/UUIDs, not arbitrary
+// opaque runs. Each identifier is below the heuristic's 80-character limit;
+// joining several with '_' does not turn those asset IDs into instructions.
+func imageAssetIdentifiers(part string) bool {
+	stem, extension, ok := strings.Cut(part, ".")
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(extension) {
+	case "jpg", "jpeg", "png", "webp", "avif", "gif", "svg":
+	default:
+		return false
+	}
+	parts := strings.Split(stem, "_")
+	if len(parts) < 2 {
+		return false
+	}
+	longID := false
+	for _, part := range parts {
+		if part == "mv2" {
+			continue
+		}
+		groups := strings.Split(part, "-")
+		if len(groups) > 1 {
+			lengths := []int{8, 4, 4, 4, 12}
+			if len(groups) != len(lengths) {
+				return false
+			}
+			for i, group := range groups {
+				if len(group) != lengths[i] || !asciiHex(group) {
+					return false
+				}
+			}
+			longID = true
+			continue
+		}
+		if len(part) < 6 || len(part) > 64 || !asciiHex(part) {
+			return false
+		}
+		longID = longID || len(part) >= 32
+	}
+	return longID
+}
+
+func asciiHex(s string) bool {
+	for _, c := range []byte(s) {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // Require several short words, with optional numeric or alphanumeric product
