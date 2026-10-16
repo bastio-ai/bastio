@@ -14,7 +14,7 @@ func ProviderEndpoint(path string) string {
 		return ""
 	}
 	path = strings.TrimPrefix(path, "/v1")
-	for _, prefix := range []string{"/openrouter/", "/xai/", "/openai/", "/anthropic/"} {
+	for _, prefix := range []string{"/typesafe/", "/openrouter/", "/xai/", "/openai/", "/anthropic/"} {
 		if strings.HasPrefix(path, prefix) {
 			return "/" + strings.TrimPrefix(path, prefix)
 		}
@@ -31,7 +31,7 @@ func ProviderEndpoint(path string) string {
 
 func IsGenerationEndpoint(endpoint string) bool {
 	switch endpoint {
-	case "/chat/completions", "/completions", "/responses", "/responses/compact", "/messages", "/messages/batches", "/batches", "/embeddings", "/moderations", "/rerank", "/images/generations", "/images/edits", "/images/variations", "/audio/speech", "/audio/transcriptions", "/audio/translations", "/videos":
+	case "/systemone", "/chat/completions", "/completions", "/responses", "/responses/compact", "/messages", "/messages/batches", "/batches", "/embeddings", "/moderations", "/rerank", "/images/generations", "/images/edits", "/images/variations", "/audio/speech", "/audio/transcriptions", "/audio/translations", "/videos":
 		return true
 	default:
 		return false

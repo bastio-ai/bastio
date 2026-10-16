@@ -23,6 +23,7 @@ const (
 	ProviderGroq       Provider = "groq"
 	ProviderXAI        Provider = "xai"
 	ProviderOpenRouter Provider = "openrouter"
+	ProviderTypeSafe   Provider = "typesafe"
 )
 
 // Message represents a chat message.

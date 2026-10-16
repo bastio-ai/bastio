@@ -3,6 +3,7 @@ import type { APIKey, ProviderKey, Proxy } from "../api/client";
 export const providerLabels: Record<string, string> = {
   openai: "OpenAI",
   openrouter: "OpenRouter",
+  typesafe: "TypeSafe / Jev",
   anthropic: "Anthropic / Claude",
   xai: "Grok / xAI",
   gemini: "Google Gemini",
@@ -50,7 +51,7 @@ export function gatewaySetupStatus(
 }
 
 export function gatewayBasePath(proxy: Proxy) {
-  return ["openai", "openrouter", "anthropic", "xai"].includes(
+  return ["openai", "openrouter", "anthropic", "xai", "typesafe"].includes(
     proxy.target_provider,
   )
     ? `/v1/guard/${encodeURIComponent(proxy.id)}/v1`
@@ -59,6 +60,13 @@ export function gatewayBasePath(proxy: Proxy) {
 
 export function gatewayConnection(proxy: Proxy, origin: string) {
   const baseURL = `${origin.replace(/\/$/, "")}${gatewayBasePath(proxy)}`;
+  if (proxy.target_provider === "typesafe") {
+    const payload = {model: proxy.target_model || "jev-latest", state: "Hello from Bastio", questions: {greeting:{type:"noul",instructions:"Does the state contain a greeting?"}}};
+    return {baseURL,sdkBaseURL:baseURL,
+      curl: `curl '${baseURL}/systemone' -H "Authorization: Bearer $BASTIO_API_KEY" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
+      python: `import os, requests\nresponse = requests.post(${JSON.stringify(baseURL+"/systemone")}, headers={"Authorization": "Bearer " + os.environ["BASTIO_API_KEY"]}, json=${JSON.stringify(payload)})\nresponse.raise_for_status()\nprint(response.json())`,
+    };
+  }
   const anthropic = proxy.target_provider === "anthropic";
   const native = gatewayBasePath(proxy) !== "/v1";
   const model = proxy.target_model || "YOUR_MODEL_ID";

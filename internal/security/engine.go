@@ -250,6 +250,12 @@ func (e *Engine) AddSessionDetector(d SessionDetector) {
 // migrated yet; it treats each finding's intrinsic Action field as
 // the source of truth, which ignores profile edits.
 func (e *Engine) Scan(ctx context.Context, req *ScanRequest) *ScanResult {
+	result := e.scan(ctx, req)
+	ObserveGatewayResult(ctx, result, req.Content)
+	return result
+}
+
+func (e *Engine) scan(ctx context.Context, req *ScanRequest) *ScanResult {
 	// Normalize a local request copy: callers may forward or reuse Content.
 	scanReq := *req
 	req = &scanReq

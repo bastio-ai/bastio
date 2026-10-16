@@ -30,6 +30,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/security/iplist"
 	"github.com/bastio-ai/bastio/internal/security/overlay"
 	"github.com/bastio-ai/bastio/pkg/cache"
+	"github.com/bastio-ai/bastio/pkg/gatewaypolicy"
 )
 
 // Handler manages the gateway request pipeline.
@@ -259,11 +260,11 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// loader returns the customer-wide overlay. Per-proxy overlays for
 	// this route require moving proxy resolution up (follow-up item).
 	profile, overlaySnap, overlayIdent, profileErr := h.resolveProfileWithOverlay(r.Context(), info.CustomerID, uuid.Nil)
-	if profileErr != nil && h.failClosed() {
+	if profileErr != nil && h.failClosed() && !gatewaypolicy.From(r.Context()).MonitorOnly {
 		h.writeFailClosedBlock(w, traceID, "security profile load failed")
 		return
 	}
-	if h.security == nil && h.failClosed() {
+	if h.security == nil && h.failClosed() && !gatewaypolicy.From(r.Context()).MonitorOnly {
 		h.writeFailClosedBlock(w, traceID, "security engine not configured")
 		return
 	}
@@ -282,7 +283,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		blockedBody := blockedResponseBody(traceID, scanResult.ThreatTypes, scanResult.ThreatScore)
 		_, _ = w.Write(blockedBody)
-		h.recordTrace(recordInput{
+		h.recordTrace(r.Context(), recordInput{
 			TraceID:   traceID,
 			Info:      info,
 			Model:     chatReq.Model,
@@ -374,7 +375,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		// Connection tests must reach the provider rather than reuse a cached reply.
 		bypassCache := requestBypassesResponseCache(r)
 		var cacheKey string
-		if h.cache != nil && !bypassCache {
+		if h.cache != nil && !bypassCache && !gatewaypolicy.From(r.Context()).OmitContent {
 			cacheKey = fmt.Sprintf("llm_resp:%s:%x", info.CustomerID.String(), sha256.Sum256(body))
 			var cached []byte
 			if found, _ := h.cache.Get(r.Context(), cacheKey, &cached); found && len(cached) > 0 {
@@ -382,7 +383,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("X-Bastio-Cache", "HIT")
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(cached)
-				h.recordTrace(recordInput{
+				h.recordTrace(r.Context(), recordInput{
 					TraceID:   traceID,
 					Info:      info,
 					Model:     chatReq.Model,
@@ -403,7 +404,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 		// Semantic Cache lookup if exact cache missed
 		reqEmbedding := extractRequestEmbedding(body, r.Header)
-		if h.semanticCache != nil && !bypassCache && len(reqEmbedding) > 0 {
+		if h.semanticCache != nil && !gatewaypolicy.From(r.Context()).OmitContent && !bypassCache && len(reqEmbedding) > 0 {
 			threshold := extractCacheThreshold(r.Header, 0.95)
 			if entry, sim, hit := h.semanticCache.Query(r.Context(), info.CustomerID.String(), chatReq.Model, reqEmbedding, threshold); hit && entry != nil {
 				w.Header().Set("Content-Type", "application/json")
@@ -411,7 +412,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("X-Bastio-Cache-Similarity", fmt.Sprintf("%.2f", sim))
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(entry.Response)
-				h.recordTrace(recordInput{
+				h.recordTrace(r.Context(), recordInput{
 					TraceID:   traceID,
 					Info:      info,
 					Model:     chatReq.Model,
@@ -477,13 +478,13 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Bastio-Cache", "MISS")
 			_ = h.cache.Set(r.Context(), cacheKey, respBody, 1*time.Hour)
 		}
-		if h.semanticCache != nil && !bypassCache && status == "ok" && respBody != nil && len(reqEmbedding) > 0 {
+		if h.semanticCache != nil && !gatewaypolicy.From(r.Context()).OmitContent && !bypassCache && status == "ok" && respBody != nil && len(reqEmbedding) > 0 {
 			h.semanticCache.Store(r.Context(), info.CustomerID.String(), selectedModel, userContent, reqEmbedding, respBody, 1*time.Hour)
 		}
 	}
 
 	// Recorder buffers this trace for batched insertion.
-	h.recordTrace(recordInput{
+	h.recordTrace(r.Context(), recordInput{
 		TraceID:      traceID,
 		Info:         info,
 		Model:        selectedModel,
@@ -572,11 +573,11 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	// apply here naturally. The loader falls back to customer-wide when
 	// no per-proxy overlay exists.
 	profile, overlaySnap, overlayIdent, profileErr := h.resolveProfileWithOverlay(r.Context(), info.CustomerID, proxyID)
-	if profileErr != nil && h.failClosed() {
+	if profileErr != nil && h.failClosed() && !gatewaypolicy.From(r.Context()).MonitorOnly {
 		h.writeFailClosedBlock(w, anthropicTraceID, "security profile load failed")
 		return
 	}
-	if h.security == nil && h.failClosed() {
+	if h.security == nil && h.failClosed() && !gatewaypolicy.From(r.Context()).MonitorOnly {
 		h.writeFailClosedBlock(w, anthropicTraceID, "security engine not configured")
 		return
 	}
@@ -593,7 +594,7 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		blockedBody := blockedResponseBody(anthropicTraceID, scanResult.ThreatTypes, scanResult.ThreatScore)
 		_, _ = w.Write(blockedBody)
-		h.recordTrace(recordInput{
+		h.recordTrace(r.Context(), recordInput{
 			TraceID:   anthropicTraceID,
 			Info:      info,
 			Model:     "",
@@ -649,7 +650,7 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		respBody, inTok, outTok, status = h.handleSync(w, r, client, req, providerKey, start, anthropicTraceID, scanResult)
 	}
 
-	h.recordTrace(recordInput{
+	h.recordTrace(r.Context(), recordInput{
 		TraceID:      anthropicTraceID,
 		Info:         info,
 		Model:        "", // Anthropic body carries model; parsed on the provider side.
@@ -695,7 +696,7 @@ func (h *Handler) handleSyncWithRetry(w http.ResponseWriter, r *http.Request, cl
 			gr.Model = req.Model
 			gr.Input = truncate(string(req.Raw), maxSpanBodyChars)
 			gr.ModelParameters = extractModelParameters(req.Raw)
-			h.recorder.RecordObservation(gr)
+			h.recordGatewayObservation(r.Context(), gr)
 		}
 		return nil, 0, 0, "error", err
 	}
@@ -709,7 +710,7 @@ func (h *Handler) handleSyncWithRetry(w http.ResponseWriter, r *http.Request, cl
 		gr.Output = truncate(string(resp.Raw), maxSpanBodyChars)
 		gr.ModelParameters = extractModelParameters(req.Raw)
 		gr.CostCents = llmpipeline.EstimateCostCents(gr.Model, resp.InputTokens, resp.OutputTokens)
-		h.recorder.RecordObservation(gr)
+		h.recordGatewayObservation(r.Context(), gr)
 	}
 
 	latencyMs := time.Since(start).Milliseconds()
@@ -835,7 +836,7 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 			gr.Model = req.Model
 			gr.Input = truncate(string(req.Raw), maxSpanBodyChars)
 			gr.ModelParameters = extractModelParameters(req.Raw)
-			h.recorder.RecordObservation(gr)
+			h.recordGatewayObservation(r.Context(), gr)
 		}
 		return nil, 0, 0, "error", err
 	}
@@ -880,7 +881,7 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 		gr.Output = truncate(string(buf), maxSpanBodyChars)
 		gr.ModelParameters = extractModelParameters(req.Raw)
 		gr.CostCents = llmpipeline.EstimateCostCents(gr.Model, inputTokens, outputTokens)
-		h.recorder.RecordObservation(gr)
+		h.recordGatewayObservation(r.Context(), gr)
 	}()
 	for chunk := range stream {
 		if chunk.Error != nil {
@@ -1453,6 +1454,7 @@ func (h *Handler) runSecurityScan(r *http.Request, info *auth.APIKeyInfo, conten
 		result.ThreatTypes = append(result.ThreatTypes, security.ThreatIPReputation)
 	}
 
+	security.ObserveGatewayResult(r.Context(), result, content)
 	status := "ok"
 	msg := ""
 	if result != nil && result.ShouldBlock {
@@ -1466,7 +1468,7 @@ func (h *Handler) runSecurityScan(r *http.Request, info *auth.APIKeyInfo, conten
 		rec.StatusMessage = summarizeScan(result)
 	}
 	if h.recorder != nil {
-		h.recorder.RecordObservation(rec)
+		h.recordGatewayObservation(r.Context(), rec)
 	}
 
 	if result != nil && len(result.Findings) > 0 {
@@ -1534,7 +1536,12 @@ type recordInput struct {
 // events are dropped if the recorder buffer is saturated. Delegates to
 // llmpipeline.RecordChatTrace so gateway and workspace write the same
 // shape from one code path — no drift, no double-writes.
-func (h *Handler) recordTrace(in recordInput) {
+func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
+	if gatewaypolicy.From(ctx).OmitContent {
+		in.ReqBody = nil
+		in.RespBody = nil
+		in.Scan = security.MetadataOnlyResult(in.Scan)
+	}
 	if h.recorder == nil {
 		return
 	}

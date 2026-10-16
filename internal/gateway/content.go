@@ -179,6 +179,12 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 			changed = true
 		}
 	}
+	for _, key := range []string{"state", "questions"} {
+		if raw, exists := obj[key]; exists {
+			next, ch := mapDataStrings(raw, transform)
+			obj[key], changed = next, changed || ch
+		}
+	}
 	for _, key := range []string{"prompt", "query", "documents"} {
 		if raw, exists := obj[key]; exists {
 			next, ch := mapContent(raw, transform)

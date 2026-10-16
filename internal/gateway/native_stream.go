@@ -8,6 +8,7 @@ import (
 
 	"github.com/bastio-ai/bastio/internal/providers"
 	"github.com/bastio-ai/bastio/internal/security"
+	"github.com/bastio-ai/bastio/pkg/gatewaypolicy"
 )
 
 // mapStreamDeltas gives each independently streamed text/argument channel a
@@ -98,7 +99,7 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 	needRestore := profile != nil && profile.PIIRestoreResponse && hasTM
 	// Complete response policies can block and must run before releasing any
 	// bytes. Buffering also closes PII/token boundaries split between events.
-	buffered := needScan || needRestore
+	buffered := (needScan || needRestore) && !gatewaypolicy.From(r.Context()).MonitorOnly
 	if buffered {
 		w.Header().Set("X-Bastio-Stream-Buffered", "security-policy")
 	}
@@ -158,7 +159,7 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 			frames = append(frames, frame)
 			return nil
 		}
-		if h.streamSecrets != nil {
+		if h.streamSecrets != nil && !gatewaypolicy.From(r.Context()).MonitorOnly {
 			signedBlocked := false
 			data, changed := mapNativeOutputPolicy(frame.Data, h.streamSecrets.Mask, func(text string) string {
 				signedBlocked = signedBlocked || h.streamSecrets.Mask(text) != text
@@ -212,7 +213,7 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 			writeRouteError(w, &routeError{403, reason})
 			return nil, inTokens, outTokens, "blocked"
 		}
-		if h.streamSecrets != nil {
+		if h.streamSecrets != nil && !gatewaypolicy.From(r.Context()).MonitorOnly {
 			masked := h.streamSecrets.Mask(next)
 			if masked != next && strings.HasPrefix(key, "block:") && strings.HasSuffix(key, ":thinking") {
 				metadata.HTTPStatus = 403
