@@ -48,6 +48,7 @@ export function findingExplanation(finding: ExplainableFinding, trace?: FindingT
       : action === "block" ? "Content was blocked or withheld by policy. Review the trace for the affected stage."
         : action === "mask" || action === "tokenize" ? "Policy requested masking or tokenization. Review the trace for the resulting content."
           : "Review the trace for the effective outcome.";
-  const direction = finding.source === "input" ? "AI request" : finding.source === "response" ? "AI response" : undefined;
+  const stages: Record<string, string> = { input: "AI request", response: "AI response", tool: "Tool content", retrieval: "Retrieved content", memory: "Memory content" };
+  const direction = stages[finding.source || ""];
   return { title, description, evidence, outcome, direction };
 }

@@ -20,7 +20,7 @@ export function FindingExplanationCard({ finding, trace, loading = false, unavai
       <dl className="space-y-2">
         {trace?.trace_name ? <div><dt className="text-muted-foreground">Application operation</dt><dd className="break-words font-mono text-[11px]">{trace.trace_name}</dd></div> : null}
         {trace?.provider ? <div><dt className="text-muted-foreground">Provider / model</dt><dd className="break-words font-mono text-[11px]">{[trace.provider, trace.model].filter(Boolean).join(" · ")}</dd></div> : null}
-        <div><dt className="text-muted-foreground">Detected in</dt><dd>{explanation.direction || "Request or response — stage not recorded"}</dd></div>
+        <div><dt className="text-muted-foreground">Detected in</dt><dd>{explanation.direction || "Content stage not recorded"}</dd></div>
         <div><dt className="text-muted-foreground">Outcome</dt><dd>{explanation.outcome}</dd></div>
       </dl>
       {loading ? <p role="status" className="text-muted-foreground">Loading operation context…</p> : null}

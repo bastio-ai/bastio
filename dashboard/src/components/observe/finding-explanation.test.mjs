@@ -35,6 +35,9 @@ test("a retained excerpt is shown by the evidence view, not described as missing
 test("source provenance is not guessed to be the input or response", () => {
   assert.equal(findingExplanation({ ...finding, source: "input" }).direction, "AI request");
   assert.equal(findingExplanation({ ...finding, source: "response" }).direction, "AI response");
+  assert.equal(findingExplanation({ ...finding, source: "tool" }).direction, "Tool content");
+  assert.equal(findingExplanation({ ...finding, source: "retrieval" }).direction, "Retrieved content");
+  assert.equal(findingExplanation({ ...finding, source: "memory" }).direction, "Memory content");
   assert.equal(findingExplanation({ ...finding, source: "pattern" }).direction, undefined);
 });
 
