@@ -938,6 +938,7 @@ paths:
             default: 0
         - name: status
           in: query
+          description: One status or comma-separated statuses.
           schema:
             type: string
         - name: provider
@@ -959,7 +960,7 @@ paths:
             format: uuid
         - name: search
           in: query
-          description: Case-insensitive substring match on path.
+          description: Case-insensitive substring match on operation name or path, or an exact trace ID.
           schema:
             type: string
         - name: from
@@ -984,6 +985,23 @@ paths:
           in: query
           schema:
             type: string
+        - name: trace_name_contains
+          in: query
+          description: Case-insensitive substring match on the application operation name.
+          schema:
+            type: string
+        - name: trace_type
+          in: query
+          description: Operation category derived from provider and route metadata.
+          schema:
+            type: string
+            enum: [llm, embedding, mcp, local, extension, other]
+        - name: security
+          in: query
+          description: Filter security signals before pagination.
+          schema:
+            type: string
+            enum: [clean, threat]
         - name: tag
           in: query
           description: key:value pair; repeat for multiple AND-ed tag filters.
@@ -1000,6 +1018,48 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Trace"
+
+  /v1/traces/facets:
+    get:
+      operationId: traceFacets
+      summary: Observed operation names, providers, models and environments
+      tags: [Observability]
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: environment
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bounded metadata-only suggestions; names and models up to 200, providers and environments up to 100.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [names, providers, models, environments]
+                properties:
+                  names:
+                    type: array
+                    items: { type: string }
+                  providers:
+                    type: array
+                    items: { type: string }
+                  models:
+                    type: array
+                    items: { type: string }
+                  environments:
+                    type: array
+                    items: { type: string }
 
   /v1/traces/{id}:
     get:

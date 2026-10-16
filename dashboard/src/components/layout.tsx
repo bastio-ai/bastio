@@ -1,3 +1,4 @@
+import { DashboardRefreshControl } from "./dashboard-refresh-control";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -18,8 +19,6 @@ import {
   Menu,
   MessagesSquare,
   Moon,
-  Pause,
-  Play,
   Plus,
   Search,
   Server,
@@ -183,7 +182,7 @@ function LayoutFrame({ children }: { children: ReactNode }) {
   const health = useQuery({
     queryKey: ["health"],
     queryFn: api.health,
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
     retry: false,
   });
   const healthStatus = health.data?.status as string | undefined;
@@ -283,18 +282,7 @@ function LayoutFrame({ children }: { children: ReactNode }) {
               { value: "30d", label: "Last 30 days" },
             ]}
           />
-          <button
-            type="button"
-            onClick={() => controls.setLive(!controls.live)}
-            aria-pressed={controls.live}
-            className={cn(
-              "hidden h-9 items-center gap-2 rounded-md border border-border-default bg-background px-3 text-xs transition-colors hover:border-border-strong hover:text-foreground xl:flex",
-              !controls.live && "text-muted-foreground",
-            )}
-          >
-            {controls.live ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            <span>{controls.live ? "Live" : "Paused"}</span>
-          </button>
+          <div className="hidden xl:block"><DashboardRefreshControl /></div>
           <Button
             variant="outline"
             size="sm"

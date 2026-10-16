@@ -190,12 +190,12 @@ export function McpPage() {
   const servers = useQuery({
     queryKey: [...mcpKeys, "servers"],
     queryFn: mcpApi.servers,
-    refetchInterval: 5000,
+    meta: { dashboardLive: true }, refetchOnWindowFocus: false,
   });
   const events = useQuery({
     queryKey: [...mcpKeys, "events", selected],
     queryFn: () => mcpApi.events(selected || undefined),
-    refetchInterval: 5000,
+    meta: { dashboardLive: true }, refetchOnWindowFocus: false,
   });
   const inspect = useMutation({ mutationFn: mcpApi.inspect });
   const list = servers.data ?? [];

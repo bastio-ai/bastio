@@ -8,6 +8,7 @@ import {
 import { Layout } from "@/components/layout";
 import { OverviewPage } from "./overview";
 import { TracesPage } from "./traces";
+import { parseTraceSearch } from "@/components/observe/trace-filters";
 import { TraceDetailPage } from "./trace-detail";
 import { SessionsPage } from "./sessions";
 import { SessionDetailPage } from "./session-detail";
@@ -95,6 +96,7 @@ const indexRoute = createRoute({
 const tracesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/traces",
+  validateSearch: parseTraceSearch,
   component: TracesPage,
 });
 

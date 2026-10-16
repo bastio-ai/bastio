@@ -10,36 +10,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type ObserveFilters = {
-  status: string;
-  provider: string;
-  model: string;
-  endUser: string;
-  search: string;
-  security: string;
-  from: string;
-  to: string;
-  environment: string;
-  release: string;
-  traceName: string;
-  // Tag filter: space- or comma-separated `key:value` pairs.
-  tags: string;
-};
-
-export const emptyFilters: ObserveFilters = {
-  status: "",
-  provider: "",
-  model: "",
-  endUser: "",
-  search: "",
-  security: "",
-  from: "",
-  to: "",
-  environment: "",
-  release: "",
-  traceName: "",
-  tags: "",
-};
+import { emptyFilters, type ObserveFilters } from "./trace-filters";
+export { emptyFilters, parseTagFilter, type ObserveFilters } from "./trace-filters";
 
 type Props = {
   value: ObserveFilters;
@@ -200,12 +172,3 @@ export function FilterBar({
 
 // parseTagFilter turns "feature:checkout,tier:pro" into the repeatable
 // `tag` query-param array expected by the /v1/traces endpoint.
-export function parseTagFilter(raw: string): string[] {
-  if (!raw) return [];
-  const out: string[] = [];
-  for (const piece of raw.split(/[,\s]+/)) {
-    const trimmed = piece.trim();
-    if (trimmed && trimmed.includes(":")) out.push(trimmed);
-  }
-  return out;
-}

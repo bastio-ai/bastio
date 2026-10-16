@@ -571,6 +571,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/traces/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Observed operation names, providers, models and environments */
+        get: operations["traceFacets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/traces/{id}": {
         parameters: {
             query?: never;
@@ -5434,18 +5451,25 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                /** @description One status or comma-separated statuses. */
                 status?: string;
                 provider?: string;
                 model?: string;
                 end_user_id?: string;
                 proxy_id?: string;
-                /** @description Case-insensitive substring match on path. */
+                /** @description Case-insensitive substring match on operation name or path, or an exact trace ID. */
                 search?: string;
                 from?: string;
                 to?: string;
                 environment?: string;
                 release?: string;
                 trace_name?: string;
+                /** @description Case-insensitive substring match on the application operation name. */
+                trace_name_contains?: string;
+                /** @description Operation category derived from provider and route metadata. */
+                trace_type?: "llm" | "embedding" | "mcp" | "local" | "extension" | "other";
+                /** @description Filter security signals before pagination. */
+                security?: "clean" | "threat";
                 /** @description key:value pair; repeat for multiple AND-ed tag filters. */
                 tag?: string[];
             };
@@ -5462,6 +5486,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Trace"][];
+                };
+            };
+        };
+    };
+    traceFacets: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+                environment?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded metadata-only suggestions; names and models up to 200, providers and environments up to 100. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        names: string[];
+                        providers: string[];
+                        models: string[];
+                        environments: string[];
+                    };
                 };
             };
         };
