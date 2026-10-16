@@ -16,6 +16,21 @@ func identifierDigits(s string) string {
 	return b.String()
 }
 
+// Hyphens separate groups within numeric identifiers as well as words. A
+// regex word boundary is insufficient: 123-456-78-9012 contains a shape-valid
+// 456-78-9012 suffix, but the complete token has twelve digits, not nine.
+// Do not exclude URLs or field names: a complete SSN/SIN there still counts.
+func wholeNumericIdentifier(content string, start, end int) bool {
+	digit := func(c byte) bool { return c >= '0' && c <= '9' }
+	if start >= 2 && content[start-1] == '-' && digit(content[start-2]) {
+		return false
+	}
+	if end+1 < len(content) && content[end] == '-' && digit(content[end+1]) {
+		return false
+	}
+	return true
+}
+
 // SSA: area 000, 666 and 900–999, group 00, and serial 0000 are invalid.
 // https://secure.ssa.gov/poms.nsf/lnx/0110201035
 func ssnValid(s string) bool {

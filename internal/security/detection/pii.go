@@ -126,6 +126,9 @@ type piiPattern struct {
 	// look-alike strings that can't be real. Nil = always accept.
 	validate    func(string) bool
 	findIndices func(string) [][]int
+	// A word boundary also occurs at '-' and can expose a suffix of a
+	// longer numeric identifier as a seemingly complete national ID.
+	wholeNumber bool
 }
 
 // NewPIIDetector creates a PII detector with standard patterns.
@@ -216,14 +219,14 @@ func (d *PIIDetector) initPatterns() {
 	d.patterns = []piiPattern{
 		// SSN (critical). Accepts dashed (123-45-6789), space-separated
 		// (123 45 6789), and bare 9-digit (123456789) forms. The bare form
-		// over-matches occasionally (tracking numbers, account numbers)
-		// — acceptable for a security default since masking on a false
-		// positive is safer than missing a real SSN.
+		// is ambiguous with other identifiers. Never accept a fragment
+		// of a longer hyphenated number as a complete SSN.
 		{
-			regex:    regexp.MustCompile(`\b\d{3}[- ]?\d{2}[- ]?\d{4}\b`),
-			piiType:  "ssn",
-			validate: ssnValid,
-			severity: security.SeverityCritical,
+			regex:       regexp.MustCompile(`\b\d{3}[- ]?\d{2}[- ]?\d{4}\b`),
+			piiType:     "ssn",
+			validate:    ssnValid,
+			wholeNumber: true,
+			severity:    security.SeverityCritical,
 			maskFn: func(s string) string {
 				digits := regexp.MustCompile(`\d`).FindAllString(s, -1)
 				if len(digits) >= 4 {
@@ -330,9 +333,10 @@ func (d *PIIDetector) initPatterns() {
 
 		// Canadian SIN — 9 digits, Luhn-checked.
 		{
-			regex:    regexp.MustCompile(`\b\d{3}[- ]?\d{3}[- ]?\d{3}\b`),
-			piiType:  "canadian_sin",
-			severity: security.SeverityHigh,
+			regex:       regexp.MustCompile(`\b\d{3}[- ]?\d{3}[- ]?\d{3}\b`),
+			piiType:     "canadian_sin",
+			wholeNumber: true,
+			severity:    security.SeverityHigh,
 			validate: func(s string) bool {
 				d := identifierDigits(s)
 				return len(d) == 9 && d[0] != '0' && luhnValidLength(s, 9, 9)
@@ -421,6 +425,9 @@ func (p piiPattern) matches(content string) [][]int {
 	matches := p.regex.FindAllStringIndex(content, -1)
 	out := matches[:0]
 	for _, span := range matches {
+		if p.wholeNumber && !wholeNumericIdentifier(content, span[0], span[1]) {
+			continue
+		}
 		if p.validate == nil || p.validate(content[span[0]:span[1]]) {
 			out = append(out, span)
 		}
