@@ -26,6 +26,9 @@ func TestMCPProductResultsRemainProtectedWithoutTimestampFalsePositive(t *testin
 		{"encoded product URL", `{"url":"https://example.test/search?q=lampe%20til%20natbordet&category=lys%26design"}`, true},
 		{"yellow hats book image ISBN", `{"query":"yellow hats","image":"https://example.test/wp-content/uploads/2025/04/9788743604457-scaled.jpg"}`, true},
 		{"warm jacket long product URL", `{"query":"A warm jacket","url":"https://plendio.dk/products/vinterjacka-balaklava-elastisk-halsvaermare-vindtaet-och-varm-unisex-laemplig-38446887?src=ai","image":"https://cdn.shopify.com/s/files/1/0754/4039/0442/products/mpEMUPDJEeiP76FW2lS0Vg-4nFml1H5EeyMh14C5xm23w__53011.png"}`, true},
+		{"winter jacket numeric image filename", `{"products":[{"name":"Winter jacket","image":"https://cdn.example.test/s/files/1/0123/4567/8901/files/123-456-78-9012.jpg?v=1763400017"}]}`, true},
+		{"SSN alongside numeric image filename", `{"image":"https://cdn.example.test/files/123-456-78-9012.jpg","applicant":{"ssn":"123-45-6789"}}`, false},
+		{"complete SSN in image URL", `{"image":"https://cdn.example.test/files/123-45-6789.jpg"}`, false},
 		{"card alongside ISBN", `{"isbn":"9788743604457","url":"https://example.test/search?card=4111111111111111"}`, false},
 		{"phone in URL", `{"url":"https://example.test/search?phone=2025550143"}`, false},
 		{"secret in URL", "https://example.test/search?api_key=sk-proj-" + strings.Repeat("Xk7pQ2vL", 5), false},
@@ -72,6 +75,34 @@ func TestMCPEncodedPIIMaskDoesNotLeakAndNormalURLsRemainUsable(t *testing.T) {
 	processed, _, err := inspectMCPPayload(context.Background(), engine, mcpProfileSnapshot{cid, &profile}, cid, raw, security.RoleRetrieval, 0)
 	if err != nil || strings.Contains(string(processed), "alice@example.test") || !strings.Contains(string(processed), "q=lampe%20til%20natbordet") {
 		t.Fatal("normal URL or plaintext PII rewrite changed")
+	}
+}
+
+func TestMCPStructuredCatalogueNumericAssetIDsPassEveryPIIPolicy(t *testing.T) {
+	raw := json.RawMessage(`{"content":[{"type":"text","text":"Winter jackets: https://cdn.example.test/files/123-456-78-9012.jpg"}],"structuredContent":{"products":[{"name":"Winter jacket","image":"https://cdn.example.test/s/files/1/0123/4567/8901/files/123-456-78-9012.jpg?v=1763400017"}]}}`)
+	cid := uuid.New()
+	for _, action := range []security.Action{security.ActionBlock, security.ActionMask, security.ActionTokenize, security.ActionWarn, security.ActionLogOnly} {
+		t.Run(string(action), func(t *testing.T) {
+			profile := security.DefaultProfile()
+			profile.PIIAction = action
+			engine := security.NewEngine(detection.NewPIIDetector(), detection.NewInjectionDetector(), detection.NewJailbreakDetector(), detection.NewIndirectInjectionDetector(), detection.NewSecretsDetector())
+			out, cats, err := inspectMCPPayload(context.Background(), engine, mcpProfileSnapshot{cid, &profile}, cid, raw, security.RoleRetrieval, 0)
+			if err != nil || len(cats) != 0 {
+				t.Fatalf("catalogue result withheld/flagged: %v %v", err, cats)
+			}
+			var original, actual struct {
+				Content           []struct{ Type, Text string }
+				StructuredContent struct {
+					Products []struct{ Name, Image string }
+				}
+			}
+			if json.Unmarshal(raw, &original) != nil || json.Unmarshal(out, &actual) != nil {
+				t.Fatal("invalid catalogue JSON")
+			}
+			if len(actual.Content) != 1 || len(actual.StructuredContent.Products) != 1 || original.Content[0] != actual.Content[0] || original.StructuredContent.Products[0] != actual.StructuredContent.Products[0] {
+				t.Fatal("catalogue text or structured product data changed")
+			}
+		})
 	}
 }
 
