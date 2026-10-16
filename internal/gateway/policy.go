@@ -2,11 +2,26 @@ package gateway
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/bastio-ai/bastio/internal/observability"
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/pkg/gatewaypolicy"
 )
+
+func gatewayTraceTags(ctx context.Context, headers http.Header) map[string]string {
+	tags := tagsFromHeaders(headers)
+	if tags == nil {
+		tags = make(map[string]string)
+	}
+	// Snapshot the trusted policy at capture time. Later settings changes
+	// must not change history, and callers cannot override this tag.
+	tags["bastio.content_capture"] = "enabled"
+	if gatewaypolicy.From(ctx).OmitContent {
+		tags["bastio.content_capture"] = "metadata_only"
+	}
+	return tags
+}
 
 func (h *Handler) recordGatewayObservation(ctx context.Context, observation *observability.ObservationRecord) {
 	if gatewaypolicy.From(ctx).OmitContent {

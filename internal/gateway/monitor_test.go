@@ -52,6 +52,17 @@ func TestMonitoringPreservesNativeInputOutputAndStillFindsPII(t *testing.T) {
 		if result == nil || len(result.Findings) == 0 || result.ShouldBlock || result.Action != security.ActionLogOnly {
 			t.Fatal("monitoring lost findings or enforced", result)
 		}
+		if result.Findings[0].Source != "input" {
+			t.Fatal("request finding lost its direction", result.Findings[0].Source)
+		}
+		output := h.runSecurityScanFrom(r, func() *auth.APIKeyInfo { info, _ := auth.FromContext(r.Context()); return info }(), email, uuid.New(), &profile, "response")
+		if output == nil || len(output.Findings) == 0 || output.Findings[0].Source != "response" {
+			t.Fatal("response finding lost its direction")
+		}
+		merged := mergeMonitorScans(result, output)
+		if len(merged.Findings) != 2 || merged.Findings[0].Source != "input" || merged.Findings[1].Source != "response" {
+			t.Fatal("merged trace cannot distinguish request from response")
+		}
 		w = httptest.NewRecorder()
 		h.NativeAPI(providers.ProviderOpenRouter, "/chat/completions")(w, r)
 		if w.Code != 200 || !strings.Contains(w.Body.String(), email) {

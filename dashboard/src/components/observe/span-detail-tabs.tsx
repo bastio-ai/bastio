@@ -1,5 +1,7 @@
 import { McpPayloadHistory } from "./mcp-payload-history";
 import { useEffect, useMemo, useState } from "react";
+import { FindingExplanationCard, RecordingSettingsLink } from "./finding-explanation-card";
+import type { FindingTraceContext } from "./finding-explanation";
 import { Braces, Info, MessageSquareText, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { Observation, TraceThreatDetection } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,7 @@ type Props = {
   onThreatSelect?: (threat: TraceThreatDetection) => void;
   securityReviewSignal?: number;
   mcp?: McpTracePresentation;
+  traceContext?: FindingTraceContext;
 };
 
 // Right-pane detail for the currently selected span. Tabs adapt to span
@@ -35,6 +38,7 @@ export function SpanDetailTabs({
   onThreatSelect,
   securityReviewSignal = 0,
   mcp,
+  traceContext,
 }: Props) {
   const tokens = (span.input_tokens ?? 0) + (span.output_tokens ?? 0);
   const isGeneration = span.type === "generation";
@@ -110,7 +114,7 @@ export function SpanDetailTabs({
         </TabsList>
         <div className="flex-1 overflow-auto px-4 pb-4">
           <TabsContent value="input" keepMounted={false} className="pt-3">
-            {mcp && !input.trim() ? <McpPayloadHistory span={span} direction="input" mcp={mcp} onTabChange={onTabChange} /> : <EvidenceViewer
+            {mcp && !input.trim() ? <McpPayloadHistory span={span} direction="input" mcp={mcp} onTabChange={onTabChange} /> : !input.trim() ? <MissingGatewayContent direction="request" trace={traceContext} /> : <EvidenceViewer
               key={`${span.id}-input`}
               raw={input}
               label={isGeneration ? "Messages" : "Request"}
@@ -119,7 +123,7 @@ export function SpanDetailTabs({
             />}
           </TabsContent>
           <TabsContent value="output" keepMounted={false} className="pt-3">
-            {mcp && !output.trim() ? <McpPayloadHistory span={span} direction="output" mcp={mcp} onTabChange={onTabChange} /> : <EvidenceViewer
+            {mcp && !output.trim() ? <McpPayloadHistory span={span} direction="output" mcp={mcp} onTabChange={onTabChange} /> : !output.trim() ? <MissingGatewayContent direction="response" trace={traceContext} /> : <EvidenceViewer
               key={`${span.id}-output`}
               raw={output}
               label={isGeneration ? "Completion" : "Response"}
@@ -208,6 +212,7 @@ export function SpanDetailTabs({
               />
             ) : null}
             {mcp ? <McpInspectionSummary summary={mcp.security} /> : null}
+            {threats.length ? <div className="mb-3 2xl:hidden"><FindingExplanationCard finding={threats.find((finding) => finding.id === selectedThreatId) || threats[0]!} trace={traceContext} /></div> : null}
             {threats.length || !mcp ? <ThreatCascade
               threats={threats}
               selectedThreatId={selectedThreatId}
@@ -218,6 +223,16 @@ export function SpanDetailTabs({
       </Tabs>
     </div>
   );
+}
+
+function MissingGatewayContent({ direction, trace }: { direction: "request" | "response"; trace?: FindingTraceContext }) {
+  const omitted = trace?.tags?.["bastio.content_capture"] === "metadata_only";
+  return <section className="space-y-2 rounded-md border border-border-subtle bg-surface-1 p-4 text-xs leading-relaxed">
+    <h3 className="font-semibold tracking-tight">No {direction} content available for this span</h3>
+    <p className="text-muted-foreground">{omitted ? "This call used metadata-only recording. Timing and security decisions were retained; request and response content was not." : "This span has no retained content on this side of the call. Check the other spans for captured content. The capture policy for older traces may not be recorded."}</p>
+    <p className="text-muted-foreground">Admins can enable AI content recording for future gateway calls. It cannot recover content that was not retained. Captures have size limits and may be partial.</p>
+    <RecordingSettingsLink />
+  </section>;
 }
 
 function McpInspectionSummary({ summary }: { summary: McpTracePresentation["security"] }) {

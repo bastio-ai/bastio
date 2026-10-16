@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
@@ -73,6 +74,8 @@ const detectorMeta = [
 ] as const;
 
 export function SecurityPage() {
+  const { tab } = useSearch({ from: "/security-settings" });
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: profiles, isLoading } = useQuery({ queryKey: ["security-profiles"], queryFn: api.security.profiles });
   const { data: appConfig } = useQuery({ queryKey: ["config"], queryFn: api.config });
@@ -121,7 +124,7 @@ export function SecurityPage() {
         </SecurityNotice>
       )}
 
-      <Tabs defaultValue="detectors">
+      <Tabs value={["detectors", "runtime", ...extraTabs.map((item) => item.id)].includes(tab || "") ? tab : "detectors"} onValueChange={(next) => navigate({ to: "/security-settings", search: { tab: next }, replace: true })}>
         <TabsList variant="line" className="mb-4">
           <TabsTrigger value="detectors">Detection profile</TabsTrigger>
           <TabsTrigger value="runtime">Runtime enforcement</TabsTrigger>

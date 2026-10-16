@@ -51,7 +51,7 @@ func (h *Handler) Observe(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 	traceID := uuid.New()
 	scan := h.runSecurityScan(r, info, localObservationText(body.Request, true), traceID, profile)
-	scan = mergeMonitorScans(scan, h.runSecurityScan(r, info, localObservationText(body.Response, false), traceID, profile))
+	scan = mergeMonitorScans(scan, h.runSecurityScanFrom(r, info, localObservationText(body.Response, false), traceID, profile, "response"))
 	status := "ok"
 	if body.HTTPStatus >= 400 {
 		status = "error"

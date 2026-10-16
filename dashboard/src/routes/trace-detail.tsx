@@ -46,6 +46,7 @@ import {
 import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { ResizablePanels } from "@/components/observe/resizable-panels";
 import { SpanDetailTabs } from "@/components/observe/span-detail-tabs";
+import { FindingExplanationCard } from "@/components/observe/finding-explanation-card";
 import { SpanTree } from "@/components/observe/span-tree";
 import { useTracesExtension } from "@/components/traces-extension";
 import { cn, formatCost, formatDuration, weightedThreatScore } from "@/lib/utils";
@@ -603,6 +604,7 @@ function TraceSplit({
                 setTabWasChosen(true);
               }}
               selectedThreatId={selectedThreatId}
+              traceContext={trace}
               onThreatSelect={selectThreat}
               securityReviewSignal={reviewFindingsRequest}
             />
@@ -682,6 +684,7 @@ function TraceSecurityInspector({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {selectedThreat ? (
           <>
+            <FindingExplanationCard finding={selectedThreat} trace={trace} />
             <InvestigationCard title="Decision">
               <InvestigationRow label="Action">
                 <Badge variant={selectedThreat.action_taken === "block" ? "destructive" : "warning"} className="h-4 px-1.5 text-[8px]">

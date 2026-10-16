@@ -187,6 +187,9 @@ const proxyDetailRoute = createRoute({
 const securityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/security-settings",
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+  }),
   component: SecurityPage,
 });
 
