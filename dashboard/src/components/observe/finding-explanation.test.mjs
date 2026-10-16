@@ -39,6 +39,7 @@ test("source provenance is not guessed to be the input or response", () => {
   assert.equal(findingExplanation({ ...finding, source: "retrieval" }).direction, "Retrieved content");
   assert.equal(findingExplanation({ ...finding, source: "memory" }).direction, "Memory content");
   assert.equal(findingExplanation({ ...finding, source: "pattern" }).direction, undefined);
+  assert.equal(findingExplanation({ ...finding, source: "toString" }).direction, undefined);
 });
 
 test("non-PII detectors and classifier-specific patterns get accurate generic explanations", () => {
