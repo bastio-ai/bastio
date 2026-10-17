@@ -503,7 +503,7 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 		next, ch := mapDataStrings(answers, transform)
 		obj["answers"], changed = next, changed || ch
 	}
-	for _, key := range []string{"content", "output", "text", "response", "arguments", "refusal", "reasoning", "reasoning_content", "reasoning_details", "thinking", "partial_json"} {
+	for _, key := range []string{"content", "output", "text", "revised_prompt", "response", "arguments", "refusal", "reasoning", "reasoning_content", "reasoning_details", "thinking", "partial_json"} {
 		if value, exists := obj[key]; exists {
 			apply := transform
 			if (kind == "thinking" || kind == "thinking_delta") && key == "thinking" {
@@ -513,7 +513,7 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 			obj[key], changed = next, changed || ch
 		}
 	}
-	for _, key := range []string{"choices", "message", "response", "content_block", "item", "part", "delta"} {
+	for _, key := range []string{"choices", "data", "message", "response", "content_block", "item", "part", "delta"} {
 		value, exists := obj[key]
 		if !exists {
 			continue

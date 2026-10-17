@@ -59,3 +59,11 @@ func TestGeminiGenerationAndSynchronousBatchEmbeddingsInspectText(t *testing.T) 
 		t.Fatal("Google native usage lost")
 	}
 }
+
+func TestImageBatchRevisedPromptIsTextWhileMediaRemainsOpaque(t *testing.T) {
+	raw := []byte(`{"custom_id":"image","response":{"body":{"data":[{"revised_prompt":"person@example.test","b64_json":"unchanged-media-bytes"}]}}}`)
+	out, changed := mapBatchOutput(raw, providers.ProviderOpenAI, func(s string) string { return strings.ReplaceAll(s, "person@example.test", "redacted") })
+	if !changed || strings.Contains(string(out), "person@example.test") || !strings.Contains(string(out), "unchanged-media-bytes") {
+		t.Fatal("image batch text was skipped or media was rewritten")
+	}
+}
