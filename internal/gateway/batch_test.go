@@ -56,6 +56,22 @@ func (f *batchFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1beta")
+	if strings.HasSuffix(path, ":batchEmbedContents") {
+		raw, _ := io.ReadAll(r.Body)
+		f.received = append(f.received, raw)
+		var input struct {
+			Requests []json.RawMessage `json:"requests"`
+		}
+		_ = json.Unmarshal(raw, &input)
+		values := make([]json.RawMessage, len(input.Requests))
+		for i := range values {
+			values[i] = json.RawMessage(`{"values":[0.1,0.2]}`)
+		}
+		_ = json.NewEncoder(w).Encode(struct {
+			Embeddings []json.RawMessage `json:"embeddings"`
+		}{values})
+		return
+	}
 	if path == "/files" && r.Method == "POST" {
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			http.Error(w, err.Error(), 400)
@@ -470,6 +486,9 @@ func TestProtectedNativeBatchWorkflows(t *testing.T) {
 		if rr := upload(line + "\n" + line); rr.Code != 400 {
 			t.Fatalf("duplicate ID: %d %s", rr.Code, rr.Body)
 		}
+		if rr := upload(`{"custom_id":"invalid","method":"POST","url":"/v1/chat/completions","body":["invalid@example.test"]}`); rr.Code != 400 {
+			t.Fatalf("non-object batch body accepted: %d %s", rr.Code, rr.Body)
+		}
 		profile.PIIAction = security.ActionBlock
 		if rr := upload(strings.Replace(line, "safe", "blocked@example.test", 1)); rr.Code != 403 {
 			t.Fatalf("blocked upload: %d %s", rr.Code, rr.Body)
@@ -611,7 +630,7 @@ func TestProtectedNativeBatchWorkflows(t *testing.T) {
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()
 	for _, raw := range fixture.received {
-		for _, value := range []string{"first@example.test", "second@example.test", "inline@example.test", "file@example.test"} {
+		for _, value := range []string{"first@example.test", "second@example.test", "inline@example.test", "file@example.test", "sdk-person@example.test", "node-person@example.test"} {
 			if strings.Contains(string(raw), value) {
 				t.Fatalf("provider received original PII %q", value)
 			}

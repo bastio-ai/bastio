@@ -37,6 +37,11 @@ func ProviderEndpoint(path string) string {
 }
 
 func IsGenerationEndpoint(endpoint string) bool {
+	for _, operation := range []string{":generateContent", ":streamGenerateContent", ":embedContent", ":batchEmbedContents"} {
+		if strings.HasSuffix(endpoint, operation) {
+			return true
+		}
+	}
 	if strings.HasSuffix(endpoint, ":batchGenerateContent") || strings.HasSuffix(endpoint, ":asyncBatchEmbedContent") {
 		return true
 	}

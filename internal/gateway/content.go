@@ -125,7 +125,10 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 	if json.Unmarshal(body, &obj) != nil || obj == nil {
 		return body, false
 	}
-	if _, ok := obj["contents"]; ok {
+	_, googleContents := obj["contents"]
+	var googleContent map[string]json.RawMessage
+	_ = json.Unmarshal(obj["content"], &googleContent)
+	if googleContents || googleContent["parts"] != nil {
 		return mapGoogleContent(body, transform)
 	}
 	changed := false
@@ -136,6 +139,13 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 			if params, exists := request["params"]; exists {
 				next, ch := mapInput(params, transform)
 				request["params"], changed = next, changed || ch
+			} else if request["content"] != nil || request["contents"] != nil {
+				raw, _ := json.Marshal(request)
+				next, ch := mapGoogleContent(raw, transform)
+				if ch {
+					_ = json.Unmarshal(next, &request)
+					changed = true
+				}
 			}
 		}
 		if changed {

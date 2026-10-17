@@ -514,7 +514,8 @@ func (b *batchCall) inputItem(raw []byte, key string, manifest *batchManifest) (
 	if inspectErr != nil {
 		return nil, inspectErr
 	}
-	if !json.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+	var requestObject map[string]json.RawMessage
+	if json.Unmarshal(raw, &requestObject) != nil || requestObject == nil {
 		return nil, &routeError{400, "invalid batch request item"}
 	}
 	if rejected, allowed := validateImageContent(raw, b.h.imageURLAllowlist); !allowed {

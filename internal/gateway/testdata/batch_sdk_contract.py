@@ -31,6 +31,8 @@ assert results[0].result.message.content[0].text == text
 assert claude.messages.batches.cancel(job.id).id == job.id
 
 google = genai.Client(api_key=key, http_options=types.HttpOptions(base_url=base + "/v1/google", api_version="v1beta"))
+embedded = google.models.embed_content(model="gemini-embedding-001", contents=[text, "second document"])
+assert len(embedded.embeddings) == 2 and len(embedded.embeddings[0].values) == 2
 job = google.batches.create(model="gemini-2.5-flash", src=[{"contents": [{"parts": [{"text": text}]}]}], config={"display_name": "SDK inline"})
 assert job.dest.inlined_responses[0].response.text == text
 job = google.batches.get(name=job.name)
