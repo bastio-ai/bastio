@@ -133,19 +133,19 @@ func TestNativeCallerPathCannotChangeAuthority(t *testing.T) {
 	}))
 	defer upstream.Close()
 	client := NewOpenRouterClientWithBaseURL(upstream.URL + "/v1")
-	for _, path := range []string{"/@other.example", "/https://other.example", "/%2f%2fother.example"} {
+	for _, path := range []string{"/@other.example", "/%2f%2fother.example"} {
 		resp, err := client.Forward(context.Background(), &NativeRequest{Method: http.MethodGet, Path: path, Query: url.Values{"redirect": {"https://other.example"}}}, "secret")
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
 	}
-	for _, path := range []string{"//other.example", "/../key", "https://other.example", "/key?redirect=1"} {
+	for _, path := range []string{"//other.example", "/../key", "https://other.example", "/key?redirect=1", "/https://other.example", "/messages//batches"} {
 		if _, err := client.Forward(context.Background(), &NativeRequest{Method: http.MethodGet, Path: path}, "secret"); err == nil {
 			t.Fatalf("unsafe path accepted: %s", path)
 		}
 	}
-	if requests != 3 {
+	if requests != 2 {
 		t.Fatalf("unexpected outbound requests: %d", requests)
 	}
 }
