@@ -61,6 +61,7 @@ func TestExtractAPIKey(t *testing.T) {
 	}{
 		{"bearer", map[string]string{"Authorization": "Bearer sk-bastio-abc"}, "sk-bastio-abc"},
 		{"x-api-key", map[string]string{"X-API-Key": "sk-bastio-xyz"}, "sk-bastio-xyz"},
+		{"google sdk", map[string]string{"X-Goog-Api-Key": "sk-bastio-google"}, "sk-bastio-google"},
 		{"bearer takes precedence", map[string]string{
 			"Authorization": "Bearer sk-bastio-abc",
 			"X-API-Key":     "sk-bastio-xyz",

@@ -18,7 +18,7 @@ func gatewayTimeout(configured time.Duration) time.Duration {
 // Native SDK resource APIs include slow reasoning calls and multipart uploads.
 // Management requests keep their shorter timeout and smaller body limit.
 func isProviderAPIPath(path string) bool {
-	for _, prefix := range []string{"/v1/typesafe/", "/v1/openrouter/", "/v1/openai/", "/v1/anthropic/"} {
+	for _, prefix := range []string{"/v1/typesafe/", "/v1/openrouter/", "/v1/openai/", "/v1/anthropic/", "/v1/xai/", "/v1/google/", "/v1/gemini/"} {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}
@@ -29,7 +29,7 @@ func isProviderAPIPath(path string) bool {
 	if IsGenerationGatewayPath(path) {
 		return true
 	}
-	for _, prefix := range []string{"/v1/responses", "/v1/models", "/v1/messages"} {
+	for _, prefix := range []string{"/v1/responses", "/v1/models", "/v1/messages", "/v1/batches", "/v1/files"} {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
 		}
@@ -58,7 +58,12 @@ func requestLimitsMiddleware(managementBytes, providerBytes int64, timeout time.
 		}
 		management = middleware.Timeout(time.Minute)(management)
 		provider := middleware.Timeout(gatewayTimeout(timeout))(maxBodyBytesMiddleware(providerBytes)(next))
+		batch := middleware.Timeout(gatewayTimeout(timeout))(maxBodyBytesMiddleware((2 << 30) + (1 << 20))(next))
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsBatchGatewayPath(r.URL.Path) {
+				batch.ServeHTTP(w, r)
+				return
+			}
 			if isProviderAPIPath(r.URL.Path) || isWorkspaceContentPath(r.URL.Path) {
 				provider.ServeHTTP(w, r)
 				return

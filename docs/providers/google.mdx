@@ -1,192 +1,23 @@
 ---
-title: Google (Gemini + Vertex AI)
-description: Route Gemini API and Vertex AI traffic through Bastio with API-key or service-account auth.
+title: Google Gemini
+description: Route Gemini Developer API calls and asynchronous batches through Bastio.
 ---
 
-Google has two Gemini surfaces:
-
-- **Gemini API** — `generativelanguage.googleapis.com`. API-key
-  auth, fastest to onboard, no GCP project required beyond
-  enabling the API.
-- **Vertex AI** — `*-aiplatform.googleapis.com`. Service-account
-  auth, GCP project + region scoped, fits enterprise IAM /
-  audit / data-residency requirements.
-
-The current proxy schema reserves `vertex`, but the server does not register a Vertex/Gemini provider client yet.
-
-> Use [`/v1/detect`](/docs/developer-apis/detect) before calling Gemini or Vertex AI directly. The gateway examples below show the intended future shape and are not a live production contract.
-
-## Prerequisites
-
-- A Google Cloud account
-- Either an AI Studio API key (Gemini API) or a service account
-  with `roles/aiplatform.user` on a Vertex-enabled project
-- A running Bastio gateway ([Getting started](/docs/getting-started))
-
-## Option A: Gemini API (API key)
-
-### Get the key
-
-1. Sign in at [aistudio.google.com](https://aistudio.google.com/apikey).
-2. Create a new API key.
-3. Copy the value.
-
-### Create the proxy
-
-Store the Gemini credential in Bastio first, then create the routing proxy:
-
-```bash
-curl -X POST http://localhost:4000/v1/proxies \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "prod-gemini",
-    "slug": "prod-gemini",
-    "target_provider": "vertex",
-    "target_model": "gemini-2.5-pro"
-  }'
-```
-
-## Option B: Vertex AI (service account)
-
-### Get the credentials
-
-1. In Cloud Console: IAM & Admin → Service Accounts → Create.
-2. Grant `Vertex AI User` (`roles/aiplatform.user`).
-3. Create a JSON key, download.
-4. Note your project ID and the region you'll deploy in
-   (e.g. `europe-west4` for EU residency).
-
-### Create the proxy
-
-Configure the service account, project, and region in the Bastio deployment first. The proxy request stores routing metadata:
-
-```bash
-curl -X POST http://localhost:4000/v1/proxies \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "prod-vertex",
-    "slug": "prod-vertex",
-    "target_provider": "vertex",
-    "target_model": "gemini-2.5-pro"
-  }'
-```
-
-Bastio uses the server-side service account to mint short-lived OAuth tokens for each request. The JSON key is never sent in a proxy management payload.
-
-## Send a request
-
-Both modes accept the same OpenAI-compatible payload:
-
-```bash
-curl http://localhost:4000/v1/chat/completions \
-  -H "Authorization: Bearer $BASTIO_GATEWAY_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemini-2.5-pro",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-```
-
-Bastio translates to Gemini's native `generateContent` shape
-and returns the response in OpenAI-compatible structure.
-
-### Python
+Bastio registers a `gemini` provider client for the Gemini Developer API (`generativelanguage.googleapis.com`). Add a Google AI Studio provider key in Bastio, then use a Bastio application key in your SDK. Provider model access, quotas and usage charges stay with your Google account.
 
 ```python
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
-client = OpenAI(
-    base_url="http://localhost:4000/v1",
-    api_key=os.environ["BASTIO_GATEWAY_KEY"],
-)
-
-resp = client.chat.completions.create(
-    model="gemini-2.5-pro",
-    messages=[{"role": "user", "content": "Hello"}],
-)
+client = genai.Client(api_key="YOUR_BASTIO_APPLICATION_KEY", http_options=types.HttpOptions(
+    base_url="https://api.bastio.com/v1/google", api_version="v1beta"))
+response = client.models.generate_content(model="gemini-2.5-flash", contents="Hello!")
 ```
 
-## Supported features
+`/v1/gemini` is an alias for `/v1/google`. Authentication accepts the SDK's `x-goog-api-key` header; Bastio sends the configured Google credential upstream. Use `X-Bastio-Proxy-Id` in SDK headers to select a particular routing proxy. Normalized Chat Completions also support the `gemini` provider through the gateway's translation pipeline.
 
-- **Chat completions** — Gemini 1.5, 2.0, 2.5 family across
-  both Gemini API and Vertex.
-- **Streaming** — `stream: true` works on both modes; Bastio
-  normalizes Gemini's SSE shape to OpenAI delta format.
-- **Tool / function calling** — passes through. Gemini's
-  function-calling shape is mapped to OpenAI's `tools` field.
-- **Multimodal** — `image_url`, `video_url`, and inline base64
-  blocks pass through. Gemini's native large-context (1M+)
-  handles long PDFs / videos.
-- **System instructions** — Gemini accepts these as a separate
-  `systemInstruction` field; Bastio extracts the first
-  `system` message from your OpenAI-shaped request and routes
-  it correctly.
+Native inline/file generation batches, asynchronous embeddings, resumable JSONL uploads and result downloads are supported. See [Native batch APIs](/docs/batch-apis) for examples, retention, security coverage and limits. Uploaded image/audio bytes remain opaque to text detectors.
 
-## Models
+Self-hosters can override `GEMINI_BASE_URL` (default `https://generativelanguage.googleapis.com/v1beta`). A stable encryption key and PostgreSQL are required for asynchronous batch state.
 
-| Use case | Model |
-|---|---|
-| Highest reasoning + 2M context | `gemini-2.5-pro` |
-| Cheap + fast | `gemini-2.5-flash` |
-| Cheapest | `gemini-2.5-flash-lite` |
-| Multimodal video understanding | `gemini-2.5-pro` (best) |
-
-The latest list is at
-[ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models).
-
-## Regions (Vertex)
-
-Vertex AI model availability varies by region. Common picks:
-
-| Region | Notes |
-|---|---|
-| `us-central1` | Widest model availability, first to get new releases. |
-| `europe-west4` (Netherlands) | EU residency, Gemini family available. |
-| `europe-west1` (Belgium) | EU residency, narrower model list. |
-| `asia-northeast1` (Tokyo) | APAC residency. |
-
-Region affects both signing and routing because it is part of the Vertex endpoint URL. Keep the region in your direct Google client until the public Bastio provider integration is registered.
-
-## Gemini API vs Vertex — when to use each
-
-| | Gemini API | Vertex AI |
-|---|---|---|
-| Auth | API key | Service account |
-| GCP project required | No | Yes |
-| EU residency | Limited | Yes (multiple regions) |
-| Audit logging | None | Cloud Audit Logs (full) |
-| Quota model | Free tier + paid | Per-project quota |
-| Best for | Prototypes, side projects | Enterprise production |
-
-Use Gemini API for evaluation; switch to Vertex when you need
-audit + residency + IAM-bound access. Same model IDs work on
-both, no application code change needed beyond the proxy
-swap.
-
-## Gotchas
-
-- **Service account handling.** Do not place service-account JSON in the proxy-create payload. Keep it in the application or deployment secret store while using the direct integration.
-- **`stream` chunks differ.** Gemini's native streaming sends
-  chunks at content-block boundaries, not token-by-token like
-  OpenAI. The user-perceived latency is the same; the chunk
-  shape isn't.
-- **System instruction in nested messages.** If you put
-  multiple `system` messages in your OpenAI request, only the
-  first is used as `systemInstruction`. The rest are silently
-  dropped — Gemini doesn't support multiple system blocks.
-- **Vertex regional outage.** Pin a fallback region by creating
-  a second proxy and switching app config. Bastio doesn't
-  auto-failover — that's a v2.1 feature.
-
-## Where the request shows up in traces
-
-Google requests land in Traces with `provider: google` and a
-metadata field `google_mode: "gemini"` or `"vertex"` so you
-can filter by which surface was used. See
-[Observability](/docs/observability).
-
-## Next
-
-- [OpenAI](/docs/providers/openai) — different model family,
-  same gateway shape.
-- [Bedrock](/docs/providers/bedrock) — AWS analog of Vertex.
+Vertex AI uses separate project/region, IAM and batch-prediction APIs. Although the proxy schema reserves `vertex`, that service-account transport is not implemented by this Gemini Developer API client.

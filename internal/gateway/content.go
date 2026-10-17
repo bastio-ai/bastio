@@ -125,6 +125,9 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 	if json.Unmarshal(body, &obj) != nil || obj == nil {
 		return body, false
 	}
+	if _, ok := obj["contents"]; ok {
+		return mapGoogleContent(body, transform)
+	}
 	changed := false
 	// Claude batches carry full Messages requests under requests[].params.
 	var batch []map[string]json.RawMessage

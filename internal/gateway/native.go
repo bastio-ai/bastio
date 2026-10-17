@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -114,6 +115,8 @@ func (h *Handler) nativeRoute(r *http.Request, info *auth.APIKeyInfo, requested 
 			route.key = os.Getenv("OPENAI_API_KEY")
 		case providers.ProviderAnthropic:
 			route.key = os.Getenv("ANTHROPIC_API_KEY")
+		case providers.ProviderGemini:
+			route.key = os.Getenv("GEMINI_API_KEY")
 		}
 	}
 	return route, nil
@@ -121,7 +124,8 @@ func (h *Handler) nativeRoute(r *http.Request, info *auth.APIKeyInfo, requested 
 
 func writeRouteError(w http.ResponseWriter, err error) {
 	status := http.StatusBadGateway
-	if e, ok := err.(*routeError); ok {
+	var e *routeError
+	if errors.As(err, &e) {
 		status = e.status
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -149,6 +153,16 @@ func (h *Handler) NativeAPI(provider providers.Provider, path string) http.Handl
 		}
 		if strings.HasSuffix(endpoint, "/*") {
 			endpoint = strings.TrimSuffix(endpoint, "*") + chi.URLParam(r, "*")
+		}
+		// Claude and Google SDKs append their API version to the base URL.
+		if provider == providers.ProviderAnthropic && strings.HasPrefix(endpoint, "/v1/") {
+			endpoint = strings.TrimPrefix(endpoint, "/v1")
+		}
+		if provider == providers.ProviderGemini && strings.HasPrefix(endpoint, "/v1beta/") {
+			endpoint = strings.TrimPrefix(endpoint, "/v1beta")
+		}
+		if h.handleBatchAPI(w, r, provider, endpoint) {
+			return
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -355,7 +369,7 @@ func copyProviderResponseHeaders(dst, src http.Header) {
 		if k == "content-type" || k == "retry-after" || k == "request-id" || k == "x-request-id" ||
 			k == "content-disposition" || k == "content-range" || k == "accept-ranges" || k == "etag" || k == "last-modified" ||
 			k == "openai-processing-ms" || k == "openai-version" || k == "anthropic-organization-id" ||
-			k == "cache-control" || strings.HasPrefix(k, "x-ratelimit-") || strings.HasPrefix(k, "anthropic-ratelimit-") || strings.HasPrefix(k, "x-openrouter-") {
+			k == "cache-control" || strings.HasPrefix(k, "x-goog-upload-") || strings.HasPrefix(k, "x-ratelimit-") || strings.HasPrefix(k, "anthropic-ratelimit-") || strings.HasPrefix(k, "x-openrouter-") {
 			dst[key] = append([]string(nil), values...)
 		}
 	}
@@ -441,7 +455,7 @@ func (h *Handler) tryNativeChat(w http.ResponseWriter, r *http.Request, body []b
 	if _, err := h.providers.Native(route.provider); err != nil {
 		return false
 	}
-	if route.provider == providers.ProviderAnthropic {
+	if route.provider == providers.ProviderAnthropic || route.provider == providers.ProviderGemini {
 		return false
 	} // Chat-shaped Claude calls still require translation.
 	h.forwardNativeAPI(w, r, "", "/chat/completions", body)
@@ -458,6 +472,9 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(raw, &obj) != nil || obj == nil {
 		return raw, false
+	}
+	if _, ok := obj["candidates"]; ok {
+		return mapGoogleContent(raw, transform)
 	}
 	var kind string
 	_ = json.Unmarshal(obj["type"], &kind)
@@ -569,6 +586,13 @@ func (h *Handler) RegisterNativeRoutes(r chi.Router) {
 	r.Handle("/xai/*", h.NativeAPI(providers.ProviderXAI, ""))
 	r.Handle("/openai/*", h.NativeAPI(providers.ProviderOpenAI, ""))
 	r.Handle("/anthropic/*", h.NativeAPI(providers.ProviderAnthropic, ""))
+	r.Handle("/google/*", h.NativeAPI(providers.ProviderGemini, ""))
+	r.Handle("/gemini/*", h.NativeAPI(providers.ProviderGemini, ""))
+	for _, path := range []string{"/batches", "/batches/*", "/files", "/files/*"} {
+		r.Handle(path, h.NativeAPI(providers.ProviderOpenAI, path))
+	}
+	r.Handle("/messages/batches", h.NativeAPI(providers.ProviderAnthropic, "/messages/batches"))
+	r.Handle("/messages/batches/*", h.NativeAPI(providers.ProviderAnthropic, "/messages/batches/*"))
 	r.Handle("/responses", h.NativeAPI("", "/responses"))
 	r.Handle("/responses/*", h.NativeAPI("", "/responses/*"))
 	r.Handle("/embeddings", h.NativeAPI("", "/embeddings"))

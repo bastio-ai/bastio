@@ -10,6 +10,7 @@
     "workspace-controls",
     "---Gateway---",
     "gateway",
+    "batch-apis",
     "providers",
     "sdks",
     "semantic-cache",

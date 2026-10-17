@@ -22,6 +22,233 @@ tags:
     description: Security profile rules and configuration.
 
 paths:
+  /v1/batches:
+    post:
+      operationId: createNativeBatch
+      summary: Create an inspected OpenAI batch
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+    get:
+      operationId: listNativeBatches
+      summary: List batches registered in this tenant and credential scope
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/batches/{batch_id}:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getNativeBatch
+      summary: Retrieve an OpenAI batch and register its output files
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/batches/{batch_id}/cancel:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: cancelNativeBatch
+      summary: Cancel an OpenAI batch
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/files:
+    post:
+      operationId: uploadNativeFile
+      summary: Upload an OpenAI file; purpose=batch JSONL is inspected before upload
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, purpose]
+              properties:
+                file: { type: string, format: binary }
+                purpose: { type: string }
+              additionalProperties: true
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+    get:
+      operationId: listNativeFiles
+      summary: List files registered in this tenant and credential scope
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/files/{file_id}:
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getNativeFile
+      summary: Retrieve an OpenAI file
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+    delete:
+      operationId: deleteNativeFile
+      summary: Delete an OpenAI file
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/files/{file_id}/content:
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: downloadNativeFile
+      summary: Download an inspected batch output or error file
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/messages/batches:
+    post:
+      operationId: createClaudeMessageBatch
+      summary: Create an inspected Anthropic Message Batch
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+    get:
+      operationId: listClaudeMessageBatches
+      summary: List registered Anthropic Message Batches
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/messages/batches/{batch_id}:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getClaudeMessageBatch
+      summary: Retrieve an Anthropic Message Batch
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/messages/batches/{batch_id}/cancel:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: cancelClaudeMessageBatch
+      summary: Cancel an Anthropic Message Batch
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/messages/batches/{batch_id}/results:
+    parameters:
+      - name: batch_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: downloadClaudeMessageBatch
+      summary: Download inspected Anthropic JSONL results
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+  /v1/google/{endpoint}:
+    parameters:
+      - name: endpoint
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: googleNativeGet
+      summary: Retrieve Gemini API jobs, files and inspected results
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native wildcard endpoint, including nested v1beta job/file paths, upload/v1beta/files and download/v1beta/files. Also mounted at /v1/gemini. Official Google SDK x-goog-api-key is accepted. Text is inspected; binary media is opaque. See /docs/batch-apis."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+    post:
+      operationId: googleNativePost
+      summary: Submit Gemini native requests, batches and resumable uploads
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native wildcard endpoint, including nested v1beta job/file paths, upload/v1beta/files and download/v1beta/files. Also mounted at /v1/gemini. Official Google SDK x-goog-api-key is accepted. Text is inspected; binary media is opaque. See /docs/batch-apis."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
+    delete:
+      operationId: googleNativeDelete
+      summary: Delete a registered Gemini batch or file
+      tags: [Gateway]
+      security: [{ ApiKeyAuth: [] }]
+      description: "Native wildcard endpoint, including nested v1beta job/file paths, upload/v1beta/files and download/v1beta/files. Also mounted at /v1/gemini. Official Google SDK x-goog-api-key is accepted. Text is inspected; binary media is opaque. See /docs/batch-apis."
+      responses:
+        default:
+          description: Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests.
   /health:
     get:
       operationId: getHealth

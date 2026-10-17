@@ -482,6 +482,37 @@ func (e *Engine) SanitizeWithMap(content string, action Action, tm *TokenMap) st
 	return content
 }
 
+// SanitizeDecisions reapplies only fired rewrite decisions, in policy order,
+// to an individual native content field. Batch items cannot use the legacy
+// first-sanitizer helper: secrets and PII may have different configured actions.
+// Response-side tokenization becomes masking; only input vaults are reversible.
+func (e *Engine) SanitizeDecisions(content string, steps []Step, actions map[string]Action, tm *TokenMap, response bool) (string, bool) {
+	byName := make(map[string]Detector, len(e.detectors))
+	for _, det := range e.detectors {
+		byName[det.Name()] = det
+	}
+	for _, step := range steps {
+		action := actions[step.Detector]
+		if action != ActionTokenize && !action.IsMaskLike() {
+			continue
+		}
+		det, ok := byName[step.Detector]
+		if !ok {
+			return content, false
+		}
+		sanitizer, ok := det.(Sanitizer)
+		if !ok {
+			return content, false
+		}
+		if action == ActionTokenize && !response {
+			content = sanitizer.TokenizeInto(content, tm)
+		} else {
+			content = sanitizer.Mask(content)
+		}
+	}
+	return content, true
+}
+
 func hasPII(findings []Finding) bool {
 	for _, f := range findings {
 		if f.ThreatType == ThreatPII {

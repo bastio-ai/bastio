@@ -56,6 +56,7 @@ type PreflightOptions struct {
 	SessionID  string
 
 	SkipSanitization bool
+	Output           bool   // inspect responses with output policies and assistant role
 	Role             string // matches ScanRequest.Role; defaults to security.RoleUser
 }
 
@@ -76,7 +77,14 @@ func PreflightScan(ctx context.Context, opts PreflightOptions) *security.ScanRes
 	if role == "" {
 		role = security.RoleUser
 	}
-	steps, _ := security.StepsFromLegacyProfile(*opts.Profile)
+	steps, output := security.StepsFromLegacyProfile(*opts.Profile)
+	if opts.Output {
+		steps = output
+		role = security.RoleAssistant
+	}
+	if len(steps) == 0 {
+		return &security.ScanResult{Action: security.ActionPass}
+	}
 	return opts.Engine.Scan(ctx, &security.ScanRequest{
 		Content:          opts.Content,
 		CustomerID:       opts.CustomerID.String(),
