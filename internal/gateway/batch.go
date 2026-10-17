@@ -60,19 +60,32 @@ type batchCall struct {
 }
 
 func isBatchEndpoint(provider providers.Provider, path string) bool {
+	path = normalizeBatchPath(path)
+	if provider == "" {
+		return isBatchEndpoint(providers.ProviderOpenAI, path) || isBatchEndpoint(providers.ProviderAnthropic, path) || isBatchEndpoint(providers.ProviderGemini, path)
+	}
 	if provider == providers.ProviderAnthropic {
 		return path == "/messages/batches" || strings.HasPrefix(path, "/messages/batches/")
 	}
 	if provider == providers.ProviderGemini {
 		return strings.HasPrefix(path, "/batches") || strings.HasSuffix(path, ":batchGenerateContent") || strings.HasSuffix(path, ":asyncBatchEmbedContent") || strings.HasPrefix(path, "/files") || strings.HasPrefix(path, "/upload/") || strings.HasPrefix(path, "/download/") || strings.HasPrefix(path, "/batch-uploads/")
 	}
-	return (provider == "" || provider == providers.ProviderOpenAI) && (path == "/batches" || strings.HasPrefix(path, "/batches/") || path == "/files" || strings.HasPrefix(path, "/files/"))
+	return provider == providers.ProviderOpenAI && (path == "/batches" || strings.HasPrefix(path, "/batches/") || path == "/files" || strings.HasPrefix(path, "/files/"))
+}
+func normalizeBatchPath(path string) string {
+	for _, version := range []string{"/v1/", "/v1beta/"} {
+		if strings.HasPrefix(path, version) {
+			return "/" + strings.TrimPrefix(path, version)
+		}
+	}
+	return path
 }
 
 func (h *Handler) handleBatchAPI(w http.ResponseWriter, r *http.Request, provider providers.Provider, path string) bool {
 	if !isBatchEndpoint(provider, path) {
 		return false
 	}
+	path = normalizeBatchPath(path)
 	info, ok := auth.FromContext(r.Context())
 	if !ok {
 		writeRouteError(w, &routeError{401, "unauthorized"})

@@ -19,6 +19,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/auth"
 	"github.com/bastio-ai/bastio/internal/batchstate"
 	"github.com/bastio-ai/bastio/internal/providers"
+	"github.com/bastio-ai/bastio/internal/proxy"
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/internal/security/detection"
 	"github.com/bastio-ai/bastio/pkg/database"
@@ -570,6 +571,42 @@ func TestProtectedNativeBatchWorkflows(t *testing.T) {
 			t.Fatalf("SDK contracts: %v\n%s", err, out)
 		}
 		t.Log(string(out))
+	})
+	t.Run("proxy bases protect Claude and Gemini batches", func(t *testing.T) {
+		handler.proxies = proxy.NewService(pool, nil)
+		defer func() { handler.proxies = nil }()
+		for _, provider := range []providers.Provider{providers.ProviderAnthropic, providers.ProviderGemini} {
+			id := uuid.New()
+			ctx := context.Background()
+			if _, err := pool.Exec(ctx, `INSERT INTO proxies(id,customer_id,name,slug,listen_path,target_provider) VALUES($1,$2,'batch proxy',$3,$3,$4)`, id, cid, id.String(), string(provider)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, `INSERT INTO proxy_provider_keys(id,customer_id,proxy_id,provider,encrypted_key,is_default) VALUES($1,$2,$3,$4,'{"key":"fixture-provider-secret"}',false)`, uuid.New(), cid, id, string(provider)); err != nil {
+				t.Fatal(err)
+			}
+			base := "/v1/guard/" + id.String() + "/v1"
+			if provider == providers.ProviderAnthropic {
+				rr := call("POST", base+"/v1/messages/batches", `{"requests":[{"custom_id":"one","params":{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"guard-clause@example.test"}]}}]}`)
+				if rr.Code != 200 {
+					t.Fatalf("Claude proxy create: %d %s", rr.Code, rr.Body)
+				}
+				var job map[string]json.RawMessage
+				_ = json.Unmarshal(rr.Body.Bytes(), &job)
+				url := batchString(job, "results_url")
+				if !strings.Contains(url, base+"/messages/batches/") {
+					t.Fatal("Claude result URL lost proxy scope")
+				}
+				rr = call("GET", url, "")
+				if rr.Code != 200 || !strings.Contains(rr.Body.String(), "guard-clause@example.test") {
+					t.Fatalf("Claude proxy result: %d %s", rr.Code, rr.Body)
+				}
+			} else {
+				rr := call("POST", base+"/v1beta/models/gemini-2.5-flash:batchGenerateContent", `{"batch":{"displayName":"proxy","inputConfig":{"requests":{"requests":[{"request":{"contents":[{"parts":[{"text":"guard-google@example.test"}]}]}}]}}}}`)
+				if rr.Code != 200 || !strings.Contains(rr.Body.String(), "guard-google@example.test") {
+					t.Fatalf("Gemini proxy result: %d %s", rr.Code, rr.Body)
+				}
+			}
+		}
 	})
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()

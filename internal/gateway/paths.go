@@ -31,7 +31,7 @@ func ProviderEndpoint(path string) string {
 		if !found {
 			return ""
 		}
-		return "/" + endpoint
+		return normalizeBatchPath("/" + endpoint)
 	}
 	return path
 }
