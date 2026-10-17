@@ -36,6 +36,7 @@ type batchManifest struct {
 	Keys     []string `json:"keys,omitempty"` // hashes in input order, never raw custom IDs
 	Model    string   `json:"model,omitempty"`
 	Endpoint string   `json:"endpoint,omitempty"`
+	Policy   string   `json:"policy"`
 	keySet   map[string]bool
 }
 type batchResource struct {
@@ -427,7 +428,18 @@ func batchResourcePath(provider providers.Provider, path string) (string, string
 	return "", ""
 }
 func (b *batchCall) newManifest() batchManifest {
-	return batchManifest{ID: uuid.NewString(), TraceID: b.trace.String()}
+	return batchManifest{ID: uuid.NewString(), TraceID: b.trace.String(), Policy: b.inputPolicyFingerprint()}
+}
+func (b *batchCall) inputPolicyFingerprint() string {
+	policy := gatewaypolicy.From(b.r.Context())
+	active, _ := overlay.FromContext(b.r.Context())
+	raw, _ := json.Marshal(struct {
+		Profile     *security.Profile
+		Overlay     *overlay.Active
+		MonitorOnly bool
+		Revision    string
+	}{b.profile, active, policy.MonitorOnly, policy.InputRevision})
+	return batchHash(string(raw))
 }
 func (b *batchCall) prepareCreate(path string, raw []byte) ([]byte, batchResource, error) {
 	resource := batchResource{Manifest: b.newManifest()}
@@ -443,6 +455,9 @@ func (b *batchCall) prepareCreate(path string, raw []byte) ([]byte, batchResourc
 		}
 		if known.Role != "input" {
 			return nil, resource, &routeError{400, "batch input must be a JSONL file uploaded with purpose=batch"}
+		}
+		if known.Manifest.Policy != b.inputPolicyFingerprint() {
+			return nil, resource, &routeError{428, "batch input was inspected under a different security policy; upload the input file again before submitting this batch"}
 		}
 		resource.Manifest = known.Manifest
 		resource.Manifest.TraceID = b.trace.String()
@@ -873,7 +888,7 @@ func (b *batchCall) addScan(scan *security.ScanResult) {
 		b.scan.ShouldBlock = true
 		b.scan.Action = security.ActionBlock
 	}
-	if b.scan.Action == "" {
+	if batchActionRank(scan.Action) > batchActionRank(b.scan.Action) {
 		b.scan.Action = scan.Action
 	}
 	if len(b.scan.Findings) < 100 {
@@ -886,4 +901,21 @@ func (b *batchCall) addScan(scan *security.ScanResult) {
 	if len(b.scan.ThreatTypes) < 100 {
 		b.scan.ThreatTypes = append(b.scan.ThreatTypes, scan.ThreatTypes...)
 	}
+}
+func batchActionRank(action security.Action) int {
+	switch action {
+	case security.ActionBlock:
+		return 6
+	case security.ActionTokenize:
+		return 5
+	case security.ActionMask, security.ActionRedact:
+		return 4
+	case security.ActionWarn:
+		return 3
+	case security.ActionLogOnly, security.ActionLog:
+		return 2
+	case security.ActionPass:
+		return 1
+	}
+	return 0
 }

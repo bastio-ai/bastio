@@ -42,6 +42,9 @@ func (b *batchCall) prepareGoogleCreate(path string, obj map[string]json.RawMess
 		if known.Role != "input" {
 			return nil, resource, &routeError{400, "Google batch input must be a JSONL file uploaded through this gateway"}
 		}
+		if known.Manifest.Policy != b.inputPolicyFingerprint() {
+			return nil, resource, &routeError{428, "batch input was inspected under a different security policy; upload the input file again before submitting this batch"}
+		}
 		resource.Manifest = known.Manifest
 		resource.Manifest.Model = model
 		resource.Manifest.TraceID = b.trace.String()

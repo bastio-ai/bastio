@@ -87,7 +87,7 @@ For multiple configured gateways, supply `X-Bastio-Proxy-Id` through SDK default
 
 ## State, privacy and retention
 
-Upload and create jobs through the **same Bastio tenant, proxy and provider credential**. Existing jobs/files created directly at a provider are not automatically adopted; unknown or expired resource IDs return 404. Lists include only resources registered in that scope. Keep the provider credential/project selection stable until jobs finish.
+Upload and create jobs through the **same Bastio tenant, proxy and provider credential**. Existing jobs/files created directly at a provider are not automatically adopted; unknown or expired resource IDs return 404. Uploaded batch files are bound to the inspecting profile, overlay, monitoring mode and extension input-policy switches. If that policy changes before job creation, HTTP 428 requires a fresh upload; a file uploaded in monitoring mode cannot bypass later enforcement. Lists include only resources registered in that scope. Keep the provider credential/project selection stable until jobs finish.
 
 Operational metadata and reversible token maps are encrypted with tenant-, credential-, manifest- and item-bound keys in PostgreSQL. They expire after 30 days by default (`BASTIO_BATCH_STATE_TTL`, maximum 90 days); upload quarantine expires after 24 hours and is purged after finalization/cancellation. Expired vaults never restore data. Metadata-only **trace recording** does not disable the short-lived operational vault required for reversible asynchronous calls. This vault is not training data or a raw conversation archive.
 

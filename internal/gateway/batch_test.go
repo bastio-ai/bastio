@@ -491,6 +491,23 @@ func TestProtectedNativeBatchWorkflows(t *testing.T) {
 		}
 		profile.PIIAction = security.ActionTokenize
 	})
+	t.Run("file uploaded before policy change requires fresh inspection", func(t *testing.T) {
+		fixture.mu.Lock()
+		var existing string
+		for id := range fixture.files {
+			if strings.HasPrefix(id, "file-") {
+				existing = id
+				break
+			}
+		}
+		fixture.mu.Unlock()
+		// The OpenAI upload in the preceding test used log-only PII; the
+		// current profile now tokenizes. Its old file cannot be submitted.
+		rr := call("POST", "/v1/batches", fmt.Sprintf(`{"input_file_id":%q,"endpoint":"/v1/chat/completions","completion_window":"24h"}`, existing))
+		if rr.Code != 428 {
+			t.Fatalf("old upload bypassed changed policy: %d %s", rr.Code, rr.Body)
+		}
+	})
 	t.Run("extension classifiers run per item and can stop forwarding", func(t *testing.T) {
 		seen := 0
 		handler.SetBatchInspection(func(next http.Handler) http.Handler {
