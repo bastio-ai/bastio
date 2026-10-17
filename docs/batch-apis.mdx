@@ -1,0 +1,112 @@
+---
+title: Native batch APIs
+description: Protected asynchronous OpenAI, Anthropic and Gemini jobs using their official SDKs.
+---
+
+Bastio supports OpenAI Batches, Anthropic Message Batches and the Gemini Developer API's asynchronous generation and embedding batches. Keep using the provider SDK; change its base URL and use a Bastio application key. A workspace administrator configures the provider credential in Bastio. Model access, provider batch quotas and provider usage charges remain with that account.
+
+| Provider | SDK base URL | Supported workflow |
+| --- | --- | --- |
+| OpenAI | `https://api.bastio.com/v1` or `/v1/openai` | Multipart JSONL upload, create, list, retrieve, cancel, output/error file download, file deletion |
+| Anthropic | `https://api.bastio.com/v1/anthropic` | Inline Message Batches, list, retrieve, cancel, streaming SDK JSONL result iteration |
+| Google Gemini | `https://api.bastio.com/v1/google` | Inline/file generation batches, asynchronous embedding batches, list, retrieve, cancel, delete, resumable file uploads and JSONL downloads |
+
+Google uses `api_version="v1beta"`. `/v1/gemini` is an alias. Vertex AI batch prediction and cloud-storage destinations are separate APIs and are not supported by this Gemini Developer API transport.
+
+## What gets protected
+
+Each request's user messages, tool data or embedding text runs through the active gateway policy before a batch is submitted. OpenAI batch JSONL is inspected **before the file is uploaded**. Google's resumable upload chunks are quarantined with tenant-bound encryption, inspected on finalization, then uploaded to Google. A blocked or malformed input prevents that upload/submission; no partial batch is forwarded.
+
+Results run through the **current output policy** when downloaded or returned inline by a poll/list request. Bastio checks the entire result file before returning its body. A block returns HTTP 403 for that retrieval; the upstream job has already run and its charges/actions are not reversed. Range and conditional downloads cannot bypass inspection. Provider error details, custom IDs and native success/error/cancel/expired wrappers retain their formats.
+
+Mask and Tokenize honor each detector's own effective action. Tokenize creates a separate vault for each input item and restores only that item's recognized placeholders when response restoration is enabled. New PII/secrets in an answer are inspected before restoration. Signed thinking that would need rewriting is withheld rather than returning an invalid signature. Media bytes, image/audio content and file references are opaque; this feature does not add OCR or media analysis.
+
+Monitoring mode records findings while leaving prompt/answer values unchanged. Gateway metadata-only recording also applies to batch traces. Cloud's enabled semantic classifiers run per item, subject to their existing configured limits and availability policy.
+
+## OpenAI example
+
+```python
+import json
+from openai import OpenAI
+
+client = OpenAI(api_key="YOUR_BASTIO_APPLICATION_KEY",
+                base_url="https://api.bastio.com/v1")
+
+line = json.dumps({
+    "custom_id": "invoice-1", "method": "POST",
+    "url": "/v1/chat/completions",
+    "body": {"model": "gpt-4o-mini", "messages": [
+        {"role": "user", "content": "Summarize this invoice."}
+    ]}
+})
+uploaded = client.files.create(file=("requests.jsonl", line.encode()), purpose="batch")
+job = client.batches.create(input_file_id=uploaded.id,
+                            endpoint="/v1/chat/completions", completion_window="24h")
+# Poll later; result order need not match input order.
+job = client.batches.retrieve(job.id)
+if job.output_file_id:
+    results = client.files.content(job.output_file_id).text
+```
+
+OpenAI JSONL supports `/v1/responses`, `/v1/chat/completions`, `/v1/embeddings`, `/v1/completions`, `/v1/moderations`, `/v1/images/generations` and `/v1/images/edits`, subject to the provider's own endpoint/model eligibility.
+
+## Anthropic example
+
+```python
+import anthropic
+
+client = anthropic.Anthropic(api_key="YOUR_BASTIO_APPLICATION_KEY",
+                            base_url="https://api.bastio.com/v1/anthropic")
+job = client.messages.batches.create(requests=[{
+    "custom_id": "summary-1",
+    "params": {"model": "claude-sonnet-4-5", "max_tokens": 128,
+               "messages": [{"role": "user", "content": "Explain batch processing."}]}
+}])
+# After processing_status == "ended":
+for item in client.messages.batches.results(job.id):
+    print(item.custom_id, item.result.type)
+```
+
+## Gemini example
+
+```python
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key="YOUR_BASTIO_APPLICATION_KEY", http_options=types.HttpOptions(
+    base_url="https://api.bastio.com/v1/google", api_version="v1beta"))
+job = client.batches.create(model="gemini-2.5-flash",
+    src=[{"contents": [{"parts": [{"text": "Explain batch processing."}]}]}],
+    config={"display_name": "Summaries"})
+job = client.batches.get(name=job.name)
+# Large batches: upload application/jsonl with client.files.upload(), pass
+# uploaded.name as src, then client.files.download(file=job.dest.file_name).
+```
+
+For multiple configured gateways, supply `X-Bastio-Proxy-Id` through SDK default headers. Keep that header on uploads, job calls and downloads. Bastio rewrites provider result/upload transport URLs back through the gateway. Google model-facing file URIs remain provider references.
+
+## State, privacy and retention
+
+Upload and create jobs through the **same Bastio tenant, proxy and provider credential**. Existing jobs/files created directly at a provider are not automatically adopted; unknown or expired resource IDs return 404. Uploaded batch files are bound to the inspecting profile, overlay, monitoring mode and extension input-policy switches. If that policy changes before job creation, HTTP 428 requires a fresh upload; a file uploaded in monitoring mode cannot bypass later enforcement. Lists include only resources registered in that scope. Keep the provider credential/project selection stable until jobs finish.
+
+Operational metadata and reversible token maps are encrypted with tenant-, credential-, manifest- and item-bound keys in PostgreSQL. They expire after 30 days by default (`BASTIO_BATCH_STATE_TTL`, maximum 90 days); upload quarantine expires after 24 hours and is purged after finalization/cancellation. Expired vaults never restore data. Metadata-only **trace recording** does not disable the short-lived operational vault required for reversible asynchronous calls. This vault is not training data or a raw conversation archive.
+
+Large files use private temporary file descriptors that are unlinked immediately on Unix and closed when requests end. They are not retained as trace attachments. Input scan spans and per-result traces follow gateway content-recording policy; job-control traces contain operational metadata. Per-item result traces carry `batch.job_id`, `batch.create_trace_id` and a hash of the correlation ID. Result token usage is recorded when results are retrieved; repeated downloads do not count those items again. Cost is an estimate using the standard 50% batch factor, not the provider invoice. Recorder delivery remains best-effort.
+
+## Limits and self-hosting
+
+| Limit | Gateway allowance |
+| --- | --- |
+| OpenAI input file | 200 MiB plus multipart metadata |
+| Anthropic inline JSON | 256 MiB |
+| Google file / inspected JSONL result | 2 GiB |
+| Individual JSONL line | 64 MiB |
+| Items per batch file / inline request | 100,000 |
+| Concurrent inspected batch HTTP requests | 4 per gateway process; excess receives 429 |
+| Google unfinished upload reservations | 8 uploads / 8 GiB per tenant |
+
+Provider limits can be lower. Ordinary gateway/management body limits remain separate. Input inspection runs synchronously before submission; large batches with semantic classifiers may need longer client/server timeouts. Configure reverse-proxy upload limits, disk/PostgreSQL capacity and request timeouts for large files. `BASTIO_GATEWAY_TIMEOUT` defaults to 10 minutes per HTTP operation, not per asynchronous job.
+
+Self-hosted server deployments need PostgreSQL and a stable `BASTIO_MASTER_ENCRYPTION_KEY` (base64, 32 bytes), or an injected encryption service. Batch requests return 503 when encrypted durable storage is unavailable. The standalone local CLI has no durable batch vault. Set `BASTIO_PUBLIC_API_URL` to your externally reachable origin when running behind a proxy that changes Host; resumable/result URLs default to HTTPS on the request host (HTTP for local loopback development).
+
+Official contracts: [OpenAI Batch](https://developers.openai.com/api/docs/guides/batch), [Anthropic Message Batches](https://platform.claude.com/docs/en/build-with-claude/batch-processing), [Gemini Batch API](https://ai.google.dev/gemini-api/docs/batch-api).

@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bastio-ai/bastio/internal/auth"
+	"github.com/bastio-ai/bastio/internal/batchstate"
 	semcache "github.com/bastio-ai/bastio/internal/cache"
 	"github.com/bastio-ai/bastio/internal/llmpipeline"
 	"github.com/bastio-ai/bastio/internal/observability"
@@ -35,19 +36,30 @@ import (
 
 // Handler manages the gateway request pipeline.
 type Handler struct {
-	providers         *providers.Registry
-	proxies           *proxy.Service
-	security          *security.Engine
-	profiles          security.ProfileLookup
-	recorder          *observability.Recorder
-	cache             *cache.Cache
-	semanticCache     *semcache.SemanticCache
-	securityMode      string // "fail-open" or "fail-closed"
-	overlayLoader     *overlay.Loader
-	streamSecrets     *detection.SecretsDetector
-	imageURLAllowlist []string
-	nativeKeyResolver func(*http.Request, providers.Provider) string
+	providers             *providers.Registry
+	proxies               *proxy.Service
+	security              *security.Engine
+	profiles              security.ProfileLookup
+	recorder              *observability.Recorder
+	cache                 *cache.Cache
+	semanticCache         *semcache.SemanticCache
+	securityMode          string // "fail-open" or "fail-closed"
+	overlayLoader         *overlay.Loader
+	streamSecrets         *detection.SecretsDetector
+	imageURLAllowlist     []string
+	nativeKeyResolver     func(*http.Request, providers.Provider) string
+	batchStore            batchstate.Backend
+	batchGate             chan struct{}
+	batchInputMiddleware  func(http.Handler) http.Handler
+	batchOutputMiddleware func(http.Handler) http.Handler
 }
+
+func (h *Handler) SetBatchInspection(input, output func(http.Handler) http.Handler) {
+	h.batchInputMiddleware = input
+	h.batchOutputMiddleware = output
+}
+
+func (h *Handler) SetBatchStore(store batchstate.Backend) { h.batchStore = store }
 
 // SetNativeKeyResolver supplies credentials in the standalone local CLI.
 // Production uses tenant/proxy credentials through the proxy service.
@@ -65,6 +77,7 @@ func NewHandler(providerRegistry *providers.Registry, proxySvc *proxy.Service, s
 		profiles:          profiles,
 		recorder:          recorder,
 		securityMode:      securityMode,
+		batchGate:         make(chan struct{}, 4),
 		streamSecrets:     detection.NewSecretsDetector(),
 		imageURLAllowlist: parseImageURLAllowlist(os.Getenv("BASTIO_IMAGE_URL_ALLOWLIST")),
 	}
@@ -1419,6 +1432,7 @@ func (h *Handler) runSecurityScanFrom(r *http.Request, info *auth.APIKeyInfo, co
 		UserAgent:        r.UserAgent(),
 		SessionID:        r.Header.Get("X-Bastio-Session-Id"),
 		SkipSanitization: true, // gateway tokenizes per-message itself
+		Output:           source == "response",
 		Role:             security.RoleUser,
 	})
 
@@ -1543,6 +1557,8 @@ type recordInput struct {
 	Headers      http.Header
 	IPAddress    string
 	UserAgent    string
+	Tags         map[string]string
+	TraceName    string
 }
 
 // recordTrace enqueues a trace + analytics + threat rows. Non-blocking;
@@ -1576,6 +1592,12 @@ func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
 		traceName = in.Headers.Get("X-Bastio-Trace-Name")
 	}
 	tags = gatewayTraceTags(ctx, in.Headers)
+	for k, v := range in.Tags {
+		tags[k] = v
+	}
+	if in.TraceName != "" {
+		traceName = in.TraceName
+	}
 	cost := llmpipeline.EstimateCostCents(in.Model, in.InputTokens, in.OutputTokens)
 	if in.CostCents != nil {
 		cost = *in.CostCents

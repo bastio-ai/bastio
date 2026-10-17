@@ -211,6 +211,9 @@ func extractAPIKey(r *http.Request) string {
 	if key := r.Header.Get("X-API-Key"); key != "" {
 		return key
 	}
+	if key := r.Header.Get("X-Goog-Api-Key"); key != "" {
+		return key
+	}
 	return ""
 }
 

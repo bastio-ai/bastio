@@ -4,6 +4,251 @@
  */
 
 export interface paths {
+    "/v1/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List batches registered in this tenant and credential scope
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        get: operations["listNativeBatches"];
+        put?: never;
+        /**
+         * Create an inspected OpenAI batch
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        post: operations["createNativeBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Retrieve an OpenAI batch and register its output files
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        get: operations["getNativeBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel an OpenAI batch
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        post: operations["cancelNativeBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List files registered in this tenant and credential scope */
+        get: operations["listNativeFiles"];
+        put?: never;
+        /** Upload an OpenAI file; purpose=batch JSONL is inspected before upload */
+        post: operations["uploadNativeFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        /** Retrieve an OpenAI file */
+        get: operations["getNativeFile"];
+        put?: never;
+        post?: never;
+        /** Delete an OpenAI file */
+        delete: operations["deleteNativeFile"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files/{file_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        /** Download an inspected batch output or error file */
+        get: operations["downloadNativeFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List registered Anthropic Message Batches
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        get: operations["listClaudeMessageBatches"];
+        put?: never;
+        /**
+         * Create an inspected Anthropic Message Batch
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        post: operations["createClaudeMessageBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Retrieve an Anthropic Message Batch
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        get: operations["getClaudeMessageBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel an Anthropic Message Batch
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        post: operations["cancelClaudeMessageBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/batches/{batch_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Download inspected Anthropic JSONL results
+         * @description Native provider format. Upload/create through the same tenant, proxy and provider credential. Unknown or expired resources return 404. Input and result items use current directional security policies. See /docs/batch-apis for limits and encrypted operational retention.
+         */
+        get: operations["downloadClaudeMessageBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google/{endpoint}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Retrieve Gemini API jobs, files and inspected results
+         * @description Native wildcard endpoint, including nested v1beta job/file paths, upload/v1beta/files and download/v1beta/files. Also mounted at /v1/gemini. Official Google SDK x-goog-api-key is accepted. Text is inspected; binary media is opaque. See /docs/batch-apis.
+         */
+        get: operations["googleNativeGet"];
+        put?: never;
+        /**
+         * Submit Gemini native requests, batches and resumable uploads
+         * @description Native wildcard endpoint, including nested v1beta job/file paths, upload/v1beta/files and download/v1beta/files. Also mounted at /v1/gemini. Official Google SDK x-goog-api-key is accepted. Text is inspected; binary media is opaque. See /docs/batch-apis.
+         */
+        post: operations["googleNativePost"];
+        /**
+         * Delete a registered Gemini batch or file
+         * @description Native wildcard endpoint, including nested v1beta job/file paths, upload/v1beta/files and download/v1beta/files. Also mounted at /v1/gemini. Official Google SDK x-goog-api-key is accepted. Text is inspected; binary media is opaque. See /docs/batch-apis.
+         */
+        delete: operations["googleNativeDelete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3957,6 +4202,363 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listNativeBatches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createNativeBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getNativeBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancelNativeBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listNativeFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    uploadNativeFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    purpose: string;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getNativeFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteNativeFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    downloadNativeFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listClaudeMessageBatches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createClaudeMessageBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getClaudeMessageBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancelClaudeMessageBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    downloadClaudeMessageBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    googleNativeGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    googleNativePost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    googleNativeDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                endpoint: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native provider response or gateway security/validation error. Inspected downloads are buffered until complete validation and reject Range requests. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     getHealth: {
         parameters: {
             query?: never;

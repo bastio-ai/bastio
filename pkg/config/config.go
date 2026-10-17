@@ -34,6 +34,7 @@ type Config struct {
 	LogLevel                   string
 	GatewayRequestTimeout      time.Duration
 	GatewayMaxRequestBodyBytes int64
+	BatchStateTTL              time.Duration
 
 	// Encryption
 	MasterEncryptionKey string
@@ -92,6 +93,7 @@ func Load() (*Config, error) {
 		LogLevel:                   envOr("BASTIO_LOG_LEVEL", "info"),
 		GatewayRequestTimeout:      envDurationOr("BASTIO_GATEWAY_TIMEOUT", 10*time.Minute),
 		GatewayMaxRequestBodyBytes: int64(envIntOr("BASTIO_MAX_GATEWAY_BODY_BYTES", 64<<20)),
+		BatchStateTTL:              envDurationOr("BASTIO_BATCH_STATE_TTL", 30*24*time.Hour),
 		MasterEncryptionKey:        os.Getenv("BASTIO_MASTER_ENCRYPTION_KEY"),
 		CORSOrigins:                envListOr("BASTIO_CORS_ORIGINS", nil),
 		MaxRequestBodyBytes:        int64(envIntOr("BASTIO_MAX_BODY_BYTES", 1<<20)),

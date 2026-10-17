@@ -196,7 +196,6 @@ func TestNativeRegisteredRoutesAndMultipart(t *testing.T) {
 		{"/v1/openrouter/keys/key-hash", "/keys/key-hash", "PATCH"},
 		{"/v1/responses/rsp_123/cancel", "/responses/rsp_123/cancel", "POST"},
 		{"/v1/models/model-id", "/models/model-id", "GET"},
-		{"/v1/openai/files/file_123/content", "/files/file_123/content", "GET"},
 	} {
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, httptest.NewRequest(tt.method, tt.path, nil))

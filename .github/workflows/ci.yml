@@ -43,7 +43,24 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install batch contract SDKs
+        run: |
+          python -m venv /tmp/bastio-batch-sdk-python
+          /tmp/bastio-batch-sdk-python/bin/pip install openai==3.34.0 anthropic==1.15.0 google-genai==2.31.0
+          npm install --prefix /tmp/bastio-batch-sdk-js --no-audit --no-fund openai@7.37.0 @anthropic-ai/sdk@0.135.0 @google/genai@2.30.0
+
       - name: Test
+        env:
+          BASTIO_BATCH_SDK_PYTHON: /tmp/bastio-batch-sdk-python/bin/python
+          BASTIO_BATCH_SDK_JS_DIR: /tmp/bastio-batch-sdk-js
         run: go test ./... -race -count=1
 
       - name: Detector accuracy and business controls report

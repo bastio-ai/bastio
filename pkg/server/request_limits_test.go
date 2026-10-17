@@ -22,6 +22,10 @@ func TestNativeRequestLimitsKeepManagementCaps(t *testing.T) {
 		{"/v1/workspace/conversations/thread/messages/stream", 200, 10 * time.Minute},
 		{"/v1/openrouter/chat/completions", 200, 10 * time.Minute},
 		{"/v1/openai/files", 200, 10 * time.Minute},
+		{"/v1/files", 200, 10 * time.Minute},
+		{"/v1/google/v1beta/models/gemini-2.5-flash:batchGenerateContent", 200, 10 * time.Minute},
+		{"/v1/google/upload/v1beta/files", 200, 10 * time.Minute},
+		{"/v1/anthropic/v1/messages/batches", 200, 10 * time.Minute},
 		{"/v1/guard/proxy-id/v1/messages", 200, 10 * time.Minute},
 		{"/v1/responses/response-id", 200, 10 * time.Minute},
 	} {

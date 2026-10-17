@@ -9,6 +9,9 @@ type Policy struct {
 	MonitorOnly bool
 	// OmitContent also removes matched values from retained security findings.
 	OmitContent bool
+	// InputRevision identifies extension-side input policy switches. It is
+	// resolved by the host application, never supplied by caller headers.
+	InputRevision string
 }
 
 type key struct{}

@@ -49,6 +49,7 @@ import (
 	"github.com/riverqueue/river/rivermigrate"
 
 	"github.com/bastio-ai/bastio/internal/auth"
+	"github.com/bastio-ai/bastio/internal/batchstate"
 	semcache "github.com/bastio-ai/bastio/internal/cache"
 	"github.com/bastio-ai/bastio/internal/gateway"
 	"github.com/bastio-ai/bastio/internal/mcp"
@@ -91,6 +92,7 @@ type Server struct {
 	// requests to its HostRoutes() handler. Set by registerV1Routes.
 	workspaceHandler  *workspace.Handler
 	workspaceEmbedder EmbeddingClient
+	batchStore        *batchstate.Store
 
 	opts options
 }
@@ -110,6 +112,8 @@ type options struct {
 	dashboardAPIExtenders []func(r chi.Router)
 	workspaceCustomizers  []func(WorkspaceCustomizer)
 	providersDecorator    func(Provider, Client) Client
+	batchInputMiddleware  func(http.Handler) http.Handler
+	batchOutputMiddleware func(http.Handler) http.Handler
 	encryption            *encryption.Service
 	readTimeout           time.Duration
 	writeTimeout          time.Duration
@@ -339,6 +343,12 @@ func WithProvidersDecorator(fn func(Provider, Client) Client) Option {
 	return func(o *options) { o.providersDecorator = fn }
 }
 
+// WithBatchInspection applies extension security to each request/result item
+// in native asynchronous jobs. Root middleware still resolves tenant policy.
+func WithBatchInspection(input, output func(http.Handler) http.Handler) Option {
+	return func(o *options) { o.batchInputMiddleware = input; o.batchOutputMiddleware = output }
+}
+
 // WithEncryption wires the encryption service used to envelope provider
 // keys at storage time. Without it, the provider-key Create handler
 // stores plaintext-in-JSON (legacy/OSS-standalone path); the cloud's
@@ -369,7 +379,7 @@ func WithShutdownTimeout(d time.Duration) Option {
 // migrations, and returns a Server ready to Start. Callers must defer Close.
 func New(ctx context.Context, cfg *config.Config, opts ...Option) (*Server, error) {
 	o := options{
-		readTimeout:     30 * time.Second,
+		readTimeout:     gatewayTimeout(cfg.GatewayRequestTimeout) + time.Minute,
 		writeTimeout:    gatewayTimeout(cfg.GatewayRequestTimeout) + time.Minute,
 		idleTimeout:     120 * time.Second,
 		shutdownTimeout: 30 * time.Second,
@@ -519,6 +529,11 @@ func (s *Server) Start(ctx context.Context) error {
 	defer func() { stopMaintenance(); <-maintenanceDone }()
 
 	handler := s.Handler()
+	if s.batchStore != nil {
+		batchDone := make(chan struct{})
+		go func() { defer close(batchDone); s.batchStore.RunMaintenance(maintenance) }()
+		defer func() { stopMaintenance(); <-batchDone }()
+	}
 	if s.workspaceHandler != nil {
 		historyDone := make(chan struct{})
 		go func() { defer close(historyDone); s.workspaceHandler.RunMCPHistoryMaintenance(maintenance) }()
@@ -530,11 +545,12 @@ func (s *Server) Start(ctx context.Context) error {
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
 	httpSrv := &http.Server{
-		Addr:         addr,
-		Handler:      handler,
-		ReadTimeout:  s.opts.readTimeout,
-		WriteTimeout: s.opts.writeTimeout,
-		IdleTimeout:  s.opts.idleTimeout,
+		Addr:              addr,
+		Handler:           handler,
+		ReadTimeout:       s.opts.readTimeout,
+		ReadHeaderTimeout: 30 * time.Second,
+		WriteTimeout:      s.opts.writeTimeout,
+		IdleTimeout:       s.opts.idleTimeout,
 	}
 
 	errCh := make(chan error, 1)
@@ -580,8 +596,8 @@ func (s *Server) Handler() http.Handler {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.cfg.CORSOrigins,
 			AllowedMethods:   []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Authorization", "Content-Type", "Cache-Control", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match"},
-			ExposedHeaders:   []string{"X-Bastio-Trace-Id", "X-Bastio-Request-Id", "X-Bastio-Stream-Buffered", "X-Request-Id", "Request-Id", "Retry-After"},
+			AllowedHeaders:   []string{"Authorization", "Content-Type", "Cache-Control", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match", "X-Goog-Api-Key", "X-Goog-Upload-Protocol", "X-Goog-Upload-Command", "X-Goog-Upload-Offset", "X-Goog-Upload-Header-Content-Length", "X-Goog-Upload-Header-Content-Type"},
+			ExposedHeaders:   []string{"X-Bastio-Trace-Id", "X-Bastio-Request-Id", "X-Bastio-Stream-Buffered", "X-Request-Id", "Request-Id", "Retry-After", "X-Bastio-Content-Coverage", "X-Goog-Upload-URL", "X-Goog-Upload-Status", "X-Goog-Upload-Size-Received", "X-Goog-Upload-Chunk-Granularity"},
 			AllowCredentials: true,
 			MaxAge:           300,
 		}))
@@ -695,6 +711,19 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	}
 
 	gw := gateway.NewHandler(providerRegistry, proxySvc, secEngine, profileLookup, s.recorder, string(s.cfg.SecurityMode))
+	gw.SetBatchInspection(s.opts.batchInputMiddleware, s.opts.batchOutputMiddleware)
+	batchCipher := s.opts.encryption
+	if batchCipher == nil && s.cfg.MasterEncryptionKey != "" {
+		var err error
+		batchCipher, err = encryption.New(s.cfg.MasterEncryptionKey)
+		if err != nil {
+			slog.Error("batch encryption unavailable", "error", err)
+		}
+	}
+	if batchCipher != nil {
+		s.batchStore = batchstate.New(s.db.Pool, batchCipher, s.cfg.BatchStateTTL)
+		gw.SetBatchStore(s.batchStore)
+	}
 	gw.SetCache(s.redis)
 	semanticCache := semcache.NewSemanticCache(5000)
 	gw.SetSemanticCache(semanticCache)

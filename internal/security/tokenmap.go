@@ -39,7 +39,9 @@ func (s TokenStyle) Prefix() string {
 
 // TokenMap is a request-scoped mapping of placeholders to their original
 // PII values. The map itself is highly sensitive — callers must never
-// serialize it, log values, or persist it beyond the request lifetime.
+// serialize it or log values. Only Seal/OpenTokenMap may cross the encrypted,
+// tenant/item-bound asynchronous batch vault boundary; ordinary maps remain
+// request-scoped and must never be persisted.
 type TokenMap struct {
 	mu        sync.RWMutex
 	style     TokenStyle
