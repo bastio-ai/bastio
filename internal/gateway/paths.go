@@ -37,6 +37,11 @@ func ProviderEndpoint(path string) string {
 }
 
 func IsGenerationEndpoint(endpoint string) bool {
+	for _, operation := range []string{":generateContent", ":streamGenerateContent", ":embedContent", ":batchEmbedContents"} {
+		if strings.HasSuffix(endpoint, operation) {
+			return true
+		}
+	}
 	if strings.HasSuffix(endpoint, ":batchGenerateContent") || strings.HasSuffix(endpoint, ":asyncBatchEmbedContent") {
 		return true
 	}
@@ -48,11 +53,13 @@ func IsGenerationEndpoint(endpoint string) bool {
 	}
 }
 
-func IsGenerationGatewayPath(path string) bool { return IsGenerationEndpoint(ProviderEndpoint(path)) }
+func IsGenerationGatewayPath(path string) bool {
+	return IsGenerationEndpoint(normalizeBatchPath(ProviderEndpoint(path)))
+}
 
 // IsBatchGatewayPath includes job control and file transfers, not only creates.
 func IsBatchGatewayPath(path string) bool {
-	endpoint := ProviderEndpoint(path)
+	endpoint := normalizeBatchPath(ProviderEndpoint(path))
 	return endpoint == "/batches" || strings.HasPrefix(endpoint, "/batches/") || endpoint == "/messages/batches" || strings.HasPrefix(endpoint, "/messages/batches/") || endpoint == "/files" || strings.HasPrefix(endpoint, "/files/") || strings.HasPrefix(endpoint, "/upload/") || strings.HasPrefix(endpoint, "/download/") || strings.HasPrefix(endpoint, "/batch-uploads/") || strings.HasSuffix(endpoint, ":batchGenerateContent") || strings.HasSuffix(endpoint, ":asyncBatchEmbedContent")
 }
 

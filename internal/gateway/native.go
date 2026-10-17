@@ -197,6 +197,9 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		writeRouteError(w, err)
 		return
 	}
+	if route.provider == providers.ProviderGemini && strings.HasPrefix(endpoint, "/models/") {
+		route.model = strings.Split(strings.TrimPrefix(endpoint, "/models/"), ":")[0]
+	}
 	var fallbacks []string
 	_ = json.Unmarshal(obj["fallback_models"], &fallbacks)
 	if len(fallbacks) == 0 {
@@ -266,7 +269,19 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		if scan.Action == security.ActionTokenize {
 			tm = security.NewRequestTokenMap(profile.PIITokenStyle)
 		}
-		body, _ = sanitizeInput(body, h.security, scan.Action, tm)
+		steps, _ := security.StepsFromLegacyProfile(*profile)
+		available := true
+		body, _ = mapInput(body, func(text string) string {
+			next, ok := h.security.SanitizeDecisions(text, steps, scan.DetectorActions, tm, false)
+			available = available && ok
+			return next
+		})
+		if !available {
+			status = "blocked"
+			metadata.HTTPStatus = 403
+			writeRouteError(w, &routeError{403, "security policy requires a rewrite that is unavailable"})
+			return
+		}
 		if tm != nil && tm.Size() > 0 {
 			r = r.WithContext(security.WithTokenMap(r.Context(), tm))
 		}
@@ -275,7 +290,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		_ = json.Unmarshal(body, &obj)
 		_, hasModel := obj["model"]
 		_, hasModels := obj["models"]
-		if route.model != "" && (hasModel || (!hasModels && IsGenerationEndpoint(endpoint) && endpoint != "/batches" && endpoint != "/messages/batches")) {
+		if route.provider != providers.ProviderGemini && route.model != "" && (hasModel || (!hasModels && IsGenerationEndpoint(endpoint) && endpoint != "/batches" && endpoint != "/messages/batches")) {
 			model = route.model
 			if route.provider == providers.ProviderOpenRouter {
 				model = strings.TrimPrefix(model, "openrouter/")
@@ -383,13 +398,18 @@ func nativeUsage(raw []byte) (int, int) {
 			Prompt     int `json:"prompt_tokens"`
 			Completion int `json:"completion_tokens"`
 		} `json:"usage"`
-		Response json.RawMessage `json:"response"`
-		Message  json.RawMessage `json:"message"`
+		Response    json.RawMessage `json:"response"`
+		Message     json.RawMessage `json:"message"`
+		GoogleUsage struct {
+			Input    int `json:"promptTokenCount"`
+			Output   int `json:"candidatesTokenCount"`
+			Thoughts int `json:"thoughtsTokenCount"`
+		} `json:"usageMetadata"`
 	}
 	if json.Unmarshal(raw, &obj) != nil {
 		return 0, 0
 	}
-	in, out := obj.Usage.Input+obj.Usage.Prompt, obj.Usage.Output+obj.Usage.Completion
+	in, out := obj.Usage.Input+obj.Usage.Prompt+obj.GoogleUsage.Input, obj.Usage.Output+obj.Usage.Completion+obj.GoogleUsage.Output+obj.GoogleUsage.Thoughts
 	if len(obj.Response) > 0 {
 		return nativeUsage(obj.Response)
 	}
@@ -483,7 +503,7 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 		next, ch := mapDataStrings(answers, transform)
 		obj["answers"], changed = next, changed || ch
 	}
-	for _, key := range []string{"content", "output", "text", "response", "arguments", "refusal", "reasoning", "reasoning_content", "reasoning_details", "thinking", "partial_json"} {
+	for _, key := range []string{"content", "output", "text", "revised_prompt", "response", "arguments", "refusal", "reasoning", "reasoning_content", "reasoning_details", "thinking", "partial_json"} {
 		if value, exists := obj[key]; exists {
 			apply := transform
 			if (kind == "thinking" || kind == "thinking_delta") && key == "thinking" {
@@ -493,7 +513,7 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 			obj[key], changed = next, changed || ch
 		}
 	}
-	for _, key := range []string{"choices", "message", "response", "content_block", "item", "part", "delta"} {
+	for _, key := range []string{"choices", "data", "message", "response", "content_block", "item", "part", "delta"} {
 		value, exists := obj[key]
 		if !exists {
 			continue

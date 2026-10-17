@@ -24,6 +24,8 @@ for await (const item of await claude.messages.batches.results(job.id)) assert.e
 await claude.messages.batches.cancel(job.id);
 
 const google = new GoogleGenAI({apiKey, httpOptions: {baseUrl: base + '/v1/google', apiVersion: 'v1beta'}});
+const embedded = await google.models.embedContent({model: 'gemini-embedding-001', contents: [text, 'second document']});
+assert.equal(embedded.embeddings.length, 2);
 job = await google.batches.create({model: 'gemini-2.5-flash', src: [{contents: [{parts: [{text}]}]}], config: {displayName: 'Node inline'}});
 assert.equal(job.dest.inlinedResponses[0].response.candidates[0].content.parts[0].text, text);
 job = await google.batches.get({name: job.name});

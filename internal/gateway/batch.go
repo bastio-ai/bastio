@@ -73,6 +73,9 @@ func isBatchEndpoint(provider providers.Provider, path string) bool {
 	return provider == providers.ProviderOpenAI && (path == "/batches" || strings.HasPrefix(path, "/batches/") || path == "/files" || strings.HasPrefix(path, "/files/"))
 }
 func normalizeBatchPath(path string) string {
+	if len(path) > 1 {
+		path = strings.TrimRight(path, "/")
+	}
 	for _, version := range []string{"/v1/", "/v1beta/"} {
 		if strings.HasPrefix(path, version) {
 			return "/" + strings.TrimPrefix(path, version)
@@ -511,7 +514,8 @@ func (b *batchCall) inputItem(raw []byte, key string, manifest *batchManifest) (
 	if inspectErr != nil {
 		return nil, inspectErr
 	}
-	if !json.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+	var requestObject map[string]json.RawMessage
+	if json.Unmarshal(raw, &requestObject) != nil || requestObject == nil {
 		return nil, &routeError{400, "invalid batch request item"}
 	}
 	if rejected, allowed := validateImageContent(raw, b.h.imageURLAllowlist); !allowed {
