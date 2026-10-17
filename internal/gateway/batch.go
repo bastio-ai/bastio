@@ -73,6 +73,9 @@ func isBatchEndpoint(provider providers.Provider, path string) bool {
 	return provider == providers.ProviderOpenAI && (path == "/batches" || strings.HasPrefix(path, "/batches/") || path == "/files" || strings.HasPrefix(path, "/files/"))
 }
 func normalizeBatchPath(path string) string {
+	if len(path) > 1 {
+		path = strings.TrimRight(path, "/")
+	}
 	for _, version := range []string{"/v1/", "/v1beta/"} {
 		if strings.HasPrefix(path, version) {
 			return "/" + strings.TrimPrefix(path, version)

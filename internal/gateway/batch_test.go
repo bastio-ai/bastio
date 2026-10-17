@@ -634,6 +634,23 @@ func TestBatchJSONLLongLinesMalformedAndNoTrailingNewline(t *testing.T) {
 	}
 }
 
+func TestBatchURLAliasesCannotFallThroughInspection(t *testing.T) {
+	for _, provider := range []providers.Provider{providers.ProviderOpenAI, providers.ProviderAnthropic, providers.ProviderGemini} {
+		path := "/batches"
+		if provider == providers.ProviderAnthropic {
+			path = "/messages/batches"
+		}
+		if provider == providers.ProviderGemini {
+			path = "/models/gemini-2.5-flash:batchGenerateContent"
+		}
+		for _, alias := range []string{path + "/", "/v1/" + strings.TrimPrefix(path, "/") + "/", "/v1beta/" + strings.TrimPrefix(path, "/") + "/"} {
+			if !isBatchEndpoint(provider, alias) || !isBatchEndpoint("", alias) || normalizeBatchPath(alias) != path {
+				t.Fatalf("unprotected alias %s", alias)
+			}
+		}
+	}
+}
+
 func TestBatchSignedThinkingOnlyBlocksChangesToSignedFields(t *testing.T) {
 	for _, raw := range []string{`{"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"safe <PII_token>","signature":"signed"},{"type":"text","text":"sensitive"}]}]}`, `{"contents":[{"parts":[{"text":"safe <PII_token>","thoughtSignature":"signed"},{"text":"sensitive"}]}]}`, `{"messages":[{"content":"sensitive"}],"tools":[{"parameters":{"properties":{"signature":{"type":"string"}}}}]}`} {
 		p := providers.ProviderOpenAI

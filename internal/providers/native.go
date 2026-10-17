@@ -83,7 +83,7 @@ func forwardRequestHeaders(dst, src http.Header) {
 }
 
 func forwardNative(ctx context.Context, client *http.Client, base string, provider Provider, req *NativeRequest, apiKey string) (*http.Response, error) {
-	if !strings.HasPrefix(req.Path, "/") || strings.Contains(req.Path, "..") || strings.ContainsAny(req.Path, "?#\\") || strings.HasPrefix(req.Path, "//") {
+	if !strings.HasPrefix(req.Path, "/") || strings.Contains(req.Path, "..") || strings.ContainsAny(req.Path, "?#\\") || strings.Contains(req.Path, "//") {
 		return nil, fmt.Errorf("invalid provider API path")
 	}
 	// Parse only the trusted server-configured base as a URL. Caller-controlled
