@@ -217,6 +217,11 @@ func (f *batchFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if kind == "job" {
 		if job, ok := f.jobs[id]; ok {
+			if r.Method == http.MethodDelete {
+				delete(f.jobs, id)
+				w.WriteHeader(204)
+				return
+			}
 			w.Write(job)
 			return
 		}
@@ -370,6 +375,10 @@ func TestProtectedNativeBatchWorkflows(t *testing.T) {
 		fixture.freshPII = false
 		fixture.mu.Unlock()
 		profile.PIIAction = security.ActionTokenize
+		rr = call("DELETE", "/v1/anthropic/messages/batches/"+id, "")
+		if rr.Code != 204 || rr.Body.Len() != 0 {
+			t.Fatalf("native deletion contract: %d %s", rr.Code, rr.Body)
+		}
 	})
 	t.Run("Google inline and encrypted resumable files", func(t *testing.T) {
 		rr := call("POST", "/v1/google/v1beta/models/gemini-2.5-flash:batchGenerateContent", `{"batch":{"displayName":"demo","inputConfig":{"requests":{"requests":[{"request":{"contents":[{"parts":[{"text":"inline@example.test"}]}]}}]}}}}`)

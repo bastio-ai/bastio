@@ -283,6 +283,17 @@ func (b *batchCall) serve(w http.ResponseWriter, path string) error {
 	if err != nil {
 		return &routeError{502, "invalid or oversized provider batch response"}
 	}
+	if len(out) == 0 && (resp.StatusCode == http.StatusNoContent || b.r.Method == http.MethodDelete) {
+		if id, kind := batchResourcePath(b.route.provider, path); id != "" {
+			if err = b.h.batchStore.Delete(b.r.Context(), b.key(kind, id)); err != nil {
+				return err
+			}
+		}
+		b.status = uint16(resp.StatusCode)
+		copyProviderResponseHeaders(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		return nil
+	}
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(out, &obj) != nil || obj == nil {
 		return &routeError{502, "invalid provider batch object"}

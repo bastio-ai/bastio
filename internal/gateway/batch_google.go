@@ -421,7 +421,7 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 		return &routeError{409, "upload finalization already in progress"}
 	}
 	defer func() { _ = b.h.batchStore.Release(b.r.Context(), key) }()
-	input := &batchChunkReader{b: b, key: key}
+	input := &batchChunkReader{b: b, key: key, size: state.Size}
 	payload, err := batchSpool()
 	if err != nil {
 		return err
@@ -509,17 +509,24 @@ type batchChunkReader struct {
 	b      *batchCall
 	key    batchstate.Key
 	offset int64
+	size   int64
 	buffer *bytes.Reader
 }
 
 func (r *batchChunkReader) Read(p []byte) (int, error) {
 	if r.buffer == nil || r.buffer.Len() == 0 {
+		if r.offset == r.size {
+			return 0, io.EOF
+		}
 		chunk, err := r.b.h.batchStore.Chunk(r.b.r.Context(), r.key, r.offset)
+		if errors.Is(err, io.EOF) {
+			return 0, io.ErrUnexpectedEOF
+		}
 		if err != nil {
 			return 0, err
 		}
-		if len(chunk) == 0 {
-			return 0, io.EOF
+		if len(chunk) == 0 || r.offset+int64(len(chunk)) > r.size {
+			return 0, io.ErrUnexpectedEOF
 		}
 		r.offset += int64(len(chunk))
 		r.buffer = bytes.NewReader(chunk)
