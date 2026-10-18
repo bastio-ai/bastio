@@ -1602,6 +1602,7 @@ func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
 	if in.CostCents != nil {
 		cost = *in.CostCents
 	}
+	applyCacheTraceUsage(ctx, &in, tags, &cost)
 	httpStatus := in.HTTPStatus
 	if httpStatus == 0 {
 		httpStatus = statusToHTTPCode(in.Status)
@@ -2085,4 +2086,22 @@ func extractCacheThreshold(header http.Header, defaultThreshold float32) float32
 
 func sanitizeLog(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\n", ""), "\r", "")
+}
+
+// applyCacheTraceUsage leaves provider payloads intact while recording actual
+// upstream usage separately from avoided usage on a response-cache replay.
+func applyCacheTraceUsage(ctx context.Context, in *recordInput, tags map[string]string, cost *float64) {
+	cache := gatewaypolicy.CacheFrom(ctx)
+	if cache.Status != "" {
+		tags["cache.status"] = cache.Status
+		tags["cache.operation"] = cache.Operation
+		if cache.Status == "hit" || cache.Status == "coalesced" {
+			tags["cache.saved_input_tokens"] = fmt.Sprint(cache.SavedInputTokens)
+			tags["cache.saved_output_tokens"] = fmt.Sprint(cache.SavedOutputTokens)
+			tags["cache.saved_cost_usd"] = fmt.Sprint(cache.SavedCostUSD)
+			in.InputTokens = 0
+			in.OutputTokens = 0
+			*cost = 0
+		}
+	}
 }
