@@ -333,6 +333,9 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	}
 	defer resp.Body.Close()
 	metadata.HTTPStatus = uint16(resp.StatusCode)
+	if cache := gatewaypolicy.CacheFrom(r.Context()); cache.Status != "" {
+		w.Header().Set("X-Bastio-Cache", cache.Status)
+	}
 	copyProviderResponseHeaders(w.Header(), resp.Header)
 	w.Header().Set("X-Bastio-Latency-Ms", fmt.Sprint(time.Since(start).Milliseconds()))
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") && resp.StatusCode >= 200 && resp.StatusCode < 300 {

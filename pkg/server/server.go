@@ -596,8 +596,8 @@ func (s *Server) Handler() http.Handler {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   s.cfg.CORSOrigins,
 			AllowedMethods:   []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Authorization", "Content-Type", "Cache-Control", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match", "X-Goog-Api-Key", "X-Goog-Upload-Protocol", "X-Goog-Upload-Command", "X-Goog-Upload-Offset", "X-Goog-Upload-Header-Content-Length", "X-Goog-Upload-Header-Content-Type"},
-			ExposedHeaders:   []string{"X-Bastio-Trace-Id", "X-Bastio-Request-Id", "X-Bastio-Stream-Buffered", "X-Request-Id", "Request-Id", "Retry-After", "X-Bastio-Content-Coverage", "X-Goog-Upload-URL", "X-Goog-Upload-Status", "X-Goog-Upload-Size-Received", "X-Goog-Upload-Chunk-Granularity"},
+			AllowedHeaders:   []string{"Authorization", "Content-Type", "Cache-Control", "X-Bastio-Trace-Name", "X-Bastio-Cache-Version", "X-End-User-Id", "X-Api-Key", "Anthropic-Version", "Anthropic-Beta", "X-Anthropic-Beta", "OpenAI-Beta", "OpenAI-Organization", "OpenAI-Project", "HTTP-Referer", "X-OpenRouter-Title", "X-Title", "X-Bastio-Provider", "X-Bastio-Proxy-Id", "X-Bastio-Fallback-Models", "Idempotency-Key", "Range", "If-None-Match", "If-Modified-Since", "If-Match", "X-Goog-Api-Key", "X-Goog-Upload-Protocol", "X-Goog-Upload-Command", "X-Goog-Upload-Offset", "X-Goog-Upload-Header-Content-Length", "X-Goog-Upload-Header-Content-Type"},
+			ExposedHeaders:   []string{"X-Bastio-Cache", "X-Bastio-Trace-Id", "X-Bastio-Request-Id", "X-Bastio-Stream-Buffered", "X-Request-Id", "Request-Id", "Retry-After", "X-Bastio-Content-Coverage", "X-Goog-Upload-URL", "X-Goog-Upload-Status", "X-Goog-Upload-Size-Received", "X-Goog-Upload-Chunk-Granularity"},
 			AllowCredentials: true,
 			MaxAge:           300,
 		}))
