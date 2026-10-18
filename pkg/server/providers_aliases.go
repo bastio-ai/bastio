@@ -52,6 +52,7 @@ const (
 	ProviderOpenRouter = providers.ProviderOpenRouter
 	ProviderTypeSafe   = providers.ProviderTypeSafe
 	ProviderAnthropic  = providers.ProviderAnthropic
+	ProviderGemini     = providers.ProviderGemini
 	ProviderBedrock    = providers.ProviderBedrock
 	ProviderVertex     = providers.ProviderVertex
 	ProviderAzure      = providers.ProviderAzure
