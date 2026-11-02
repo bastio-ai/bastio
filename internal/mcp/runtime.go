@@ -155,3 +155,49 @@ func (c *RuntimeClient) send(ctx context.Context, b RuntimeBatch) error {
 	c.mu.Unlock()
 	return nil
 }
+
+// RequestApproval creates a human-in-the-loop approval request on the Bastio control plane
+// and waits for an administrator decision before allowing a local stdio tool call to proceed.
+func (c *RuntimeClient) RequestApproval(ctx context.Context, toolName string, argKeys, categories []string) (string, error) {
+	payload, err := json.Marshal(struct {
+		ToolName     string   `json:"tool_name"`
+		ArgumentKeys []string `json:"argument_keys"`
+		Categories   []string `json:"categories"`
+	}{
+		ToolName:     toolName,
+		ArgumentKeys: argKeys,
+		Categories:   categories,
+	})
+	if err != nil {
+		return "denied", err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 65*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(waitCtx, http.MethodPost, c.endpoint+"/approvals?wait=true", bytes.NewReader(payload))
+	if err != nil {
+		return "denied", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Bastio-Approval-Wait", "true")
+	waitClient := &http.Client{
+		Timeout:       65 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	res, err := waitClient.Do(req)
+	if err != nil {
+		return "denied", errors.New("MCP approval request failed")
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusCreated {
+		return "denied", fmt.Errorf("MCP approval returned HTTP %d", res.StatusCode)
+	}
+	var body struct {
+		Approval Approval `json:"approval"`
+	}
+	if err := json.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&body); err != nil {
+		return "denied", errors.New("invalid MCP approval response")
+	}
+	return body.Approval.Status, nil
+}
+

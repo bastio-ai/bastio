@@ -309,7 +309,24 @@ func (p *StdioProxy) handleClientMessage(ctx context.Context, raw []byte, client
 			}
 		}
 		decision := Inspect(ctx, p.engine, InspectRequest{ToolName: params.Name, Arguments: params.Arguments, Policy: policy})
-		p.record(params.Name, "request", decision.Action, decision.Categories, decision.DurationMS)
+		if decision.Action == "approval_required" {
+			if p.runtime == nil {
+				p.reject(clientOut, msg.ID, "Blocked by Bastio Security: tool requires human approval")
+				p.popRequest(reqIDStr)
+				return
+			}
+			status, err := p.runtime.RequestApproval(ctx, params.Name, ExtractArgumentKeys(params.Arguments), decision.Categories)
+			if err != nil || status != "approved" {
+				if status == "" {
+					status = "denied"
+				}
+				p.reject(clientOut, msg.ID, "Blocked by Bastio Security: human approval "+status)
+				p.popRequest(reqIDStr)
+				return
+			}
+		} else {
+			p.record(params.Name, "request", decision.Action, decision.Categories, decision.DurationMS)
+		}
 		if decision.Action == "blocked" {
 			p.reject(clientOut, msg.ID, "Blocked by Bastio Security: tool policy or unsafe action")
 			p.popRequest(reqIDStr)
@@ -322,7 +339,7 @@ func (p *StdioProxy) handleClientMessage(ctx context.Context, raw []byte, client
 			p.pending[reqIDStr] = call
 			p.pendingMu.Unlock()
 		}
-		if decision.Action == "sanitized" {
+		if decision.Action == "sanitized" || (decision.Action == "approval_required" && len(decision.Arguments) > 0 && !bytes.Equal(decision.Arguments, params.Arguments)) {
 			params.Arguments = decision.Arguments
 			body, err := replaceJSONField(msg.Params, "arguments", decision.Arguments)
 			if err == nil {

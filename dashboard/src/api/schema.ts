@@ -1919,6 +1919,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mcp/servers/{id}/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update remote upstream endpoint and vaulted credential (admin) */
+        put: operations["updateMCPConnection"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Discover and scan upstream tools on a remote MCP server (admin) */
+        get: operations["discoverMCPTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mcp/servers/{id}/rotate-token": {
         parameters: {
             query?: never;
@@ -1965,6 +1999,58 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List human-in-the-loop MCP tool approval requests */
+        get: operations["listMCPApprovals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/approvals/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve or deny a pending MCP tool call (admin) */
+        post: operations["resolveMCPApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/gateway": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hosted Streamable HTTP MCP Gateway with credential injection, inspection, and human approvals */
+        post: operations["invokeMCPGateway"];
+        /** Close Streamable HTTP MCP Gateway session */
+        delete: operations["closeMCPGateway"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2600,6 +2686,10 @@ export interface components {
         MCPPolicy: {
             allowed_tools: string[];
             blocked_tools: string[];
+            approval_required_tools?: string[];
+            webhook_url?: string;
+            /** @enum {string} */
+            webhook_format?: "slack" | "teams" | "raw_json";
         };
         MCPServer: {
             /** Format: uuid */
@@ -2607,6 +2697,12 @@ export interface components {
             name: string;
             /** @enum {string} */
             client: "claude" | "cursor" | "cline" | "terminal" | "other";
+            /** @enum {string} */
+            mode: "stdio" | "remote";
+            upstream_url?: string;
+            /** @enum {string} */
+            auth_type: "none" | "bearer";
+            has_credential: boolean;
             policy: components["schemas"]["MCPPolicy"];
             /** Format: date-time */
             created_at: string;
@@ -2616,6 +2712,7 @@ export interface components {
             revoked_at: string | null;
             calls: number;
             blocked: number;
+            pending_approvals: number;
             dropped_events: number;
         };
         MCPEvent: {
@@ -2629,11 +2726,45 @@ export interface components {
             /** @enum {string} */
             direction: "request" | "response" | "tool_description";
             /** @enum {string} */
-            action: "allowed" | "blocked" | "sanitized" | "warned";
+            action: "allowed" | "blocked" | "sanitized" | "warned" | "approval_required" | "approved" | "denied";
             categories: string[];
             duration_ms: number;
             /** Format: date-time */
             occurred_at: string;
+        };
+        MCPApproval: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            server_id: string;
+            server_name?: string;
+            client?: string;
+            tool_name: string;
+            argument_keys: string[];
+            categories: string[];
+            /** @enum {string} */
+            status: "pending" | "approved" | "denied" | "expired";
+            decided_by?: string;
+            decision_reason?: string;
+            /** Format: date-time */
+            requested_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            decided_at?: string | null;
+        };
+        MCPApprovalList: {
+            approvals: components["schemas"]["MCPApproval"][];
+        };
+        MCPRemoteTool: {
+            name: string;
+            description?: string;
+            inputSchema?: {
+                [key: string]: unknown;
+            };
+        };
+        MCPRemoteToolList: {
+            tools: components["schemas"]["MCPRemoteTool"][];
         };
         MCPServerList: {
             servers: components["schemas"]["MCPServer"][];
@@ -2645,7 +2776,21 @@ export interface components {
             name: string;
             /** @enum {string} */
             client: "claude" | "cursor" | "cline" | "terminal" | "other";
+            /** @enum {string} */
+            mode?: "stdio" | "remote";
+            upstream_url?: string;
+            /** @enum {string} */
+            auth_type?: "none" | "bearer";
+            credential?: string;
             policy: components["schemas"]["MCPPolicy"];
+        };
+        MCPUpdateConnection: {
+            /** @enum {string} */
+            mode: "stdio" | "remote";
+            upstream_url?: string;
+            /** @enum {string} */
+            auth_type?: "none" | "bearer";
+            credential?: string;
         };
         MCPEnrollment: {
             server: components["schemas"]["MCPServer"];
@@ -2663,7 +2808,7 @@ export interface components {
         };
         MCPDecision: {
             /** @enum {string} */
-            action: "allowed" | "blocked" | "sanitized" | "warned";
+            action: "allowed" | "blocked" | "sanitized" | "warned" | "approval_required";
             categories: string[];
             arguments: {
                 [key: string]: unknown;
@@ -8266,6 +8411,126 @@ export interface operations {
             };
         };
     };
+    updateMCPConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MCPUpdateConnection"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        server: components["schemas"]["MCPServer"];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Credential encryption not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discoverMCPTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPRemoteToolList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upstream MCP discovery failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     rotateMCPToken: {
         parameters: {
             query?: never;
@@ -8429,6 +8694,175 @@ export interface operations {
             };
             /** @description Operation failed */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listMCPApprovals: {
+        parameters: {
+            query?: {
+                server_id?: string;
+                status?: "pending" | "approved" | "denied" | "expired";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MCPApprovalList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resolveMCPApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    action: "approved" | "denied";
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        approval: components["schemas"]["MCPApproval"];
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Approval not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Approval already expired or resolved */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    invokeMCPGateway: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description JSON-RPC 2.0 response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Notification accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description MCP enrollment required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    closeMCPGateway: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session closed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description MCP enrollment required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

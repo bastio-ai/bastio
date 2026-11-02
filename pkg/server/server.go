@@ -114,6 +114,7 @@ type options struct {
 	providersDecorator    func(Provider, Client) Client
 	batchInputMiddleware  func(http.Handler) http.Handler
 	batchOutputMiddleware func(http.Handler) http.Handler
+	mcpApprovalNotifier   mcp.ApprovalNotifier
 	encryption            *encryption.Service
 	readTimeout           time.Duration
 	writeTimeout          time.Duration
@@ -291,10 +292,18 @@ func RoleFromCtx(ctx context.Context) Role {
 type (
 	Store       = workspace.Store
 	AuditEntry  = workspace.AuditEntry
-	AuditTarget = workspace.AuditTarget
-	Invitation  = workspace.Invitation
-	TXTResolver = workspace.TXTResolver
+	AuditTarget          = workspace.AuditTarget
+	Invitation           = workspace.Invitation
+	TXTResolver          = workspace.TXTResolver
+	MCPApproval          = mcp.Approval
+	MCPApprovalNotifier  = mcp.ApprovalNotifier
 )
+
+// WithMCPApprovalNotifier registers a callback invoked whenever an MCP tool call
+// triggers a human-in-the-loop approval request (e.g. to fire cloud governance webhooks).
+func WithMCPApprovalNotifier(fn MCPApprovalNotifier) Option {
+	return func(o *options) { o.mcpApprovalNotifier = fn }
+}
 
 // NewStore constructs a workspace store against the given pgxpool.
 // Cloud passes its own pool (same DATABASE_URL as the OSS server's
@@ -723,7 +732,20 @@ func (s *Server) registerV1Routes(r chi.Router) {
 	if batchCipher != nil {
 		s.batchStore = batchstate.New(s.db.Pool, batchCipher, s.cfg.BatchStateTTL)
 		gw.SetBatchStore(s.batchStore)
+		mcpHandler.SetEncryption(batchCipher)
 	}
+	if s.opts.mcpApprovalNotifier != nil {
+		mcpHandler.SetApprovalNotifier(s.opts.mcpApprovalNotifier)
+	}
+	mcpHandler.SetActorResolver(func(r *http.Request) string {
+		if email, ok := r.Context().Value(UserEmailKey).(string); ok && email != "" {
+			return email
+		}
+		if uid, ok := r.Context().Value(UserIDKey).(string); ok && uid != "" {
+			return uid
+		}
+		return "admin"
+	})
 	gw.SetCache(s.redis)
 	semanticCache := semcache.NewSemanticCache(5000)
 	gw.SetSemanticCache(semanticCache)
@@ -953,6 +975,10 @@ func (s *Server) registerV1Routes(r chi.Router) {
 		s.registerGatewayGroup(r, authSvc, rateLimiter, gw)
 
 		r.Post("/mcp/runtime", mcpHandler.Runtime)
+		r.Post("/mcp/runtime/approvals", mcpHandler.RuntimeCreateApproval)
+		r.Get("/mcp/runtime/approvals/{id}", mcpHandler.RuntimeGetApproval)
+		r.Post("/mcp/gateway", mcpHandler.Gateway)
+		r.Delete("/mcp/gateway", mcpHandler.GatewayDelete)
 
 		// Caller extensions (e.g. cloud billing, cloud analytics).
 		for _, fn := range s.opts.apiExtenders {
