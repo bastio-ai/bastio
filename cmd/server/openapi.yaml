@@ -2984,6 +2984,74 @@ paths:
           schema:
             type: "string"
             format: "uuid"
+  /v1/mcp/servers/{id}/connection:
+    put:
+      operationId: "updateMCPConnection"
+      summary: "Update remote upstream endpoint and vaulted credential (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  server:
+                    $ref: "#/components/schemas/MCPServer"
+                required: ["server"]
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        503:
+          description: "Credential encryption not configured"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPUpdateConnection"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/servers/{id}/tools:
+    get:
+      operationId: "discoverMCPTools"
+      summary: "Discover and scan upstream tools on a remote MCP server (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPRemoteToolList"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Server not found in this workspace"
+        502:
+          description: "Upstream MCP discovery failed"
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
   /v1/mcp/servers/{id}/rotate-token:
     post:
       operationId: "rotateMCPToken"
@@ -3072,6 +3140,108 @@ paths:
             type: "integer"
             minimum: 1
             maximum: 200
+  /v1/mcp/approvals:
+    get:
+      operationId: "listMCPApprovals"
+      summary: "List human-in-the-loop MCP tool approval requests"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPApprovalList"
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+      parameters:
+        - name: "server_id"
+          in: "query"
+          schema:
+            type: "string"
+            format: "uuid"
+        - name: "status"
+          in: "query"
+          schema:
+            type: "string"
+            enum: ["pending", "approved", "denied", "expired"]
+        - name: "limit"
+          in: "query"
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 200
+  /v1/mcp/approvals/{id}/resolve:
+    post:
+      operationId: "resolveMCPApproval"
+      summary: "Approve or deny a pending MCP tool call (admin)"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "Success"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  approval:
+                    $ref: "#/components/schemas/MCPApproval"
+                required: ["approval"]
+        400:
+          description: "Invalid request"
+        401:
+          description: "Authentication required"
+        403:
+          description: "Administrator role required"
+        404:
+          description: "Approval not found"
+        409:
+          description: "Approval already expired or resolved"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                action:
+                  type: "string"
+                  enum: ["approved", "denied"]
+                reason:
+                  type: "string"
+              required: ["action"]
+      parameters:
+        - name: "id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uuid"
+  /v1/mcp/gateway:
+    post:
+      operationId: "invokeMCPGateway"
+      summary: "Hosted Streamable HTTP MCP Gateway with credential injection, inspection, and human approvals"
+      tags: ["MCP"]
+      responses:
+        200:
+          description: "JSON-RPC 2.0 response"
+        202:
+          description: "Notification accepted"
+        400:
+          description: "Invalid request"
+        401:
+          description: "MCP enrollment required"
+    delete:
+      operationId: "closeMCPGateway"
+      summary: "Close Streamable HTTP MCP Gateway session"
+      tags: ["MCP"]
+      responses:
+        204:
+          description: "Session closed"
+        401:
+          description: "MCP enrollment required"
   /v1/mcp/inspect:
     post:
       operationId: "inspectMCPTool"
@@ -3867,6 +4037,17 @@ components:
           items:
             type: "string"
             pattern: "^[A-Za-z0-9_.:/-]{1,128}$"
+        approval_required_tools:
+          type: "array"
+          maxItems: 100
+          items:
+            type: "string"
+            pattern: "^[A-Za-z0-9_.:/-]{1,128}$"
+        webhook_url:
+          type: "string"
+        webhook_format:
+          type: "string"
+          enum: ["slack", "teams", "raw_json"]
       required: ["allowed_tools", "blocked_tools"]
     MCPServer:
       type: "object"
@@ -3879,6 +4060,16 @@ components:
         client:
           type: "string"
           enum: ["claude", "cursor", "cline", "terminal", "other"]
+        mode:
+          type: "string"
+          enum: ["stdio", "remote"]
+        upstream_url:
+          type: "string"
+        auth_type:
+          type: "string"
+          enum: ["none", "bearer"]
+        has_credential:
+          type: "boolean"
         policy:
           $ref: "#/components/schemas/MCPPolicy"
         created_at:
@@ -3894,9 +4085,11 @@ components:
           type: "integer"
         blocked:
           type: "integer"
+        pending_approvals:
+          type: "integer"
         dropped_events:
           type: "integer"
-      required: ["id", "name", "client", "policy", "created_at", "last_seen_at", "revoked_at", "calls", "blocked", "dropped_events"]
+      required: ["id", "name", "client", "mode", "auth_type", "has_credential", "policy", "created_at", "last_seen_at", "revoked_at", "calls", "blocked", "pending_approvals", "dropped_events"]
     MCPEvent:
       type: "object"
       properties:
@@ -3917,7 +4110,7 @@ components:
           enum: ["request", "response", "tool_description"]
         action:
           type: "string"
-          enum: ["allowed", "blocked", "sanitized", "warned"]
+          enum: ["allowed", "blocked", "sanitized", "warned", "approval_required", "approved", "denied"]
         categories:
           type: "array"
           items:
@@ -3928,6 +4121,73 @@ components:
           type: "string"
           format: "date-time"
       required: ["id", "server_id", "tool_name", "direction", "action", "categories", "duration_ms", "occurred_at"]
+    MCPApproval:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        server_id:
+          type: "string"
+          format: "uuid"
+        server_name:
+          type: "string"
+        client:
+          type: "string"
+        tool_name:
+          type: "string"
+        argument_keys:
+          type: "array"
+          items:
+            type: "string"
+        categories:
+          type: "array"
+          items:
+            type: "string"
+        status:
+          type: "string"
+          enum: ["pending", "approved", "denied", "expired"]
+        decided_by:
+          type: "string"
+        decision_reason:
+          type: "string"
+        requested_at:
+          type: "string"
+          format: "date-time"
+        expires_at:
+          type: "string"
+          format: "date-time"
+        decided_at:
+          type: ["string", "null"]
+          format: "date-time"
+      required: ["id", "server_id", "tool_name", "argument_keys", "categories", "status", "requested_at", "expires_at"]
+    MCPApprovalList:
+      type: "object"
+      properties:
+        approvals:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/MCPApproval"
+      required: ["approvals"]
+    MCPRemoteTool:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        description:
+          type: "string"
+        inputSchema:
+          type: "object"
+          additionalProperties: true
+      required: ["name"]
+    MCPRemoteToolList:
+      type: "object"
+      properties:
+        tools:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/MCPRemoteTool"
+      required: ["tools"]
     MCPServerList:
       type: "object"
       properties:
@@ -3952,9 +4212,33 @@ components:
         client:
           type: "string"
           enum: ["claude", "cursor", "cline", "terminal", "other"]
+        mode:
+          type: "string"
+          enum: ["stdio", "remote"]
+        upstream_url:
+          type: "string"
+        auth_type:
+          type: "string"
+          enum: ["none", "bearer"]
+        credential:
+          type: "string"
         policy:
           $ref: "#/components/schemas/MCPPolicy"
       required: ["name", "client", "policy"]
+    MCPUpdateConnection:
+      type: "object"
+      properties:
+        mode:
+          type: "string"
+          enum: ["stdio", "remote"]
+        upstream_url:
+          type: "string"
+        auth_type:
+          type: "string"
+          enum: ["none", "bearer"]
+        credential:
+          type: "string"
+      required: ["mode"]
     MCPEnrollment:
       type: "object"
       properties:
@@ -3985,7 +4269,7 @@ components:
       properties:
         action:
           type: "string"
-          enum: ["allowed", "blocked", "sanitized", "warned"]
+          enum: ["allowed", "blocked", "sanitized", "warned", "approval_required"]
         categories:
           type: "array"
           items:

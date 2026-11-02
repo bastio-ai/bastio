@@ -13,7 +13,7 @@ import (
 
 var dangerousAction = regexp.MustCompile(`(?i)(\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b|\b(drop|truncate)\s+(table|database)\b|\bmkfs\b|\b(curl|wget)\b[^\n]*\|\s*(sh|bash)\b|/etc/shadow|\.\.[/\\]\.\.[/\\])`)
 
-// Inspect is shared by the actual proxy and the dashboard sandbox. No tool is executed.
+// Inspect is shared by the actual proxy, remote gateway, and dashboard sandbox. No tool is executed.
 func Inspect(ctx context.Context, engine *security.Engine, req InspectRequest) Decision {
 	start := time.Now()
 	d := Decision{Action: "allowed", Categories: []string{}, Arguments: req.Arguments}
@@ -44,11 +44,40 @@ func Inspect(ctx context.Context, engine *security.Engine, req InspectRequest) D
 			}
 		}
 	}
+	if d.Action != "blocked" && slices.Contains(req.Policy.ApprovalRequiredTools, req.ToolName) {
+		d.Action = "approval_required"
+		if !slices.Contains(d.Categories, "human_approval") {
+			d.Categories = append(d.Categories, "human_approval")
+		}
+	}
 	if d.Action == "blocked" {
 		d.Arguments = nil
 	}
 	d.DurationMS = float64(time.Since(start).Microseconds()) / 1000
 	return d
+}
+
+// ExtractArgumentKeys returns sorted top-level JSON object keys without retaining values.
+func ExtractArgumentKeys(raw json.RawMessage) []string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '{' {
+		return []string{}
+	}
+	var values map[string]json.RawMessage
+	if json.Unmarshal(raw, &values) != nil {
+		return []string{}
+	}
+	keys := make([]string, 0, min(len(values), 32))
+	for key := range values {
+		if toolNameRE.MatchString(key) {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	if len(keys) > 32 {
+		keys = keys[:32]
+	}
+	return keys
 }
 
 // Inspect decoded string values too: JSON unicode escapes must not bypass

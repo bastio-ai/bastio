@@ -10,6 +10,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/mcp"
 	"github.com/bastio-ai/bastio/internal/workspace"
 	"github.com/bastio-ai/bastio/pkg/database"
+	"github.com/bastio-ai/bastio/pkg/encryption"
 	"github.com/bastio-ai/bastio/pkg/tenant"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -71,7 +72,12 @@ func TestManagedMCPLifecycle(t *testing.T) {
 		}
 	}
 	store := mcp.NewStore(pool)
+	cipher, err := encryption.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	h := mcp.NewHandler(store, devmode.BuildDefaultSecurityEngine())
+	h.SetEncryption(cipher)
 	router := chi.NewRouter()
 	// Same routing shape as pkg/server: runtime bypasses dashboard session auth.
 	router.Route("/v1", func(r chi.Router) {
@@ -93,6 +99,10 @@ func TestManagedMCPLifecycle(t *testing.T) {
 			r.Mount("/mcp", h.Routes(workspace.RequireRole(workspace.RoleAdmin)))
 		})
 		r.Post("/mcp/runtime", h.Runtime)
+		r.Post("/mcp/runtime/approvals", h.RuntimeCreateApproval)
+		r.Get("/mcp/runtime/approvals/{id}", h.RuntimeGetApproval)
+		r.Post("/mcp/gateway", h.Gateway)
+		r.Delete("/mcp/gateway", h.GatewayDelete)
 	})
 	host := httptest.NewServer(router)
 	defer host.Close()
@@ -249,5 +259,34 @@ func TestManagedMCPLifecycle(t *testing.T) {
 	}
 	if _, err = store.Ingest(ctx, testTokenHash(replacement.Token), mcp.RuntimeBatch{}); err != mcp.ErrEnrollment {
 		t.Fatal("revoked token was accepted")
+	}
+
+	// Verify remote gateway credential encryption & human-in-the-loop approval storage in PostgreSQL.
+	remoteCreated := request("POST", "/v1/mcp/servers", `{"name":"Remote GitHub","client":"cursor","mode":"remote","upstream_url":"https://mcp.example.com/v1","auth_type":"bearer","credential":"ghp_super_secret_token","policy":{"allowed_tools":[],"blocked_tools":[],"approval_required_tools":["merge_pr"]}}`, cidA, "")
+	if remoteCreated.Code != 201 || strings.Contains(remoteCreated.Body.String(), "ghp_super_secret_token") {
+		t.Fatalf("remote create failed or leaked token: %d %s", remoteCreated.Code, remoteCreated.Body.String())
+	}
+	var remoteEnrolled struct {
+		Server mcp.Server `json:"server"`
+		Token  string     `json:"enrollment_token"`
+	}
+	_ = json.Unmarshal(remoteCreated.Body.Bytes(), &remoteEnrolled)
+	var rawCipher []byte
+	if err = pool.QueryRow(ctx, `SELECT encrypted_credential FROM mcp_servers WHERE customer_id=$1 AND id=$2`, cidA, remoteEnrolled.Server.ID).Scan(&rawCipher); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(rawCipher, []byte("ghp_super_secret_token")) {
+		t.Fatal("plaintext upstream credential stored in PostgreSQL")
+	}
+	approval, err := store.CreateApproval(ctx, cidA, remoteEnrolled.Server.ID, "merge_pr", []string{"pull_number", "repo"}, []string{"human_approval"}, 5*time.Minute)
+	if err != nil || approval.Status != "pending" {
+		t.Fatalf("create approval failed: %v", err)
+	}
+	if crossApproval := request("POST", "/v1/mcp/approvals/"+approval.ID.String()+"/resolve", `{"action":"approved"}`, cidB, ""); crossApproval.Code != 404 {
+		t.Fatalf("cross-tenant approval resolve returned %d", crossApproval.Code)
+	}
+	resolvedResp := request("POST", "/v1/mcp/approvals/"+approval.ID.String()+"/resolve", `{"action":"approved","reason":"LGTM"}`, cidA, "")
+	if resolvedResp.Code != 200 {
+		t.Fatalf("resolve approval failed: %d %s", resolvedResp.Code, resolvedResp.Body.String())
 	}
 }

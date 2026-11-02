@@ -1,28 +1,54 @@
 ---
-title: MCP Security Proxy
-description: Enroll local MCP tool servers, enforce tool policy, and inspect real security outcomes.
+title: MCP Security Gateway & Proxy
+description: Host remote HTTP/SSE MCP gateways with vaulted credential injection, enforce human-in-the-loop approvals, or wrap local stdio MCP servers.
 ---
 
-`bastio mcp-proxy` wraps a local MCP server over **stdio JSON-RPC 2.0**. It inspects tool arguments before execution, scans text and structured tool results, and checks tool descriptions for known prompt-injection patterns. It is an inspection firewall; it does not sandbox the child process or provide a remote HTTP/SSE MCP gateway.
+Bastio protects Model Context Protocol (MCP) tool execution in two deployment modes:
 
-## Install the CLI
+1. **Remote Hosted HTTP/SSE MCP Gateway (`mode: "remote"`, recommended):** Point Cursor, Claude Desktop, Claude Code, Cline, or custom agents at `https://<your-bastio-host>/v1/mcp/gateway`. Bastio vaults your upstream API tokens with AES-GCM encryption, injects them on egress, filters `tools/list`, scans arguments and tool results for PII and prompt injection, and holds high-risk calls for human-in-the-loop approval—with zero secrets or CLI binaries on developer laptops.
+2. **Local `stdio` Wrapper Fallback (`mode: "stdio"`):** For local-only tool processes (filesystem, local databases, CLI tools), `bastio mcp-proxy` wraps the child process over **stdio JSON-RPC 2.0**, syncs policy and human-approval gates with your Bastio control plane, and reports metadata-only telemetry.
 
-Build the current CLI from source with Go 1.25 or later:
+## 1. Remote HTTP Gateway (Zero Local Secrets)
+
+1. Open **MCP → Connect server** in the Bastio dashboard and choose **Remote HTTP Gateway (Recommended)**.
+2. Enter the server name, select your client (Cursor, Claude Desktop, Cline, etc.), and provide the **Upstream HTTPS MCP endpoint** (for example `https://mcp.yourcompany.com/mcp`) along with an optional **Upstream Bearer token**.
+3. Bastio encrypts the upstream credential at rest (scoped to your workspace and server ID) and returns a one-time `mcp_...` enrollment token.
+4. Paste the generated configuration into `.cursor/mcp.json`, `claude_desktop_config.json`, or your agent's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "github-enterprise": {
+      "url": "https://cloud.bastio.com/v1/mcp/gateway",
+      "headers": {
+        "Authorization": "Bearer <one-time enrollment token>"
+      }
+    }
+  }
+}
+```
+
+### Upstream Tool Discovery
+
+In **Servers & policies → Tool policy, gateway & credentials**, click **Discover upstream tools** on any remote MCP server. Bastio connects using the vaulted credential, scans every upstream tool description for prompt injection, and lets you assign tools to **Allowed**, **Require approval**, or **Blocked** with one click.
+
+## 2. Human-in-the-Loop Approvals
+
+High-impact tools (`deploy_service`, `execute_sql`, `merge_pull_request`, `delete_record`) can be listed under **Human approval required tools** (`approval_required_tools`) in a server's policy:
+
+- When an agent calls an approval-required tool, Bastio first runs all destructive-action and PII/injection checks (blocking immediately if unsafe, or masking PII in arguments).
+- If the call passes security inspection, Bastio creates a pending approval record (storing only top-level argument key names and threat categories—never raw argument values), fires a real-time **Slack**, **Microsoft Teams**, or **Raw JSON** webhook notification, and holds the in-flight `tools/call` request.
+- Operators review and click **Approve** or **Deny** in **MCP → Human approvals** (`POST /v1/mcp/approvals/{id}/resolve`). Once approved, the held tool call proceeds immediately; if denied or expired, Bastio returns a JSON-RPC security rejection to the agent.
+
+## 3. Local `stdio` Wrapper Fallback
+
+For local child executables that cannot be reached over HTTPS, install the Bastio CLI (Go 1.25+):
 
 ```bash
 go install github.com/bastio-ai/bastio/cmd/bastio@main
 ```
 
-Ensure the installed `bastio` executable is on the MCP client's PATH (or use its absolute path in the configuration). Run `bastio mcp-proxy -h` and confirm it exposes `--control-url`; upgrade older binaries before enrollment.
-
-## Connect to the dashboard
-
-1. Open **MCP → Connect server** in the Bastio dashboard. Workspace owners and administrators can enroll servers and edit their policies.
-2. Name the server and select Claude Desktop, Cursor, Cline, or a terminal/custom agent.
-3. Save the one-time enrollment credential and generated configuration. Enter the local server executable and its argument array.
-4. Restart the MCP client. A heartbeat and actual tool events appear in the dashboard.
-
-For Claude Desktop, put the generated `mcpServers` entry in `claude_desktop_config.json`. Cursor uses `.cursor/mcp.json`; Cline's MCP configuration also accepts an `mcpServers` entry. The enrollment credential belongs in the environment, not command-line arguments:
+Enroll a server in **Local stdio wrapper (Fallback)** mode and place the generated snippet in `claude_desktop_config.json` or `.cursor/mcp.json`:
 
 ```json
 {
@@ -40,28 +66,16 @@ For Claude Desktop, put the generated `mcpServers` entry in `claude_desktop_conf
 }
 ```
 
-The child server does not receive the enrollment credential. Bastio's protocol stdout contains JSON-RPC only; its diagnostics use stderr. The tool server still runs with local OS permissions, so restrict its filesystem/database access independently.
+The child server never inherits `BASTIO_MCP_TOKEN`. `bastio mcp-proxy` refreshes policy every five seconds and pauses execution on `approval_required_tools` until an operator approves the request in the dashboard.
 
-## Tool policy and protection
-
-Each enrollment has exact-name allow and block lists. Empty allowlists mean all tools are inspected; a matching block always wins. Allowed tools still receive content inspection. Common destructive command and SQL patterns are rejected before forwarding. Detected PII can be masked while preserving valid JSON. Unsafe text or structured results are blocked or sanitized before returning to the client. Images and arbitrary third-party extensions are not comprehensively inspected.
-
-The dashboard sandbox runs the same inspection implementation without executing a tool. It uses the server's security engine; the local CLI uses its built-in baseline detectors. It is a useful policy check, not a guarantee against every encoded or obfuscated attack. Named local security profiles are not supported; only the default baseline is currently available.
-
-## Credential lifecycle and control outages
-
-Replace or revoke an enrollment in **Servers & policies**. Replacement immediately invalidates the old credential; update the client's configuration to reconnect. The proxy authenticates before starting its child server and refreshes policy every five seconds. A confirmed invalid/revoked credential blocks subsequent tool calls. During network outages, cached policy remains usable for at most two minutes, then tool calls fail closed.
-
-## Metadata and retention
-
-The dashboard receives tool names, direction, outcome, detector categories, timing, heartbeats, and queue-drop counts. Tool arguments, results, RPC request IDs, and MCP connection secrets are not uploaded. The inspector sandbox processes the input for its request and does not insert it into the event store.
-
-Activity views cover the last 30 days. Older event metadata is deleted on ingestion and by an hourly server maintenance sweep. Enrollment names, policies, and revocation records remain so administrators can manage them. A bounded local reporting queue can drop events during long outages or extreme load; this is reported per server. Delivery is asynchronous and is not a complete execution audit. Local third-party stderr logging is controlled by the tool server.
-
-## Local-only mode
-
-Without `--control-url`, the baseline scanner operates locally with no enrollment, central tool policy, heartbeat, or dashboard reporting:
+Without `--control-url`, the baseline scanner operates locally with no enrollment, central tool policy, or dashboard reporting:
 
 ```bash
 bastio mcp-proxy -- npx -y @modelcontextprotocol/server-filesystem /path/to/project
 ```
+
+## Privacy, Credential Lifecycle & Retention
+
+- **Zero raw payload storage:** Neither `mcp_events` nor `mcp_approvals` ever stores raw tool arguments, tool outputs, or plaintext tokens. Approval records retain only top-level JSON argument key names (e.g. `["path", "repo"]`).
+- **Instant revocation & rotation:** Rotating or revoking an enrollment token in **Servers & policies** takes effect immediately on the Remote HTTP Gateway and within the policy refresh window on local `stdio` wrappers. Revoking a server also purges its vaulted upstream credential and expires pending approvals.
+- **30-day metadata window:** Event and approval metadata are automatically pruned after 30 days by an hourly tenant-scoped maintenance sweep.
