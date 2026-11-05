@@ -101,7 +101,7 @@ jobs:
       # Opens a "Version Packages" PR when changesets are pending, or
       # publishes to npm when the version PR is merged back to main.
       - name: Changesets — version or publish
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           cwd: sdk/js
           version: pnpm changeset version
