@@ -66,6 +66,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			rate_anomaly_enabled,
 			injection_strategy, jailbreak_strategy, secrets_strategy,
 			indirect_injection_strategy, output_exfil_strategy,
+			tool_injection_strategy,
 			created_at::text, updated_at::text
 		FROM security_profiles
 		WHERE customer_id = $1::uuid
@@ -106,6 +107,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			secretsStrategy           string
 			indirectInjectionStrategy string
 			outputExfilStrategy       string
+			toolInjectionStrategy     string
 			createdAt, updatedAt      string
 		)
 		if err := rows.Scan(
@@ -120,6 +122,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			&rateAnomalyEnabled,
 			&injectionStrategy, &jailbreakStrategy, &secretsStrategy,
 			&indirectInjectionStrategy, &outputExfilStrategy,
+			&toolInjectionStrategy,
 			&createdAt, &updatedAt,
 		); err != nil {
 			slog.Error("scan security profile row", "error", err)
@@ -152,6 +155,7 @@ func (h *ProfileHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 			"secrets_strategy":            secretsStrategy,
 			"indirect_injection_strategy": indirectInjectionStrategy,
 			"output_exfil_strategy":       outputExfilStrategy,
+			"tool_injection_strategy":     toolInjectionStrategy,
 			"created_at":                  createdAt,
 			"updated_at":                  updatedAt,
 		})
@@ -198,6 +202,7 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		"secrets_strategy":            "secrets_strategy",
 		"indirect_injection_strategy": "indirect_injection_strategy",
 		"output_exfil_strategy":       "output_exfil_strategy",
+		"tool_injection_strategy":     "tool_injection_strategy",
 	}
 
 	if v, ok := req["pii_action"]; ok {
@@ -220,6 +225,7 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	for _, field := range []string{
 		"injection_strategy", "jailbreak_strategy",
 		"indirect_injection_strategy", "output_exfil_strategy",
+		"tool_injection_strategy",
 	} {
 		if v, ok := req[field]; ok {
 			if s, _ := v.(string); !validTextThreatStrategy(s) {

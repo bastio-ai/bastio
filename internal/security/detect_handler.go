@@ -290,6 +290,10 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 	var rateAnomalyEnabled bool
 	var suppressions []PatternSuppression
 	var activeIdent overlay.Identity
+	// agentSteps is what the gateway runs on tool and assistant_history
+	// messages for this profile; nil for inline-step callers, who get
+	// exactly the steps they sent.
+	var agentSteps []Step
 
 	if len(steps) == 0 {
 		p, err := h.resolveProfile(r.Context(), profileName)
@@ -325,6 +329,7 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 			steps = p.Output
 		} else {
 			steps = p.Input
+			agentSteps = AgentContextSteps(p.Input, EffectiveToolInjectionStrategy(&p))
 		}
 		canonicalize = p.CanonicalizeEnabled
 	} else if err := ValidateSteps(steps); err != nil {
@@ -339,7 +344,13 @@ func (h *DetectHandler) Detect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, m := range req.Messages {
-		stepsRes := h.engine.RunSteps(r.Context(), m.Content, steps, &RunOptions{
+		msgSteps := steps
+		if agentSteps != nil && IsAgentContextRole(m.Role) {
+			// Report what the gateway does with this text, not what the
+			// full user pipeline would do.
+			msgSteps = agentSteps
+		}
+		stepsRes := h.engine.RunSteps(r.Context(), m.Content, msgSteps, &RunOptions{
 			Canonicalize: canonicalize,
 			Role:         m.Role,
 			Suppressions: suppressions,
@@ -567,11 +578,19 @@ func (h *DetectHandler) runShadow(
 		activeVersionPtr = &id
 	}
 
+	var agentSteps []Step
+	if direction != DirectionOutput {
+		agentSteps = AgentContextSteps(shadowProfile.Input, EffectiveToolInjectionStrategy(shadowProfile))
+	}
 	for i, m := range inputs {
 		if i >= len(primary) {
 			break
 		}
-		shadowRes := h.engine.RunSteps(ctx, m.Content, steps, &RunOptions{
+		msgSteps := steps
+		if agentSteps != nil && IsAgentContextRole(m.Role) {
+			msgSteps = agentSteps
+		}
+		shadowRes := h.engine.RunSteps(ctx, m.Content, msgSteps, &RunOptions{
 			Canonicalize: canonicalize,
 			Role:         m.Role,
 			Suppressions: shadowProfile.Suppressions,
@@ -782,6 +801,7 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 		secretsStrategy           string
 		indirectInjectionStrategy string
 		outputExfilStrategy       string
+		toolInjectionStrategy     string
 	)
 	err := h.db.QueryRow(ctx, `
 		SELECT id, canonicalize_enabled,
@@ -790,7 +810,8 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 			pii_enabled, pii_action, pii_scan_response, pii_restore_response, pii_token_style,
 			secrets_enabled, indirect_injection_enabled, output_exfil_enabled, topic_policy_enabled,
 			injection_strategy, jailbreak_strategy, secrets_strategy,
-			indirect_injection_strategy, output_exfil_strategy
+			indirect_injection_strategy, output_exfil_strategy,
+			tool_injection_strategy
 		FROM security_profiles
 		WHERE customer_id = $1 AND name = $2
 		ORDER BY updated_at DESC
@@ -804,6 +825,7 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 		&secretsEnabled, &indirectInjectionEnabled, &outputExfilEnabled, &topicPolicyEnabled,
 		&injectionStrategy, &jailbreakStrategy, &secretsStrategy,
 		&indirectInjectionStrategy, &outputExfilStrategy,
+		&toolInjectionStrategy,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -840,6 +862,7 @@ func (h *DetectHandler) resolveProfile(ctx context.Context, name string) (Profil
 		SecretsStrategy:           normalizeStrategy(secretsStrategy, ActionMask),
 		IndirectInjectionStrategy: normalizeStrategy(indirectInjectionStrategy, ActionBlock),
 		OutputExfilStrategy:       normalizeStrategy(outputExfilStrategy, ActionBlock),
+		ToolInjectionStrategy:     normalizeTextThreatStrategy(toolInjectionStrategy, ActionWarn),
 	}
 	p.Input, p.Output = StepsFromLegacyProfile(p)
 	p.Suppressions = loadSuppressions(ctx, h.db, customerID, profileID)

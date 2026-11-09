@@ -86,6 +86,7 @@ func NewOverlayWarningAnalyzer() overlay.WarningAnalyzer {
 		addThresholdStrategy("jailbreak", o.Jailbreak, base.JailbreakThreshold, base.JailbreakStrategy)
 		addStrategyOnly("secrets", o.Secrets, base.SecretsStrategy)
 		addStrategyOnly("indirect_injection", o.IndirectInjection, base.IndirectInjectionStrategy)
+		addStrategyOnly("tool_injection", o.ToolInjection, EffectiveToolInjectionStrategy(&base))
 		addStrategyOnly("output_exfil", o.OutputExfil, base.OutputExfilStrategy)
 
 		if o.PII != nil && o.PII.Action != nil {

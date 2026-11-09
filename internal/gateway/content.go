@@ -172,7 +172,9 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 				if role == "system" || role == "developer" {
 					continue
 				}
-				if key == "messages" && role != "user" && role != "tool" && role != "assistant" {
+				// "function" is the legacy OpenAI tool-result role; it
+				// carries tool output like "tool" and is scanned as such.
+				if key == "messages" && role != "user" && role != "tool" && role != "function" && role != "assistant" {
 					continue
 				}
 			}
@@ -212,6 +214,11 @@ func mapInput(body []byte, transform textTransform) ([]byte, bool) {
 }
 
 func extractInputText(body []byte) string {
+	return strings.Join(inputTexts(body), "\n")
+}
+
+// inputTexts lists every non-empty text field mapInput visits, in order.
+func inputTexts(body []byte) []string {
 	var texts []string
 	mapInput(body, func(text string) string {
 		if text != "" {
@@ -219,9 +226,37 @@ func extractInputText(body []byte) string {
 		}
 		return text
 	})
-	return strings.Join(texts, "\n")
+	return texts
 }
 
+// applyInputDecisions rewrites every text field mapInput visits with the
+// rewrite decisions the scan actually made, per detector and in profile
+// order: secrets masked when the secrets step chose mask, PII masked or
+// tokenized per its own strategy. Request routes must use this rather
+// than sanitizeInput, whose single aggregate action reaches only the
+// engine's first sanitizer (PII), so a secrets mask decision was never
+// applied. Secrets are always masked irreversibly (SanitizeDecisions
+// refuses to tokenize them), so the TokenMap never holds a secret.
+//
+// ok is false when a fired rewrite decision has no sanitizer; callers
+// fail closed, as forwardNativeAPI does.
+func applyInputDecisions(body []byte, engine *security.Engine, profile *security.Profile, scan *security.ScanResult, tm *security.TokenMap) (out []byte, changed, ok bool) {
+	if engine == nil || profile == nil || scan == nil {
+		return body, false, true
+	}
+	steps, _ := security.StepsFromLegacyProfile(*profile)
+	ok = true
+	out, changed = mapInput(body, func(text string) string {
+		next, fine := engine.SanitizeDecisions(text, steps, scan.DetectorActions, tm, false)
+		ok = ok && fine
+		return next
+	})
+	return out, changed, ok
+}
+
+// sanitizeInput applies one aggregate action with the engine's first
+// sanitizer. It predates per-detector decisions; request routes use
+// applyInputDecisions instead.
 func sanitizeInput(body []byte, engine *security.Engine, action security.Action, tm *security.TokenMap) ([]byte, bool) {
 	if engine == nil {
 		return body, false

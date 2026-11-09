@@ -251,6 +251,43 @@ func (e *Engine) RunSteps(ctx context.Context, content string, steps []Step, opt
 	return res
 }
 
+// AgentContextDetectors are the detectors the gateway runs on tool
+// results and replayed assistant turns (roles tool, assistant_history).
+// Direct injection and jailbreak are left out: they are tuned for a
+// person typing at the model, and tool output routinely contains
+// imperative prose.
+func AgentContextDetectors() []string {
+	return []string{"indirect_injection", "secrets", "pii"}
+}
+
+// IsAgentContextRole reports whether the gateway scans role with the
+// agent-context pipeline (AgentContextSteps).
+func IsAgentContextRole(role string) bool {
+	return role == RoleTool || role == RoleAssistantHistory
+}
+
+// AgentContextSteps derives the step list the gateway applies to tool
+// results and replayed assistant turns from a profile input list: only
+// AgentContextDetectors, with indirect_injection following
+// tool_injection_strategy. Returns a new slice; steps is not modified.
+func AgentContextSteps(steps []Step, toolStrategy Action) []Step {
+	allowed := AgentContextDetectors()
+	out := make([]Step, 0, len(allowed))
+	for _, s := range steps {
+		for _, name := range allowed {
+			if s.Detector != name {
+				continue
+			}
+			if s.Detector == "indirect_injection" && toolStrategy != "" {
+				s.Strategy = toolStrategy
+			}
+			out = append(out, s)
+			break
+		}
+	}
+	return out
+}
+
 // elevate promotes res.Action only upward along the strength ordering:
 // pass < log_only < warn < mask < tokenize < block. Lower-ranked steps
 // never downgrade a stronger action chosen earlier in the list.
@@ -258,6 +295,16 @@ func elevate(res *StepsResult, to Action) {
 	if rank(to) > rank(res.Action) {
 		res.Action = to
 	}
+}
+
+// StrongerAction returns whichever of a and b ranks higher on the
+// pass < log_only < warn < mask < tokenize < block ordering. Used to
+// merge results from scans of different message roles in one request.
+func StrongerAction(a, b Action) Action {
+	if rank(b) > rank(a) {
+		return b
+	}
+	return a
 }
 
 func rank(a Action) int {

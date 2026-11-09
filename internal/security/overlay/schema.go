@@ -67,6 +67,9 @@ type DetectorOverrides struct {
 	Jailbreak         *DetectorOverride `json:"jailbreak,omitempty"`
 	Secrets           *DetectorOverride `json:"secrets,omitempty"`
 	IndirectInjection *DetectorOverride `json:"indirect_injection,omitempty"`
+	// ToolInjection overrides tool_injection_strategy: indirect injection
+	// in tool results and replayed assistant turns on gateway requests.
+	ToolInjection *DetectorOverride `json:"tool_injection,omitempty"`
 	OutputExfil       *DetectorOverride `json:"output_exfil,omitempty"`
 	PII               *PIIOverride      `json:"pii,omitempty"`
 }
@@ -188,6 +191,9 @@ func validateOverrides(o DetectorOverrides) error {
 		return err
 	}
 	if err := check("indirect_injection", o.IndirectInjection, textThreat); err != nil {
+		return err
+	}
+	if err := check("tool_injection", o.ToolInjection, textThreat); err != nil {
 		return err
 	}
 	if err := check("output_exfil", o.OutputExfil, textThreat); err != nil {

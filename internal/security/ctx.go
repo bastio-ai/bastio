@@ -19,6 +19,12 @@ const (
 	RoleTool      = "tool"
 	RoleRetrieval = "retrieval"
 	RoleMemory    = "memory"
+	// RoleAssistantHistory marks assistant turns replayed inside a request.
+	// The client supplies them, so the gateway cannot vouch that they are
+	// genuine model output, and they can repeat text injected by an
+	// earlier tool result. Distinct from RoleAssistant, which marks the
+	// live response the gateway itself received from the provider.
+	RoleAssistantHistory = "assistant_history"
 )
 
 // WithRole attaches the calling message's role to ctx.
@@ -42,7 +48,7 @@ func RoleFromContext(ctx context.Context) string {
 // this to tighten thresholds for content the user didn't type.
 func IsUntrustedRole(role string) bool {
 	switch role {
-	case RoleTool, RoleRetrieval, RoleMemory:
+	case RoleTool, RoleRetrieval, RoleMemory, RoleAssistantHistory:
 		return true
 	}
 	return false

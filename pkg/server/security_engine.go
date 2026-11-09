@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,7 +51,10 @@ func BuildSecurityEngine(_ context.Context, pool *pgxpool.Pool, redis *cache.Cac
 		detection.NewJailbreakDetector(),
 		detection.NewSecretsDetector(),
 		detection.NewIndirectInjectionDetector(),
-		detection.NewExfilDetector(),
+		// Hosts the operator trusts for images (the same list the
+		// gateway enforces on inbound image_url parts) are exempt from
+		// the rendered-URL exfiltration rules on model output.
+		detection.NewExfilDetector(detection.WithTrustedURLHosts(detection.ParseHostList(os.Getenv("BASTIO_IMAGE_URL_ALLOWLIST")))),
 		topic,
 	)
 	if redis != nil {
