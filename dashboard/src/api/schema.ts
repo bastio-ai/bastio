@@ -3096,6 +3096,11 @@ export interface components {
              * @enum {string}
              */
             output_exfil_strategy?: "block" | "warn" | "log_only";
+            /**
+             * @description What happens when indirect_injection fires on tool results or replayed assistant turns in a gateway request. Default warn (record the finding and forward). Workspace knowledge-base ingest uses indirect_injection_strategy instead.
+             * @enum {string}
+             */
+            tool_injection_strategy?: "block" | "warn" | "log_only";
         };
         Observation: {
             /** Format: uuid */
@@ -3387,6 +3392,8 @@ export interface components {
             indirect_injection_strategy?: "block" | "warn" | "log_only";
             /** @enum {string} */
             output_exfil_strategy?: "block" | "warn" | "log_only";
+            /** @enum {string} */
+            tool_injection_strategy?: "block" | "warn" | "log_only";
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -3565,6 +3572,7 @@ export interface components {
             jailbreak?: components["schemas"]["OverlayDetectorOverride"];
             secrets?: components["schemas"]["OverlayDetectorOverride"];
             indirect_injection?: components["schemas"]["OverlayDetectorOverride"];
+            tool_injection?: components["schemas"]["OverlayDetectorOverride"];
             output_exfil?: components["schemas"]["OverlayDetectorOverride"];
             pii?: components["schemas"]["OverlayPIIOverride"];
         };

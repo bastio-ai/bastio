@@ -61,6 +61,12 @@ func ApplyOverlay(base *Profile, snap *overlay.OverlaySnapshot, ident overlay.Id
 			&out.IndirectInjectionStrategy, base.IndirectInjectionStrategy,
 		)
 	}
+	if snap.DetectorOverrides.ToolInjection != nil {
+		applyStrategyOnly(
+			"tool_injection", snap.DetectorOverrides.ToolInjection, ident,
+			&out.ToolInjectionStrategy, EffectiveToolInjectionStrategy(base),
+		)
+	}
 	if snap.DetectorOverrides.OutputExfil != nil {
 		applyStrategyOnly(
 			"output_exfil", snap.DetectorOverrides.OutputExfil, ident,

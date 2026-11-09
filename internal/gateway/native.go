@@ -245,7 +245,13 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		writeRouteError(w, &routeError{403, "image URL is outside trusted hosts: " + rejected})
 		return
 	}
-	scan := h.runSecurityScan(r, info, extractInputText(body), traceID, profile)
+	// Same split as ChatCompletions: the full input pipeline runs on what
+	// the end user sent; tool results and replayed assistant turns are
+	// scanned under their own roles (indirect injection per
+	// tool_injection_strategy, secrets, PII). The rewrite below covers
+	// all of that text, so their mask/tokenize decisions still apply.
+	userText, segments := nativeScanInputs(body)
+	scan := h.runSecurityScanParts(r, info, userText, segments, traceID, profile, "input")
 	status := "ok"
 	var responseBody []byte
 	var inTokens, outTokens int

@@ -532,8 +532,11 @@ func (b *batchCall) inputItem(raw []byte, key string, manifest *batchManifest) (
 	if manifest.Model == "" {
 		manifest.Model = model.Model
 	}
-	text := batchInputText(raw, b.route.provider)
-	scan := b.h.runSecurityScan(b.r, b.info, text, b.trace, b.profile)
+	// Same split as the synchronous routes: user text gets the full
+	// pipeline, tool results and history their role scans; the rewrite
+	// below still covers every visited field.
+	userText, segments := batchScanInputs(raw, b.route.provider)
+	scan := b.h.runSecurityScanParts(b.r, b.info, userText, segments, b.trace, b.profile, "input")
 	b.addScan(scan)
 	if scan != nil && scan.ShouldBlock && !gatewaypolicy.From(b.r.Context()).MonitorOnly {
 		return nil, &routeError{403, "batch input withheld by security policy; item=" + key[:12]}
@@ -572,9 +575,13 @@ func batchMapInput(raw []byte, p providers.Provider, transform textTransform) ([
 	return out, ch || changed
 }
 func batchInputText(raw []byte, p providers.Provider) string {
+	return strings.Join(batchInputTexts(raw, p), "\n")
+}
+
+func batchInputTexts(raw []byte, p providers.Provider) []string {
 	var text []string
 	_, _ = batchMapInput(raw, p, func(s string) string { text = append(text, s); return s })
-	return strings.Join(text, "\n")
+	return text
 }
 
 func (b *batchCall) outputItem(raw []byte, key string, resource batchResource) ([]byte, error) {

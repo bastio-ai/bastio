@@ -4825,6 +4825,10 @@ components:
           type: string
           enum: [block, warn, log_only]
           description: What happens when the response-side exfil step fires.
+        tool_injection_strategy:
+          type: string
+          enum: [block, warn, log_only]
+          description: What happens when indirect_injection fires on tool results or replayed assistant turns in a gateway request. Default warn (record the finding and forward). Workspace knowledge-base ingest uses indirect_injection_strategy instead.
 
     Observation:
       type: object
@@ -5421,6 +5425,9 @@ components:
         output_exfil_strategy:
           type: string
           enum: [block, warn, log_only]
+        tool_injection_strategy:
+          type: string
+          enum: [block, warn, log_only]
         created_at:
           type: string
           format: date-time
@@ -5746,6 +5753,8 @@ components:
         secrets:
           $ref: "#/components/schemas/OverlayDetectorOverride"
         indirect_injection:
+          $ref: "#/components/schemas/OverlayDetectorOverride"
+        tool_injection:
           $ref: "#/components/schemas/OverlayDetectorOverride"
         output_exfil:
           $ref: "#/components/schemas/OverlayDetectorOverride"

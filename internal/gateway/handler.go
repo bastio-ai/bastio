@@ -29,6 +29,7 @@ import (
 	"github.com/bastio-ai/bastio/internal/security"
 	"github.com/bastio-ai/bastio/internal/security/detection"
 	"github.com/bastio-ai/bastio/internal/security/iplist"
+	"github.com/bastio-ai/bastio/internal/security/normalize"
 	"github.com/bastio-ai/bastio/internal/security/overlay"
 	"github.com/bastio-ai/bastio/pkg/cache"
 	"github.com/bastio-ai/bastio/pkg/gatewaypolicy"
@@ -289,8 +290,14 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.WithContext(ctx)
 
-	// Security scan
-	scanResult := h.runSecurityScan(r, info, userContent, traceID, profile)
+	// Security scan. User turns get the full input pipeline; tool
+	// results and replayed assistant turns are scanned under their own
+	// roles so the indirect-injection guard and secrets/PII handling
+	// reach agent traffic. sanitizeOutboundBody rewrites user, tool,
+	// function and assistant messages, so a mask/tokenize decision from
+	// any of these scans is applied to the parts that produced it.
+	segments := extractRoleSegmentsFromMessages(fullReq.Messages).scans(untrustedDetectors())
+	scanResult := h.runSecurityScanParts(r, info, userContent, segments, traceID, profile, "input")
 	if scanResult != nil && scanResult.ShouldBlock {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -314,17 +321,22 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply per-user-message PII sanitization to the outbound body. The
-	// provider only sees masked values or placeholders; originals stay in
-	// the TokenMap on ctx so the response path can restore them.
-	if scanResult != nil && (scanResult.Action == security.ActionMask || scanResult.Action == security.ActionTokenize) {
+	// Apply the scan's rewrite decisions (secrets mask, PII mask or
+	// tokenize) to the outbound body: user, tool, function and assistant
+	// messages. The provider only sees masked values or placeholders; PII
+	// originals stay in the TokenMap on ctx so the response path can
+	// restore them. Secrets are masked irreversibly.
+	if scanResult != nil && (scanResult.Action.IsMaskLike() || scanResult.Action == security.ActionTokenize) {
 		var tm *security.TokenMap
 		if scanResult.Action == security.ActionTokenize {
 			tm = security.NewTokenMap(profile.PIITokenStyle)
 		}
-		if rewritten, ok := sanitizeOutboundBody(body, h.security, scanResult.Action, tm); ok {
-			body = rewritten
+		rewritten, _, ok := applyInputDecisions(body, h.security, profile, scanResult, tm)
+		if !ok {
+			h.writeRewriteUnavailable(w, r, info, traceID, chatReq.Model, "openai", start, scanResult, body)
+			return
 		}
+		body = rewritten
 		if tm != nil && tm.Size() > 0 {
 			r = r.WithContext(security.WithTokenMap(r.Context(), tm))
 		}
@@ -601,7 +613,10 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 
 	userContent := extractAnthropicUserContent(body)
-	scanResult := h.runSecurityScan(r, info, userContent, anthropicTraceID, profile)
+	// tool_result blocks and assistant turns are scanned under their own
+	// roles; the top-level system prompt stays unscanned (see
+	// extractRoleSegments).
+	scanResult := h.runSecurityScanParts(r, info, userContent, extractRoleSegments(body).scans(untrustedDetectors()), anthropicTraceID, profile, "input")
 	if scanResult != nil && scanResult.ShouldBlock {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -625,12 +640,20 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if scanResult != nil && (scanResult.Action == security.ActionMask || scanResult.Action == security.ActionTokenize) {
+	// Same per-detector rewrite as ChatCompletions: secrets mask and PII
+	// mask/tokenize each applied as decided (user turns, tool_result
+	// blocks, assistant history; never the top-level system prompt).
+	if scanResult != nil && (scanResult.Action.IsMaskLike() || scanResult.Action == security.ActionTokenize) {
 		var tm *security.TokenMap
 		if scanResult.Action == security.ActionTokenize {
 			tm = security.NewTokenMap(profile.PIITokenStyle)
 		}
-		body, _ = sanitizeInput(body, h.security, scanResult.Action, tm)
+		rewritten, _, ok := applyInputDecisions(body, h.security, profile, scanResult, tm)
+		if !ok {
+			h.writeRewriteUnavailable(w, r, info, anthropicTraceID, "", string(providers.ProviderAnthropic), start, scanResult, body)
+			return
+		}
+		body = rewritten
 		if tm != nil && tm.Size() > 0 {
 			r = r.WithContext(security.WithTokenMap(r.Context(), tm))
 		}
@@ -1413,7 +1436,30 @@ func (h *Handler) runSecurityScan(r *http.Request, info *auth.APIKeyInfo, conten
 }
 
 func (h *Handler) runSecurityScanFrom(r *http.Request, info *auth.APIKeyInfo, content string, traceID uuid.UUID, profile *security.Profile, source string) *security.ScanResult {
-	if h.security == nil || content == "" {
+	return h.runSecurityScanParts(r, info, content, nil, traceID, profile, source)
+}
+
+// runSecurityScanParts scans user content with the full profile
+// pipeline, then each supplementary segment (tool results, replayed
+// assistant history) with its own role and detector subset, and merges
+// the results into one ScanResult under one guardrail span. Requests
+// with no supplementary segments do exactly the work they did before.
+//
+// Supplementary scans pass no session ID: session-aware detectors
+// (Crescendo, rate anomaly) count one turn per request, recorded by the
+// user scan. Overlay plugins run on user content only.
+func (h *Handler) runSecurityScanParts(r *http.Request, info *auth.APIKeyInfo, content string, extra []segmentScan, traceID uuid.UUID, profile *security.Profile, source string) *security.ScanResult {
+	if h.security == nil {
+		return nil
+	}
+	hasExtra := false
+	for _, seg := range extra {
+		if seg.text != "" {
+			hasExtra = true
+			break
+		}
+	}
+	if content == "" && !hasExtra {
 		return nil
 	}
 
@@ -1422,39 +1468,85 @@ func (h *Handler) runSecurityScanFrom(r *http.Request, info *auth.APIKeyInfo, co
 		WithEnv(env).
 		Start()
 
-	result := llmpipeline.PreflightScan(r.Context(), llmpipeline.PreflightOptions{
-		Engine:           h.security,
-		Profile:          profile,
-		Content:          content,
-		CustomerID:       info.CustomerID,
-		EndUserID:        r.Header.Get("X-End-User-Id"),
-		IPAddress:        r.RemoteAddr,
-		UserAgent:        r.UserAgent(),
-		SessionID:        r.Header.Get("X-Bastio-Session-Id"),
-		SkipSanitization: true, // gateway tokenizes per-message itself
-		Output:           source == "response",
-		Role:             security.RoleUser,
-	})
+	var result *security.ScanResult
+	if content != "" {
+		result = llmpipeline.PreflightScan(r.Context(), llmpipeline.PreflightOptions{
+			Engine:           h.security,
+			Profile:          profile,
+			Content:          content,
+			CustomerID:       info.CustomerID,
+			EndUserID:        r.Header.Get("X-End-User-Id"),
+			IPAddress:        r.RemoteAddr,
+			UserAgent:        r.UserAgent(),
+			SessionID:        r.Header.Get("X-Bastio-Session-Id"),
+			SkipSanitization: true, // gateway tokenizes per-message itself
+			Output:           source == "response",
+			Role:             security.RoleUser,
+		})
 
-	// Overlay plugin detectors run after the core scan and fold their
-	// findings into the same ScanResult so the caller's block/warn
-	// logic (status + observability + trace) applies uniformly to core
-	// and plugin-sourced findings. Plugin failures are contained
-	// inside RunOverlayPlugins — never propagate here. If there's no
-	// active overlay or the overlay lists no plugins, this is a no-op.
-	if pluginFindings := security.RunOverlayPlugins(r.Context(), content); len(pluginFindings) > 0 {
-		if result == nil {
-			// Core scan returned nil (edge case: content-shaped early
-			// return further up would have skipped us entirely, so
-			// this only hits for engines that Scan to nil but left
-			// plugins to contribute).
-			result = &security.ScanResult{}
+		// Overlay plugin detectors run after the core scan and fold their
+		// findings into the same ScanResult so the caller's block/warn
+		// logic (status + observability + trace) applies uniformly to core
+		// and plugin-sourced findings. Plugin failures are contained
+		// inside RunOverlayPlugins — never propagate here. If there's no
+		// active overlay or the overlay lists no plugins, this is a no-op.
+		if pluginFindings := security.RunOverlayPlugins(r.Context(), content); len(pluginFindings) > 0 {
+			if result == nil {
+				// Core scan returned nil (edge case: content-shaped early
+				// return further up would have skipped us entirely, so
+				// this only hits for engines that Scan to nil but left
+				// plugins to contribute).
+				result = &security.ScanResult{}
+			}
+			result.Findings = append(result.Findings, pluginFindings...)
+			if security.BlockActionFromFindings(pluginFindings) {
+				result.ShouldBlock = true
+				result.Action = security.ActionBlock
+			}
 		}
-		result.Findings = append(result.Findings, pluginFindings...)
-		if security.BlockActionFromFindings(pluginFindings) {
-			result.ShouldBlock = true
-			result.Action = security.ActionBlock
+	}
+
+	// Indirect injection in tool results and replayed history follows the
+	// profile's tool_injection_strategy (default warn: flag and forward),
+	// not indirect_injection_strategy, which stays strict for workspace
+	// ingest. A false block here breaks the customer's agent.
+	var overrides map[string]security.Action
+	if hasExtra && profile != nil {
+		overrides = map[string]security.Action{"indirect_injection": security.EffectiveToolInjectionStrategy(profile)}
+	}
+	for _, seg := range extra {
+		if seg.text == "" {
+			continue
 		}
+		segResult := llmpipeline.PreflightScan(r.Context(), llmpipeline.PreflightOptions{
+			Engine:            h.security,
+			Profile:           profile,
+			Content:           seg.text,
+			CustomerID:        info.CustomerID,
+			EndUserID:         r.Header.Get("X-End-User-Id"),
+			IPAddress:         r.RemoteAddr,
+			UserAgent:         r.UserAgent(),
+			SkipSanitization:  true,
+			Role:              seg.role,
+			Detectors:         seg.detectors,
+			StrategyOverrides: overrides,
+		})
+		if segResult != nil {
+			// Record which part of the request produced the finding
+			// ("input:tool", "input:assistant_history") so the threat
+			// log separates agent context from what the user typed.
+			for i := range segResult.Findings {
+				if segResult.Findings[i].Source == "" {
+					segResult.Findings[i].Source = source + ":" + seg.role
+				}
+			}
+		}
+		result = mergeScanResults(result, segResult)
+	}
+	if hasExtra && content == "" {
+		// Observability below records the scanned input; with no user
+		// text, show what was actually inspected.
+		content = joinSegmentText(extra)
 	}
 
 	// IP-reputation verdicts are attached to the request context by the
@@ -1770,14 +1862,12 @@ func rewriteMessageContent(ctx context.Context, engine *security.Engine, message
 // send placeholders to); a block request propagates up.
 func processAssistantText(ctx context.Context, engine *security.Engine, text string, tm *security.TokenMap, needScan, needRestore bool) (string, bool, string) {
 	if needScan && engine != nil {
-		scan := engine.Scan(ctx, &security.ScanRequest{
-			Content:   text,
-			PIIAction: security.ActionMask,
-		})
+		scan := scanAssistantText(ctx, engine, text)
 		if scan != nil && scan.ShouldBlock {
-			return text, true, "pii detected in response"
+			return text, true, responseBlockReason(scan)
 		}
-		if scan != nil && scan.SanitizedContent != "" && scan.SanitizedContent != text {
+		rewrote := scan != nil && (scan.Action.IsMaskLike() || scan.Action == security.ActionTokenize)
+		if rewrote && scan.SanitizedContent != "" && scan.SanitizedContent != text {
 			text = scan.SanitizedContent
 		}
 	}
@@ -1788,6 +1878,80 @@ func processAssistantText(ctx context.Context, engine *security.Engine, text str
 		}
 	}
 	return text, false, ""
+}
+
+// scanAssistantText scans one piece of model output with the profile's
+// output pipeline (exfil, secrets, PII when response scanning is on), so
+// output strategies edited in the dashboard or an overlay apply, and
+// tags it RoleAssistant so the rendered-URL exfiltration rules run.
+// Response-side tokenize becomes mask: nobody downstream holds the
+// placeholders. Without a profile on ctx it falls back to the legacy
+// all-detector scan.
+func scanAssistantText(ctx context.Context, engine *security.Engine, text string) *security.ScanResult {
+	profile, ok := security.ProfileFromContext(ctx)
+	if !ok || profile == nil {
+		return engine.Scan(ctx, &security.ScanRequest{Content: text, PIIAction: security.ActionMask})
+	}
+	_, steps := security.StepsFromLegacyProfile(*profile)
+	if len(steps) == 0 {
+		return nil
+	}
+	for i := range steps {
+		if steps[i].Strategy == security.ActionTokenize {
+			steps[i].Strategy = security.ActionMask
+		}
+	}
+	return engine.Scan(ctx, &security.ScanRequest{
+		Content:      text,
+		PIIAction:    security.ActionMask,
+		Steps:        steps,
+		Role:         security.RoleAssistant,
+		Canonicalize: profile.CanonicalizeEnabled,
+		Suppressions: profile.Suppressions,
+		Normalize: normalize.Options{
+			Unicode: profile.NormalizeUnicode,
+			Decode:  profile.NormalizeDecode,
+		},
+	})
+}
+
+// responseBlockReason names what blocked a response for the client error.
+func responseBlockReason(scan *security.ScanResult) string {
+	for _, d := range scan.BlockingDetectors {
+		switch d {
+		case "exfil":
+			return "data exfiltration detected in response"
+		case "secrets":
+			return "secret detected in response"
+		}
+	}
+	return "pii detected in response"
+}
+
+// writeRewriteUnavailable rejects a request whose policy requires a
+// rewrite (mask/tokenize) that no sanitizer can perform, rather than
+// forwarding the text unmodified. Mirrors forwardNativeAPI.
+func (h *Handler) writeRewriteUnavailable(w http.ResponseWriter, r *http.Request, info *auth.APIKeyInfo, traceID uuid.UUID, model, provider string, start time.Time, scan *security.ScanResult, reqBody []byte) {
+	const msg = "security policy requires a rewrite that is unavailable"
+	respBody := []byte(mustJSON(map[string]string{"error": msg, "trace_id": traceID.String()}))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write(respBody)
+	h.recordTrace(r.Context(), recordInput{
+		TraceID:   traceID,
+		Info:      info,
+		Model:     model,
+		Provider:  provider,
+		Path:      r.URL.Path,
+		Start:     start,
+		Status:    "blocked",
+		Scan:      scan,
+		ReqBody:   reqBody,
+		RespBody:  respBody,
+		Headers:   r.Header,
+		IPAddress: r.RemoteAddr,
+		UserAgent: r.UserAgent(),
+	})
 }
 
 // sanitizeOutboundBody covers structured user content and tool results while

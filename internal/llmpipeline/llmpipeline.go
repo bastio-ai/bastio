@@ -58,6 +58,18 @@ type PreflightOptions struct {
 	SkipSanitization bool
 	Output           bool   // inspect responses with output policies and assistant role
 	Role             string // matches ScanRequest.Role; defaults to security.RoleUser
+	// Detectors, when non-empty, keeps only the profile steps whose
+	// detector is listed. Order, strategy and threshold still come from
+	// the profile, so dashboard and overlay edits apply unchanged. Used
+	// for supplementary scans of tool results and replayed history,
+	// where only a subset of the input pipeline is meaningful.
+	Detectors []string
+	// StrategyOverrides replaces the profile strategy of the named
+	// detectors' steps for this scan only. The gateway uses it to apply
+	// the profile's tool_injection_strategy to indirect_injection on
+	// tool results and replayed history, while every other caller
+	// (workspace ingest, tool gating) keeps indirect_injection_strategy.
+	StrategyOverrides map[string]security.Action
 }
 
 // PreflightScan runs the user-message scan exactly the way both
@@ -81,6 +93,17 @@ func PreflightScan(ctx context.Context, opts PreflightOptions) *security.ScanRes
 	if opts.Output {
 		steps = output
 		role = security.RoleAssistant
+	}
+	if len(opts.Detectors) > 0 {
+		steps = filterSteps(steps, opts.Detectors)
+	}
+	if len(opts.StrategyOverrides) > 0 {
+		// steps is freshly built per call, so overriding in place is safe.
+		for i := range steps {
+			if a, ok := opts.StrategyOverrides[steps[i].Detector]; ok && a != "" {
+				steps[i].Strategy = a
+			}
+		}
 	}
 	if len(steps) == 0 {
 		return &security.ScanResult{Action: security.ActionPass}
@@ -107,6 +130,22 @@ func PreflightScan(ctx context.Context, opts PreflightOptions) *security.ScanRes
 		},
 		Role: role,
 	})
+}
+
+// filterSteps keeps the steps whose detector is in allowed, in profile
+// order. The slice from StepsFromLegacyProfile is freshly built per
+// call, so filtering in place is safe.
+func filterSteps(steps []security.Step, allowed []string) []security.Step {
+	out := steps[:0]
+	for _, s := range steps {
+		for _, name := range allowed {
+			if s.Detector == name {
+				out = append(out, s)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // ChatTraceInput collects the per-turn signals the trace + analytics

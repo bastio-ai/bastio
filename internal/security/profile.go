@@ -59,6 +59,12 @@ type Profile struct {
 	SecretsStrategy           Action
 	IndirectInjectionStrategy Action
 	OutputExfilStrategy       Action
+	// ToolInjectionStrategy governs indirect_injection findings on tool
+	// results and replayed assistant turns in gateway requests (roles
+	// tool and assistant_history). Default warn: agent traffic is
+	// flagged, not broken, by detector false positives. Workspace
+	// ingest keeps using IndirectInjectionStrategy. See migration 050.
+	ToolInjectionStrategy Action
 
 	Input  []Step
 	Output []Step
@@ -96,6 +102,7 @@ func DefaultProfile() Profile {
 		SecretsStrategy:           ActionMask,
 		IndirectInjectionStrategy: ActionBlock,
 		OutputExfilStrategy:       ActionBlock,
+		ToolInjectionStrategy:     ActionWarn,
 		Input:                     DefaultInputSteps(),
 		Output:                    DefaultOutputSteps(),
 	}
@@ -148,6 +155,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		secretsStrategy           string
 		indirectInjectionStrategy string
 		outputExfilStrategy       string
+		toolInjectionStrategy     string
 		suppressionsRaw           []byte
 	)
 	err := l.db.QueryRow(ctx, `
@@ -159,6 +167,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 			rate_anomaly_enabled,
 			injection_strategy, jailbreak_strategy, secrets_strategy,
 			indirect_injection_strategy, output_exfil_strategy,
+			tool_injection_strategy,
 			COALESCE((
 				SELECT json_agg(json_build_object('detector', s.detector, 'pattern', s.pattern) ORDER BY s.created_at)
 				FROM security_suppressions s
@@ -177,6 +186,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		&rateAnomalyEnabled,
 		&injectionStrategy, &jailbreakStrategy, &secretsStrategy,
 		&indirectInjectionStrategy, &outputExfilStrategy,
+		&toolInjectionStrategy,
 		&suppressionsRaw,
 	)
 	if err != nil {
@@ -222,6 +232,7 @@ func (l *dbProfileLookup) GetDefault(ctx context.Context, customerID uuid.UUID) 
 		SecretsStrategy:           normalizeStrategy(secretsStrategy, ActionMask),
 		IndirectInjectionStrategy: normalizeStrategy(indirectInjectionStrategy, ActionBlock),
 		OutputExfilStrategy:       normalizeStrategy(outputExfilStrategy, ActionBlock),
+		ToolInjectionStrategy:     normalizeTextThreatStrategy(toolInjectionStrategy, ActionWarn),
 	}
 	// Row predates the step-list columns — synthesize the same pipeline
 	// the flat fields would have produced so the gateway's behavior is
@@ -247,6 +258,27 @@ func normalizeStrategy(s string, fallback Action) Action {
 		return a
 	}
 	return fallback
+}
+
+// EffectiveToolInjectionStrategy is the strategy the gateway applies to
+// indirect_injection on tool results and replayed assistant turns. A
+// profile built in code without the field means the default, warn.
+func EffectiveToolInjectionStrategy(p *Profile) Action {
+	if p == nil || p.ToolInjectionStrategy == "" {
+		return ActionWarn
+	}
+	return p.ToolInjectionStrategy
+}
+
+// normalizeTextThreatStrategy is normalizeStrategy restricted to the
+// text-threat menu (block | warn | log_only): there is nothing to mask
+// in an injection, so a rewrite value falls back like an unknown one.
+func normalizeTextThreatStrategy(s string, fallback Action) Action {
+	a := normalizeStrategy(s, fallback)
+	if !validTextThreatStrategy(string(a)) {
+		return fallback
+	}
+	return a
 }
 
 type profileCtxKey struct{}

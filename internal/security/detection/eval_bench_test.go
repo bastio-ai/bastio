@@ -56,11 +56,21 @@ type evalSample struct {
 // after correcting lifecycle-documentation false positives. Recall floors
 // remain unchanged. The three injection and two jailbreak known gaps remain
 // visible. These scores measure a small curated corpus, not real-world accuracy.
+//
+// 2026-11-09: indirect_injection (scored as role=tool content) and exfil
+// (scored as role=assistant, the live model response, which enables the
+// rendered-URL rules) joined the gate with their own corpus files. Their
+// floors sit below the first observed run (indirect_injection 0.90/1.00
+// with one benign false positive on ben_research_quote_injection and one
+// known gap; exfil 1.00/1.00 with two known gaps); the four floors above
+// them are unchanged.
 var evalFloors = map[string]struct{ precision, recall float64 }{
-	"injection": {precision: 0.91, recall: 0.95},
-	"jailbreak": {precision: 0.85, recall: 0.95},
-	"pii":       {precision: 0.99, recall: 0.95},
-	"secrets":   {precision: 0.99, recall: 0.95},
+	"injection":          {precision: 0.91, recall: 0.95},
+	"jailbreak":          {precision: 0.85, recall: 0.95},
+	"pii":                {precision: 0.99, recall: 0.95},
+	"secrets":            {precision: 0.99, recall: 0.95},
+	"indirect_injection": {precision: 0.85, recall: 0.95},
+	"exfil":              {precision: 0.95, recall: 0.90},
 }
 
 func loadEvalCorpus(t testing.TB) []evalSample {
@@ -99,28 +109,37 @@ func loadEvalCorpus(t testing.TB) []evalSample {
 	return corpus
 }
 
-// evalDetectors constructs the detectors under evaluation with their
-// production default thresholds (mirrors DefaultInputSteps).
-func evalDetectors() []struct {
+type evalDetector struct {
 	name      string
 	det       security.Detector
 	threshold float64
-} {
-	return []struct {
-		name      string
-		det       security.Detector
-		threshold float64
-	}{
-		{"injection", NewInjectionDetector(), 0.72},
-		{"jailbreak", NewJailbreakDetector(), 0.6},
-		{"pii", NewPIIDetector(), 0},
-		{"secrets", NewSecretsDetector(), 0},
+	// role is the message role the gateway tags this detector's input
+	// with; empty means the role-agnostic default.
+	role string
+}
+
+// evalDetectors constructs the detectors under evaluation with their
+// production default thresholds (mirrors DefaultInputSteps and
+// DefaultOutputSteps).
+func evalDetectors() []evalDetector {
+	return []evalDetector{
+		{name: "injection", det: NewInjectionDetector(), threshold: 0.72},
+		{name: "jailbreak", det: NewJailbreakDetector(), threshold: 0.6},
+		{name: "pii", det: NewPIIDetector(), threshold: 0},
+		{name: "secrets", det: NewSecretsDetector(), threshold: 0},
+		{name: "indirect_injection", det: NewIndirectInjectionDetector(), threshold: 0, role: security.RoleTool},
+		{name: "exfil", det: NewExfilDetector(), threshold: 0, role: security.RoleAssistant},
 	}
 }
 
-func detectorFires(t testing.TB, det security.Detector, threshold float64, text string) bool {
+func detectorFires(t testing.TB, d evalDetector, text string) bool {
 	t.Helper()
-	findings, err := det.Detect(context.Background(), text)
+	ctx := context.Background()
+	if d.role != "" {
+		ctx = security.WithRole(ctx, d.role)
+	}
+	det, threshold := d.det, d.threshold
+	findings, err := det.Detect(ctx, text)
 	if err != nil {
 		t.Fatalf("%s detect: %v", det.Name(), err)
 	}
@@ -165,7 +184,7 @@ func TestEvalCorpus(t *testing.T) {
 		results[d.name] = st
 
 		for _, s := range corpus {
-			fired := detectorFires(t, d.det, d.threshold, s.Text)
+			fired := detectorFires(t, d, s.Text)
 			switch {
 			case hasLabel(s, d.name) && s.KnownGap:
 				st.gapsTotal++
@@ -221,9 +240,9 @@ func TestEvalCorpus(t *testing.T) {
 	}
 }
 
-// BenchmarkEvalCorpus measures full-corpus scan time across all four
-// detectors — a coarse guard on the <50ms per-request latency budget
-// (one sample through all detectors must be far below that).
+// BenchmarkEvalCorpus measures full-corpus scan time across all
+// evaluated detectors — a coarse guard on the <50ms per-request latency
+// budget (one sample through all detectors must be far below that).
 func BenchmarkEvalCorpus(b *testing.B) {
 	corpus := loadEvalCorpus(b)
 	dets := evalDetectors()
@@ -231,7 +250,11 @@ func BenchmarkEvalCorpus(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for _, s := range corpus {
 			for _, d := range dets {
-				if _, err := d.det.Detect(context.Background(), s.Text); err != nil {
+				ctx := context.Background()
+				if d.role != "" {
+					ctx = security.WithRole(ctx, d.role)
+				}
+				if _, err := d.det.Detect(ctx, s.Text); err != nil {
 					b.Fatal(err)
 				}
 			}

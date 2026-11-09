@@ -504,7 +504,12 @@ func (e *Engine) SanitizeDecisions(content string, steps []Step, actions map[str
 		if !ok {
 			return content, false
 		}
-		if action == ActionTokenize && !response {
+		// Secrets are never tokenized: a reversible placeholder would let
+		// the response restore path put the secret back. The API and the
+		// migration 007 CHECK reject secrets_strategy=tokenize; this keeps
+		// any other route to that value (overlays, code-built profiles)
+		// from reaching the TokenMap.
+		if action == ActionTokenize && !response && step.Detector != "secrets" {
 			content = sanitizer.TokenizeInto(content, tm)
 		} else {
 			content = sanitizer.Mask(content)
