@@ -179,3 +179,106 @@ export function resolveSnippetModel(
 ): string {
   return configured.trim() || pickSnippetModel(provider, snippetModelIds(listing));
 }
+
+// ── Discovery request parsing + snippet model state (pure, unit-tested) ─────
+
+export type ParsedModelListing =
+  | { ok: true; listing: GatewayModelListing }
+  | { ok: false; status: number; message: string };
+
+function errorText(body: unknown): string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+  const data = body as Record<string, unknown>;
+  const nested = data.error && typeof data.error === "object" ? (data.error as Record<string, unknown>) : null;
+  for (const value of [nested?.message, data.error, data.message, data.reason])
+    if (typeof value === "string" && value.trim()) return value.trim();
+  return "";
+}
+
+/**
+ * Parse a `/v1/proxies/{id}/models` response. Tolerates non-JSON bodies
+ * (proxy error pages), error envelopes sent with 200, and a `data` array in
+ * place of `models`; never throws.
+ */
+export function parseGatewayModelListing(
+  status: number,
+  text: string,
+  expectedProvider: string,
+): ParsedModelListing {
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  const message = errorText(body);
+  if (status < 200 || status >= 300)
+    return {
+      ok: false,
+      status,
+      message: message || (body === null && text.trim().startsWith("<") ? `The server returned an HTML error page (HTTP ${status}).` : `HTTP ${status}`),
+    };
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    return { ok: false, status, message: "The server returned an unreadable model list." };
+  const data = body as Record<string, unknown>;
+  const rawModels = Array.isArray(data.models) ? data.models : Array.isArray(data.data) ? data.data : null;
+  if (!rawModels) return { ok: false, status, message: message || "The server returned no model list." };
+  if (data.provider !== undefined && data.provider !== expectedProvider)
+    return { ok: false, status, message: "The server returned models for a different provider." };
+  const source = data.source === "catalog" ? "catalog" : "provider";
+  const models = rawModels.flatMap((item) => {
+    if (typeof item === "string") return item.trim() ? [{ id: item.trim() }] : [];
+    if (item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string") {
+      const { id, name } = item as { id: string; name?: unknown };
+      return id.trim() ? [{ id: id.trim(), ...(typeof name === "string" && name ? { name } : {}) }] : [];
+    }
+    return [];
+  });
+  return { ok: true, listing: { provider: expectedProvider, source, models } };
+}
+
+type ProxyIdentity = { id: string; target_provider: string; is_active: boolean };
+
+/** Query key: per gateway and provider, so a provider change never reuses a list. */
+export function gatewayModelQueryKey(proxy: Pick<ProxyIdentity, "id" | "target_provider">) {
+  return ["gateway-models", proxy.id, proxy.target_provider] as const;
+}
+
+/** Discovery needs a saved, active gateway. TypeSafe has a fixed model. */
+export function gatewayModelQueryEnabled(proxy: ProxyIdentity) {
+  return proxy.is_active && proxy.id !== "" && proxy.target_provider !== "typesafe";
+}
+
+export type SnippetModelInput = {
+  configured: string;
+  provider: string;
+  listing?: GatewayModelListing | null;
+  discovering: boolean;
+  error?: string | null;
+  /** Model chosen in the picker, if any. */
+  picked?: string | null;
+  /** Free-text model typed when discovery has nothing to offer. */
+  typed?: string;
+};
+
+export type SnippetModelState = {
+  model: string;
+  options: string[];
+  /** "manual": no discovered model — show the warning and a free-text input. */
+  mode: "loading" | "picker" | "configured" | "manual";
+  reason: "error" | "catalog" | "empty" | null;
+};
+
+export function snippetModelState(input: SnippetModelInput): SnippetModelState {
+  const configured = input.configured.trim();
+  const discovered = snippetModelIds(input.listing);
+  const options = configured && !discovered.includes(configured) ? [configured, ...discovered] : discovered;
+  const picked = input.picked && options.includes(input.picked) ? input.picked : "";
+  const resolved = picked || resolveSnippetModel(input.provider, configured, input.listing);
+  if (options.length > 1 || (options.length === 1 && !configured))
+    return { model: resolved, options, mode: "picker", reason: null };
+  if (configured) return { model: configured, options, mode: "configured", reason: null };
+  if (input.discovering) return { model: "", options: [], mode: "loading", reason: null };
+  const reason = input.error ? "error" : input.listing?.source === "catalog" ? "catalog" : "empty";
+  return { model: (input.typed ?? "").trim(), options: [], mode: "manual", reason };
+}

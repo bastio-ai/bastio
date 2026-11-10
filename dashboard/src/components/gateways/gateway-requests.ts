@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import type { Proxy } from "@/api/client";
-import type { GatewayModelListing } from "./gateway-models";
+import {
+  gatewayModelQueryEnabled,
+  gatewayModelQueryKey,
+  parseGatewayModelListing,
+  type GatewayModelListing,
+} from "./gateway-models";
 import {
   buildGatewayTestRequest,
   gatewayBlockReason,
@@ -60,32 +65,48 @@ export async function fetchGatewayModelListing(
       `${dashboardApiOrigin()}/v1/proxies/${encodeURIComponent(proxy.id)}/models`,
       { credentials: "include", cache: "no-store", redirect: "error", signal: linked },
     );
-    const body: unknown = await response.json();
-    if (!response.ok)
-      throw new Error(gatewayTestFailure(response.status, body).detail);
-    const listing = body as Partial<GatewayModelListing>;
-    if (
-      listing.provider !== proxy.target_provider ||
-      !Array.isArray(listing.models) ||
-      (listing.source !== "provider" && listing.source !== "catalog")
-    )
-      throw new Error("The provider returned an unexpected model list.");
-    return listing as GatewayModelListing;
+    const parsed = parseGatewayModelListing(
+      response.status,
+      await response.text(),
+      proxy.target_provider,
+    );
+    if (!parsed.ok) throw new GatewayModelError(parsed.status, parsed.message);
+    return parsed.listing;
   });
+}
+
+/** Discovery failure with the server's own status and message, for display. */
+export class GatewayModelError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** "HTTP 502 · no provider credential configured" — shown in the fallback. */
+export function describeModelError(error: unknown): string | null {
+  if (!error) return null;
+  if (error instanceof GatewayModelError) return `HTTP ${error.status} · ${error.message}`;
+  if (error instanceof GatewayTimeoutError) return "Model discovery timed out.";
+  return error instanceof Error && error.message ? error.message : "Model discovery failed.";
 }
 
 /**
  * Cached model discovery for one gateway. Shared query key so the snippet,
- * picker and panel reuse one provider call; no retries (each is a live
- * provider request).
+ * picker and panel reuse one provider call. Successful lists stay fresh for
+ * 5 minutes; failures are never treated as fresh (staleTime applies to data
+ * only) and are refetched whenever a new view mounts. Provider-key changes
+ * invalidate the whole ["gateway-models"] prefix (use-gateway-actions).
  */
 export function useGatewayModelListing(proxy: Proxy) {
   return useQuery({
-    queryKey: ["gateway-models", proxy.id, proxy.target_provider],
+    queryKey: gatewayModelQueryKey(proxy),
     queryFn: ({ signal }) => fetchGatewayModelListing(proxy, signal),
-    enabled: proxy.is_active,
+    enabled: gatewayModelQueryEnabled(proxy),
     staleTime: 5 * 60_000,
     retry: false,
+    retryOnMount: true,
     refetchOnWindowFocus: false,
   });
 }
