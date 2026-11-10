@@ -70,6 +70,9 @@ type PreflightOptions struct {
 	// tool results and replayed history, while every other caller
 	// (workspace ingest, tool gating) keeps indirect_injection_strategy.
 	StrategyOverrides map[string]security.Action
+	// MaskEncodedPayloads forwards ScanRequest.MaskEncodedPayloads: the
+	// gateway request path, which rewrites outbound fields itself, opts in.
+	MaskEncodedPayloads bool
 }
 
 // PreflightScan runs the user-message scan exactly the way both
@@ -128,7 +131,8 @@ func PreflightScan(ctx context.Context, opts PreflightOptions) *security.ScanRes
 			Unicode: opts.Profile.NormalizeUnicode,
 			Decode:  opts.Profile.NormalizeDecode,
 		},
-		Role: role,
+		Role:                role,
+		MaskEncodedPayloads: opts.MaskEncodedPayloads,
 	})
 }
 

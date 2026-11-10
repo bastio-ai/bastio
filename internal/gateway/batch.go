@@ -91,7 +91,7 @@ func (h *Handler) handleBatchAPI(w http.ResponseWriter, r *http.Request, provide
 	path = normalizeBatchPath(path)
 	info, ok := auth.FromContext(r.Context())
 	if !ok {
-		writeRouteError(w, &routeError{401, "unauthorized"})
+		writeRouteError(w, &routeError{status: 401, message: "unauthorized"})
 		return true
 	}
 	route, err := h.nativeRoute(r, info, provider, "")
@@ -100,22 +100,22 @@ func (h *Handler) handleBatchAPI(w http.ResponseWriter, r *http.Request, provide
 		return true
 	}
 	if !isBatchEndpoint(route.provider, path) {
-		writeRouteError(w, &routeError{400, "batch API requires an explicit OpenAI, Anthropic or Google provider"})
+		writeRouteError(w, &routeError{status: 400, message: "batch API requires an explicit OpenAI, Anthropic or Google provider"})
 		return true
 	}
 	if h.batchStore == nil {
-		writeRouteError(w, &routeError{503, "durable encrypted batch storage is not configured"})
+		writeRouteError(w, &routeError{status: 503, message: "durable encrypted batch storage is not configured"})
 		return true
 	}
 	select {
 	case h.batchGate <- struct{}{}:
 		defer func() { <-h.batchGate }()
 	default:
-		writeRouteError(w, &routeError{429, "batch inspection capacity is busy; retry later"})
+		writeRouteError(w, &routeError{status: 429, message: "batch inspection capacity is busy; retry later"})
 		return true
 	}
 	if route.key == "" {
-		writeRouteError(w, &routeError{502, "no provider credential configured"})
+		writeRouteError(w, &routeError{status: 502, message: "no provider credential configured"})
 		return true
 	}
 	client, err := h.providers.Native(route.provider)
@@ -158,7 +158,7 @@ func (h *Handler) handleBatchAPI(w http.ResponseWriter, r *http.Request, provide
 		}
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			err = &routeError{413, "batch request exceeds upload limit"}
+			err = &routeError{status: 413, message: "batch request exceeds upload limit"}
 			b.status = 413
 		}
 		writeRouteError(w, err)
@@ -183,7 +183,7 @@ func (b *batchCall) get(kind, id string) (batchResource, error) {
 	var resource batchResource
 	rec, err := b.h.batchStore.Get(b.r.Context(), b.key(kind, id))
 	if errors.Is(err, batchstate.ErrMissing) {
-		return resource, &routeError{404, "batch resource not found in this tenant, gateway and provider credential scope; upload and create batches through this gateway"}
+		return resource, &routeError{status: 404, message: "batch resource not found in this tenant, gateway and provider credential scope; upload and create batches through this gateway"}
 	}
 	if err != nil {
 		return resource, err
@@ -211,13 +211,13 @@ func readBatchJSON(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(raw)) > limit {
-		return nil, &routeError{413, "batch JSON exceeds supported size"}
+		return nil, &routeError{status: 413, message: "batch JSON exceeds supported size"}
 	}
 	if !json.Valid(raw) {
 		if len(bytes.TrimSpace(raw)) == 0 {
 			return nil, nil
 		}
-		return nil, &routeError{400, "invalid batch JSON"}
+		return nil, &routeError{status: 400, message: "invalid batch JSON"}
 	}
 	return raw, nil
 }
@@ -298,7 +298,7 @@ func (b *batchCall) serve(w http.ResponseWriter, path string) error {
 	}
 	out, err := readBatchJSON(resp.Body, batchJSONLimit)
 	if err != nil {
-		return &routeError{502, "invalid or oversized provider batch response"}
+		return &routeError{status: 502, message: "invalid or oversized provider batch response"}
 	}
 	if len(out) == 0 && (resp.StatusCode == http.StatusNoContent || b.r.Method == http.MethodDelete) {
 		if id, kind := batchResourcePath(b.route.provider, path); id != "" {
@@ -313,18 +313,18 @@ func (b *batchCall) serve(w http.ResponseWriter, path string) error {
 	}
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(out, &obj) != nil || obj == nil {
-		return &routeError{502, "invalid provider batch object"}
+		return &routeError{status: 502, message: "invalid provider batch object"}
 	}
 	if create {
 		id := batchString(obj, "id", "name")
 		if id == "" {
-			return &routeError{502, "provider returned no batch identifier"}
+			return &routeError{status: 502, message: "provider returned no batch identifier"}
 		}
 		resource.Job = id
 		resource.Role = "job"
 		if err = b.put("job", id, resource); err != nil {
 			w.Header().Set("X-Should-Retry", "false")
-			return &routeError{503, "provider accepted batch " + id + " but gateway registration failed; do not resubmit; contact your administrator"}
+			return &routeError{status: 503, message: "provider accepted batch " + id + " but gateway registration failed; do not resubmit; contact your administrator"}
 		}
 		b.tags["batch.job_id"] = id
 	}
@@ -461,7 +461,7 @@ func (b *batchCall) prepareCreate(path string, raw []byte) ([]byte, batchResourc
 	resource := batchResource{Manifest: b.newManifest()}
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(raw, &obj) != nil || obj == nil {
-		return nil, resource, &routeError{400, "invalid batch object"}
+		return nil, resource, &routeError{status: 400, message: "invalid batch object"}
 	}
 	if b.route.provider == providers.ProviderOpenAI {
 		file := batchString(obj, "input_file_id")
@@ -470,16 +470,16 @@ func (b *batchCall) prepareCreate(path string, raw []byte) ([]byte, batchResourc
 			return nil, resource, err
 		}
 		if known.Role != "input" {
-			return nil, resource, &routeError{400, "batch input must be a JSONL file uploaded with purpose=batch"}
+			return nil, resource, &routeError{status: 400, message: "batch input must be a JSONL file uploaded with purpose=batch"}
 		}
 		if known.Manifest.Policy != b.inputPolicyFingerprint() {
-			return nil, resource, &routeError{428, "batch input was inspected under a different security policy; upload the input file again before submitting this batch"}
+			return nil, resource, &routeError{status: 428, message: "batch input was inspected under a different security policy; upload the input file again before submitting this batch"}
 		}
 		resource.Manifest = known.Manifest
 		resource.Manifest.TraceID = b.trace.String()
 		endpoint := batchString(obj, "endpoint")
 		if resource.Manifest.Endpoint != endpoint {
-			return nil, resource, &routeError{400, "batch endpoint does not match uploaded JSONL requests"}
+			return nil, resource, &routeError{status: 400, message: "batch endpoint does not match uploaded JSONL requests"}
 		}
 		return raw, resource, nil
 	}
@@ -488,13 +488,13 @@ func (b *batchCall) prepareCreate(path string, raw []byte) ([]byte, batchResourc
 	}
 	var items []map[string]json.RawMessage
 	if json.Unmarshal(obj["requests"], &items) != nil || len(items) == 0 || len(items) > batchItemLimit {
-		return nil, resource, &routeError{400, "batch requests must contain 1 to 100000 items"}
+		return nil, resource, &routeError{status: 400, message: "batch requests must contain 1 to 100000 items"}
 	}
 	seen := map[string]bool{}
 	for i, item := range items {
 		id := batchString(item, "custom_id")
 		if id == "" || len(id) > 256 || seen[id] {
-			return nil, resource, &routeError{400, "batch custom_id values must be unique, nonempty and at most 256 bytes"}
+			return nil, resource, &routeError{status: 400, message: "batch custom_id values must be unique, nonempty and at most 256 bytes"}
 		}
 		seen[id] = true
 		params := item["params"]
@@ -516,13 +516,13 @@ func (b *batchCall) inputItem(raw []byte, key string, manifest *batchManifest) (
 	}
 	var requestObject map[string]json.RawMessage
 	if json.Unmarshal(raw, &requestObject) != nil || requestObject == nil {
-		return nil, &routeError{400, "invalid batch request item"}
+		return nil, &routeError{status: 400, message: "invalid batch request item"}
 	}
 	if rejected, allowed := validateImageContent(raw, b.h.imageURLAllowlist); !allowed {
-		return nil, &routeError{403, "image URL is outside trusted hosts: " + rejected}
+		return nil, &routeError{status: 403, message: "image URL is outside trusted hosts: " + rejected}
 	}
 	if len(manifest.Keys) >= batchItemLimit {
-		return nil, &routeError{413, "batch exceeds item limit"}
+		return nil, &routeError{status: 413, message: "batch exceeds item limit"}
 	}
 	manifest.Keys = append(manifest.Keys, key)
 	var model struct {
@@ -539,7 +539,10 @@ func (b *batchCall) inputItem(raw []byte, key string, manifest *batchManifest) (
 	scan := b.h.runSecurityScanParts(b.r, b.info, userText, segments, b.trace, b.profile, "input")
 	b.addScan(scan)
 	if scan != nil && scan.ShouldBlock && !gatewaypolicy.From(b.r.Context()).MonitorOnly {
-		return nil, &routeError{403, "batch input withheld by security policy; item=" + key[:12]}
+		if scan.RewriteUnavailable {
+			return nil, &routeError{status: 403, message: "batch input withheld by security policy: content could not be safely masked; item=" + key[:12], code: codeRewriteUnavailable}
+		}
+		return nil, &routeError{status: 403, message: "batch input withheld by security policy; item=" + key[:12]}
 	}
 	if scan == nil || gatewaypolicy.From(b.r.Context()).MonitorOnly || (scan.Action != security.ActionTokenize && !scan.Action.IsMaskLike()) {
 		return raw, nil
@@ -554,10 +557,10 @@ func (b *batchCall) inputItem(raw []byte, key string, manifest *batchManifest) (
 	}
 	out, _ := batchMapInput(raw, b.route.provider, transform)
 	if !available {
-		return nil, &routeError{403, "batch input requires a security rewrite that is unavailable"}
+		return nil, &routeError{status: 403, message: "batch input requires a security rewrite that is unavailable: content could not be safely masked", code: codeRewriteUnavailable}
 	}
 	if batchChangesSigned(raw, out) {
-		return nil, &routeError{403, "security policy cannot rewrite signed thinking content in batch input"}
+		return nil, &routeError{status: 403, message: "security policy cannot rewrite signed thinking content in batch input"}
 	}
 	if tm.Size() > 0 {
 		if err := b.h.batchStore.SaveTokens(b.r.Context(), b.key("tokens", manifest.ID+"/"+key), tm); err != nil {
@@ -596,7 +599,7 @@ func (b *batchCall) outputItem(raw []byte, key string, resource batchResource) (
 	b.addScan(scan)
 	monitor := gatewaypolicy.From(b.r.Context()).MonitorOnly
 	if scan != nil && scan.ShouldBlock && !monitor {
-		return nil, &routeError{403, "batch result withheld by current security policy; job=" + resource.Job + " item=" + key[:12]}
+		return nil, &routeError{status: 403, message: "batch result withheld by current security policy; job=" + resource.Job + " item=" + key[:12]}
 	}
 	out := raw
 	if !monitor {
@@ -622,7 +625,7 @@ func (b *batchCall) outputItem(raw []byte, key string, resource batchResource) (
 				var ok bool
 				s, ok = b.h.security.SanitizeDecisions(s, steps, scan.DetectorActions, nil, true)
 				if !ok {
-					err = &routeError{403, "batch result requires a security rewrite that is unavailable"}
+					err = &routeError{status: 403, message: "batch result requires a security rewrite that is unavailable"}
 				}
 			}
 			return s
@@ -631,7 +634,7 @@ func (b *batchCall) outputItem(raw []byte, key string, resource batchResource) (
 			return nil, err
 		}
 		if batchChangesSigned(raw, out) {
-			return nil, &routeError{403, "security policy cannot rewrite signed thinking content in batch result"}
+			return nil, &routeError{status: 403, message: "security policy cannot rewrite signed thinking content in batch result"}
 		}
 		if tm != nil {
 			out, _ = mapBatchOutputMode(out, b.route.provider, func(s string) string { next, _ := tm.Restore(s); return next }, true)
@@ -659,7 +662,7 @@ func (b *batchCall) outputItem(raw []byte, key string, resource batchResource) (
 func (b *batchCall) storedInputItem(line []byte) ([]byte, error) {
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(line, &obj) != nil || obj == nil {
-		return nil, &routeError{502, "invalid provider input file"}
+		return nil, &routeError{status: 502, message: "invalid provider input file"}
 	}
 	field := "body"
 	if b.route.provider == providers.ProviderGemini {
@@ -681,7 +684,7 @@ func (b *batchCall) storedInput(raw []byte) ([]byte, error) {
 		return raw, nil
 	}
 	if scan.ShouldBlock {
-		return nil, &routeError{403, "stored batch input withheld by current output policy"}
+		return nil, &routeError{status: 403, message: "stored batch input withheld by current output policy"}
 	}
 	_, steps := security.StepsFromLegacyProfile(*b.profile)
 	available := true
@@ -691,7 +694,7 @@ func (b *batchCall) storedInput(raw []byte) ([]byte, error) {
 		return s
 	})
 	if !available || batchChangesSigned(raw, next) {
-		return nil, &routeError{403, "stored batch input cannot be safely rewritten"}
+		return nil, &routeError{status: 403, message: "stored batch input cannot be safely rewritten"}
 	}
 	return next, nil
 }

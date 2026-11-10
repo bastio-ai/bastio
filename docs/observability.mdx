@@ -188,8 +188,9 @@ FROM traces
 GROUP BY customer_id, day, model;
 ```
 
-Now the daily-cost query above runs in ~10ms instead of seconds
-on a multi-million-row table.
+Now the daily-cost query above reads the pre-aggregated rollup
+instead of scanning the raw table, which is much faster on large
+tables.
 
 ## Retention
 

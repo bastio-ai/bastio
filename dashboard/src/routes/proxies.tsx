@@ -137,7 +137,9 @@ export function ProxiesPage() {
             </div>
             <Button
               className="cursor-pointer"
-              onClick={() => actions.openProviderDialog("openai")}
+              onClick={() => actions.openProviderDialog("openai", {
+                thenCreateGateway: proxies.data?.length === 0,
+              })}
               disabled={extension.providerKeyManagement !== "allowed"}
             >
               <Plus /> Add provider key
@@ -167,7 +169,9 @@ export function ProxiesPage() {
               action={
                 <Button
                   disabled={extension.providerKeyManagement !== "allowed"}
-                  onClick={() => actions.openProviderDialog("openai")}
+                  onClick={() => actions.openProviderDialog("openai", {
+                thenCreateGateway: proxies.data?.length === 0,
+              })}
                 >
                   Add first provider key
                 </Button>

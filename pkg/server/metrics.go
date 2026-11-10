@@ -37,6 +37,12 @@ var newMetricsOnce = sync.OnceValue(func() *metricsInstance {
 			Name:      "requests_in_flight",
 			Help:      "In-flight HTTP requests.",
 		}),
+		responseScanSkipped: promauto.NewCounter(prometheus.CounterOpts{
+			Namespace: "bastio",
+			Subsystem: "gateway",
+			Name:      "response_scan_skipped_total",
+			Help:      "After-stream response scans of pass-through streams skipped because every scan slot was busy.",
+		}),
 	}
 
 	// Go runtime and process collectors are already registered on the
@@ -48,6 +54,7 @@ type metricsInstance struct {
 	requestsTotal          *prometheus.CounterVec
 	requestDurationSeconds *prometheus.HistogramVec
 	inFlight               prometheus.Gauge
+	responseScanSkipped    prometheus.Counter
 }
 
 // Middleware records request counts, latencies, and in-flight gauge for

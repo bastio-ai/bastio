@@ -43,7 +43,7 @@ func (b *batchCall) inspect(raw []byte, response bool) ([]byte, error) {
 	})
 	middleware(next).ServeHTTP(captured, r)
 	if captured.status >= 400 {
-		return nil, &routeError{captured.status, "batch item withheld by extended security policy"}
+		return nil, &routeError{status: captured.status, message: "batch item withheld by extended security policy"}
 	}
 	if readErr != nil {
 		return nil, readErr

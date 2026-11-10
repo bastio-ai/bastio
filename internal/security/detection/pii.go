@@ -189,6 +189,22 @@ func (d *PIIDetector) Mask(content string) string {
 	return result
 }
 
+// RewriteSpans implements security.SpanSanitizer: the byte ranges Mask
+// replaces in content, with the mask Mask writes there.
+func (d *PIIDetector) RewriteSpans(_ context.Context, content string) []security.RewriteSpan {
+	var spans []security.RewriteSpan
+	for _, p := range d.patterns {
+		for _, m := range p.matches(content) {
+			replacement := "[REDACTED]"
+			if p.maskFn != nil {
+				replacement = p.maskFn(content[m[0]:m[1]])
+			}
+			spans = append(spans, security.RewriteSpan{Start: m[0], End: m[1], Replacement: replacement})
+		}
+	}
+	return spans
+}
+
 // Redact is a deprecated alias for Mask kept for back-compat with
 // existing call sites and tests. Prefer Mask in new code.
 func (d *PIIDetector) Redact(content string) string { return d.Mask(content) }

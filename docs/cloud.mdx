@@ -21,7 +21,7 @@ fork.
 | Auth | Email + password, Google OAuth, RBAC | None — network-level access only |
 | Tenancy | Multi-workspace, invitations, workspace roles | Single-tenant |
 | Billing | Per-seat Stripe subscription + customer portal | N/A |
-| Detection | **Bastio AI Security Suite** — Privacy Filter (Presidio), Prompt Guard (DeBERTa-v3), Threat Vector (pgvector similarity), Injection Semantic, Session Risk Score | Regex + entropy detectors (~95% of everyday cases) |
+| Detection | **Bastio AI Security Suite** — Privacy Filter (Presidio), Prompt Guard (DeBERTa-v3), Threat Vector (pgvector similarity), Injection Semantic, Session Risk Score | Regex + entropy detectors for common, well-known patterns |
 | Performance | **Bastio Response Cache** — identical-prompt dedup, per-tenant TTL, streaming-safe, tool-call aware | None |
 | Operations | Audit log, webhooks, branded chat, browser extension MDM bundles | None |
 | Workspace | Employee-facing chat at `workspace.bastio.com` (or custom domain) | None |
@@ -61,7 +61,7 @@ OSS covers the common case:
 
 - One team, one set of API keys, network-level access control.
 - Regex + entropy detection for PII, secrets, code, jailbreak, and
-  injection. Catches ~95% of everyday cases.
+  injection, covering common, well-known patterns.
 - Self-host on Docker Compose or your own Helm chart.
 - Full trace + threat-event capture in PostgreSQL + ClickHouse, with
   the same dashboard the Cloud product uses.

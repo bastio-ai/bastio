@@ -98,16 +98,31 @@ func stripInvisible(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		switch r {
-		case 0x200B, 0x200C, 0x200D, // zero-width space, non-joiner, joiner
-			0x200E, 0x200F, // LTR/RTL mark
-			0x202A, 0x202B, 0x202C, 0x202D, 0x202E, // LTR/RTL embedding/override
-			0x2060, 0xFEFF, 0x180E, 0x00AD: // word joiner, BOM, Mongolian vowel separator, soft hyphen
+		if isCanonicalInvisible(r) {
 			continue
 		}
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+func isCanonicalInvisible(r rune) bool {
+	switch r {
+	case 0x200B, 0x200C, 0x200D, // zero-width space, non-joiner, joiner
+		0x200E, 0x200F, // LTR/RTL mark
+		0x202A, 0x202B, 0x202C, 0x202D, 0x202E, // LTR/RTL embedding/override
+		0x2060, 0xFEFF, 0x180E, 0x00AD: // word joiner, BOM, Mongolian vowel separator, soft hyphen
+		return true
+	}
+	return false
+}
+
+// canonicalUnicode applies the per-character stages of Canonicalize
+// (NFKC, invisible stripping, homoglyph folding) without the decoded
+// payload suffix: the part of the canonical view that maps back onto
+// the original text (see mapCanonical).
+func canonicalUnicode(s string) string {
+	return foldHomoglyphs(stripInvisible(norm.NFKC.String(s)))
 }
 
 // homoglyphMap is deliberately small — only the characters attackers

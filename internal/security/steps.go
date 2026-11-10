@@ -47,16 +47,37 @@ type Step struct {
 // request) means "fired=false at score 0.74" immediately explains
 // itself: the trace shows "score 0.74 / threshold 0.80".
 type StepResult struct {
-	Detector  string        `json:"detector"`
-	Strategy  Action        `json:"strategy"`
-	Fired     bool          `json:"fired"`
-	Skipped   bool          `json:"skipped,omitempty"`
-	Action    Action        `json:"action"`    // effective action after threshold + strategy
-	Score     float64       `json:"score"`     // max weighted score across findings
-	Threshold float64       `json:"threshold"` // step threshold this result was compared against
-	Findings  []Finding     `json:"findings,omitempty"`
-	Duration  time.Duration `json:"duration"`
+	Detector  string    `json:"detector"`
+	Strategy  Action    `json:"strategy"`
+	Fired     bool      `json:"fired"`
+	Skipped   bool      `json:"skipped,omitempty"`
+	Action    Action    `json:"action"`    // effective action after threshold + strategy
+	Score     float64   `json:"score"`     // max weighted score across findings
+	Threshold float64   `json:"threshold"` // step threshold this result was compared against
+	Findings  []Finding `json:"findings,omitempty"`
+	// RewriteUnverified marks a mask/redact/tokenize step whose rewrite
+	// could not be verified on the canonical text (an obfuscated match the
+	// sanitizer could not remove). Action is then block, but the tenant
+	// configured a rewrite: the content was withheld because it could not
+	// be safely rewritten, not because policy blocks it.
+	RewriteUnverified bool `json:"rewrite_unverified,omitempty"`
+	// Reason explains a step whose recorded action differs from its
+	// strategy or whose rewrite needed the canonical-text fallback (see the
+	// reason* constants). Empty for ordinary steps.
+	Reason   string        `json:"reason,omitempty"`
+	Duration time.Duration `json:"duration"`
 }
+
+// Step reasons recorded when a rewrite needed more than the sanitizer's
+// own pass. They describe what happened truthfully: the tenant configured
+// a rewrite, not a block.
+const (
+	reasonUnverifiable     = "the value could not be safely masked, so the content was withheld"
+	reasonEncodedWithheld  = "the value was found only inside an encoded payload that could not be masked, so the content was withheld"
+	reasonEncodedForwarded = "the value was found only inside an encoded payload that could not be masked; it was forwarded unmasked"
+	reasonEncodedMasked    = "the value was found inside an encoded payload; the whole payload was replaced"
+	reasonMaskFallback     = "an obfuscated value could not be tokenized reversibly; it was masked one-way instead"
+)
 
 // StepsResult aggregates RunSteps output. Action is the terminal action
 // — block short-circuits; otherwise the strongest rewrite wins (tokenize
@@ -69,6 +90,13 @@ type StepsResult struct {
 	ShouldBlock      bool         `json:"should_block"`
 	SanitizedContent string       `json:"sanitized_content,omitempty"`
 	TokenMap         *TokenMap    `json:"-"`
+	// Unapplied lists detectors whose rewrite step fired without a
+	// sanitizer to perform it (ScanResult.UnappliedRewrites).
+	Unapplied []string `json:"unapplied,omitempty"`
+	// RewriteUnavailable is set when the run blocked because a rewrite
+	// step's result could not be verified (StepResult.RewriteUnverified);
+	// surfaced as ScanResult.RewriteUnavailable.
+	RewriteUnavailable bool `json:"rewrite_unavailable,omitempty"`
 	// Transforms applied by the canonicalization stage (e.g.
 	// "base64-decoded", "fold-homoglyphs"). Empty when canonicalization
 	// was disabled or produced no changes.
@@ -138,6 +166,59 @@ func (e *Engine) RunSteps(ctx context.Context, content string, steps []Step, opt
 	}
 
 	current := content
+	canonicalize := opts != nil && opts.Canonicalize
+	var suppressions []PatternSuppression
+	if opts != nil {
+		suppressions = opts.Suppressions
+	}
+
+	// blockFrom ends the run with a block at step idx, reporting the
+	// remaining configured steps as skipped.
+	blockFrom := func(idx int, out StepResult, stepStart time.Time) *StepsResult {
+		out.Action = ActionBlock
+		res.Action = ActionBlock
+		res.ShouldBlock = true
+		out.Duration = time.Since(stepStart)
+		res.Steps = append(res.Steps, out)
+		// Surface the remaining configured steps as skipped so the
+		// playground can render the whole intended pipeline. We do
+		// NOT execute them — matching production semantics where a
+		// blocked request never touches downstream detectors.
+		for _, remaining := range steps[idx+1:] {
+			res.Steps = append(res.Steps, StepResult{
+				Detector:  remaining.Detector,
+				Strategy:  remaining.Strategy,
+				Threshold: remaining.Threshold,
+				Skipped:   true,
+				Action:    ActionPass,
+			})
+		}
+		res.Duration = time.Since(start)
+		return res
+	}
+
+	// verified checks a rewrite the step just made against the canonical
+	// view (rewrite_verify.go). It costs nothing when canonicalization
+	// changed neither the visible text nor appended a decoded payload: the
+	// sanitizer then saw exactly what the detector saw. It returns the text
+	// to keep, the next detect target and the verification outcome.
+	verified := func(det Detector, step Step, findings []Finding, before, matched, rewritten string, tokenize bool) (string, string, verifyOutcome) {
+		if !canonicalize {
+			return rewritten, rewritten, outcomeApplied
+		}
+		if matched == before {
+			return rewritten, Canonicalize(rewritten).Canonical, outcomeApplied
+		}
+		check := rewriteCheck{
+			det:          det,
+			threshold:    step.Threshold,
+			classes:      findingClasses(findings),
+			suppressions: suppressions,
+			view:         viewCanonical,
+		}
+		kept, outcome := check.verify(ctx, rewritten, canonicalUnicode(before) != before, tokenize)
+		return kept, Canonicalize(kept).Canonical, outcome
+	}
 
 	for idx, step := range steps {
 		stepStart := time.Now()
@@ -185,36 +266,76 @@ func (e *Engine) RunSteps(ctx context.Context, content string, steps []Step, opt
 
 		out.Fired = true
 
+		// unapplied fails a rewrite the engine could not verify: the
+		// response side lists it in Unapplied (the gateway's existing
+		// fallback blocks), and both sides block here so no caller
+		// forwards text that still carries what the step had to remove.
+		// The tenant configured a rewrite, so the reason says so.
+		unapplied := func(reason string) *StepsResult {
+			if opts != nil && opts.Role == RoleAssistant {
+				res.Unapplied = append(res.Unapplied, step.Detector)
+			}
+			out.RewriteUnverified = true
+			out.Reason = reason
+			res.RewriteUnavailable = true
+			return blockFrom(idx, out, stepStart)
+		}
+		// settle records what a verified rewrite actually did. ok=false
+		// means the run must end (returned result is final).
+		settle := func(configured Action, before string, outcome verifyOutcome) (*StepsResult, bool) {
+			switch outcome {
+			case outcomeUnverifiable:
+				return unapplied(reasonUnverifiable), false
+			case outcomeEncodedUnmasked:
+				if failsClosedWhenEncoded(step.Detector, opts != nil && opts.Role == RoleAssistant) {
+					return unapplied(reasonEncodedWithheld), false
+				}
+				out.Reason = reasonEncodedForwarded
+				if current == before {
+					// Nothing was masked: never record mask for it.
+					out.Action = ActionWarn
+					elevate(res, ActionWarn)
+					return nil, true
+				}
+			case outcomeEncodedMasked:
+				out.Reason = reasonEncodedMasked
+				if configured == ActionTokenize {
+					configured = ActionMask
+				}
+			case outcomeMaskFallback:
+				out.Reason = reasonMaskFallback
+				configured = ActionMask
+			}
+			out.Action = configured
+			elevate(res, configured)
+			return nil, true
+		}
+
 		switch step.Strategy {
 		case ActionBlock:
-			out.Action = ActionBlock
-			res.Action = ActionBlock
-			res.ShouldBlock = true
-			out.Duration = time.Since(stepStart)
-			res.Steps = append(res.Steps, out)
-			// Surface the remaining configured steps as skipped so the
-			// playground can render the whole intended pipeline. We do
-			// NOT execute them — matching production semantics where a
-			// blocked request never touches downstream detectors.
-			for _, remaining := range steps[idx+1:] {
-				res.Steps = append(res.Steps, StepResult{
-					Detector:  remaining.Detector,
-					Strategy:  remaining.Strategy,
-					Threshold: remaining.Threshold,
-					Skipped:   true,
-					Action:    ActionPass,
-				})
-			}
-			res.Duration = time.Since(start)
-			return res
+			return blockFrom(idx, out, stepStart)
 
 		case ActionMask, ActionRedact:
 			out.Action = ActionMask
-			if s, ok := det.(Sanitizer); ok {
-				current = s.Mask(current)
-				detectTarget = current
+			before, matched := current, detectTarget
+			var sanitized string
+			rewrote := true
+			if s, ok := det.(ContextSanitizer); ok {
+				sanitized = s.MaskContext(ctx, current)
+			} else if s, ok := det.(Sanitizer); ok {
+				sanitized = s.Mask(current)
+			} else {
+				rewrote = false
+				res.Unapplied = append(res.Unapplied, step.Detector)
+				elevate(res, ActionMask)
 			}
-			elevate(res, ActionMask)
+			if rewrote {
+				var outcome verifyOutcome
+				current, detectTarget, outcome = verified(det, step, findings, before, matched, sanitized, false)
+				if final, ok := settle(ActionMask, before, outcome); !ok {
+					return final
+				}
+			}
 
 		case ActionTokenize:
 			out.Action = ActionTokenize
@@ -222,10 +343,21 @@ func (e *Engine) RunSteps(ctx context.Context, content string, steps []Step, opt
 				if res.TokenMap == nil {
 					res.TokenMap = NewTokenMap(TokenStyleAngle)
 				}
-				current = s.TokenizeInto(current, res.TokenMap)
-				detectTarget = current
+				before, matched := current, detectTarget
+				tokenized := s.TokenizeInto(current, res.TokenMap)
+				// An obfuscated value the tokenizer missed is masked one-way
+				// at its located span (outcomeMaskFallback, recorded as
+				// mask): a placeholder for the canonical form would restore
+				// text the user never sent.
+				var outcome verifyOutcome
+				current, detectTarget, outcome = verified(det, step, findings, before, matched, tokenized, true)
+				if final, ok := settle(ActionTokenize, before, outcome); !ok {
+					return final
+				}
+			} else {
+				res.Unapplied = append(res.Unapplied, step.Detector)
+				elevate(res, ActionTokenize)
 			}
-			elevate(res, ActionTokenize)
 
 		case ActionWarn:
 			out.Action = ActionWarn

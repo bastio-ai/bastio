@@ -182,6 +182,25 @@ func runUnicodePass(r Result) Result {
 	return r
 }
 
+// The predicates below expose the Unicode pass per character so callers
+// can rebuild it with an offset map (canonical index → original bytes).
+
+// IsInvisible reports whether the Unicode pass strips c.
+func IsInvisible(c rune) bool { return isInvisible(c) }
+
+// FoldRune returns the ASCII twin the Unicode pass folds c to.
+func FoldRune(c rune) (rune, bool) {
+	r, ok := homoglyphs[c]
+	return r, ok
+}
+
+// IsCollapsibleSpace reports whether the Unicode pass treats c as
+// whitespace (runs collapse to one ASCII space).
+func IsCollapsibleSpace(c rune) bool {
+	_, ok := spaceRunes[c]
+	return ok
+}
+
 func stripInvisibles(text string) (string, bool) {
 	var b strings.Builder
 	b.Grow(len(text))

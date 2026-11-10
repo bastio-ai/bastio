@@ -306,8 +306,9 @@ func buildThreatsQuery(customerID string, q url.Values) (sql string, args []any)
 	}
 
 	if environment := q.Get("environment"); environment != "" {
-		b.WriteString(" AND trace_id IN (SELECT id FROM bastio.analytics_request_logs WHERE customer_id = toUUID(?) AND environment = ?)")
-		args = append(args, customerID, environment)
+		clause, envArgs := threatEnvironmentClause(customerID, environment)
+		b.WriteString(clause)
+		args = append(args, envArgs...)
 	}
 
 	if v := q.Get("from"); v != "" {
@@ -340,6 +341,19 @@ func buildThreatsQuery(customerID string, q url.Values) (sql string, args []any)
 	args = append(args, limit, offset)
 
 	return b.String(), args
+}
+
+// threatEnvironmentClause returns the predicate that scopes
+// security_threat_logs rows to one environment. security_threat_logs has
+// no environment column, so it resolves through bastio.traces, whose id is
+// the value recorded as security_threat_logs.trace_id and which carries
+// the environment column (migration 004_trace_dimensions).
+// analytics_request_logs cannot be used: it has no id/trace_id column.
+// The subquery binds customer_id first so the tenant predicate is always
+// present inside it as well as on the outer query.
+func threatEnvironmentClause(customerID, environment string) (string, []any) {
+	return " AND trace_id IN (SELECT id FROM bastio.traces WHERE customer_id = toUUID(?) AND environment = ?)",
+		[]any{customerID, environment}
 }
 
 // ListThreats queries threat events from ClickHouse with dynamic filters.
@@ -517,8 +531,9 @@ func (h *Handler) AnalyticsOverview(w http.ResponseWriter, r *http.Request) {
 		threatRangeArgs = append(threatRangeArgs, to)
 	}
 	if environment != "" {
-		threatRange += " AND trace_id IN (SELECT id FROM bastio.analytics_request_logs WHERE customer_id = toUUID(?) AND environment = ?)"
-		threatRangeArgs = append(threatRangeArgs, tenantIDFromCtx(r.Context()), environment)
+		clause, envArgs := threatEnvironmentClause(tenantIDFromCtx(r.Context()), environment)
+		threatRange += clause
+		threatRangeArgs = append(threatRangeArgs, envArgs...)
 	}
 
 	var totalReqs, totalThreats, totalBlocked uint64

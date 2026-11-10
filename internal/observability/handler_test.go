@@ -160,8 +160,13 @@ func TestBuildThreatsQuery_TimeRange(t *testing.T) {
 func TestBuildThreatsQuery_EnvironmentRemainsTenantScoped(t *testing.T) {
 	q := url.Values{"environment": []string{"production"}}
 	sql, args := buildThreatsQuery(testTenantID, q)
-	if !strings.Contains(sql, "trace_id IN (SELECT id FROM bastio.analytics_request_logs WHERE customer_id = toUUID(?) AND environment = ?)") {
+	if !strings.Contains(sql, "trace_id IN (SELECT id FROM bastio.traces WHERE customer_id = toUUID(?) AND environment = ?)") {
 		t.Fatalf("missing tenant-scoped environment clause: %s", sql)
+	}
+	// analytics_request_logs has no id/trace_id column (pkg/clickhouse
+	// migrations 001 + 004); joining threats against it errors at query time.
+	if strings.Contains(sql, "analytics_request_logs") {
+		t.Fatalf("environment filter must not reference analytics_request_logs: %s", sql)
 	}
 	// Outer tenant, subquery tenant, environment, limit, offset.
 	if len(args) != 5 {
@@ -271,5 +276,39 @@ func TestBuildThreatsQuery_EmptyParamsAreIgnored(t *testing.T) {
 	if len(args) != 3 {
 		// customer_id, limit, offset.
 		t.Fatalf("expected 3 args when all filters empty, got %d: %v", len(args), args)
+	}
+}
+
+func TestThreatEnvironmentClause_UsesTracesTable(t *testing.T) {
+	clause, args := threatEnvironmentClause(testTenantID, "staging")
+	want := " AND trace_id IN (SELECT id FROM bastio.traces WHERE customer_id = toUUID(?) AND environment = ?)"
+	if clause != want {
+		t.Fatalf("clause = %q, want %q", clause, want)
+	}
+	if len(args) != 2 || args[0] != testTenantID || args[1] != "staging" {
+		t.Fatalf("args = %v, want [tenant staging]", args)
+	}
+}
+
+func TestBuildThreatsQuery_EnvironmentCombinesWithFilters(t *testing.T) {
+	q := url.Values{
+		"environment":    []string{"production"},
+		"severity":       []string{"high,critical"},
+		"threat_subtype": []string{"persona.dan"},
+		"from":           []string{"2026-11-01T00:00:00Z"},
+	}
+	sql, args := buildThreatsQuery(testTenantID, q)
+	if strings.Count(sql, "customer_id = toUUID(?)") != 2 {
+		t.Fatalf("expected tenant predicate on outer query and subquery: %s", sql)
+	}
+	// tenant, high, critical, persona.dan, subquery tenant, environment, from, limit, offset.
+	want := []string{testTenantID, "high", "critical", "persona.dan", testTenantID, "production", "2026-11-01T00:00:00Z"}
+	if len(args) != len(want)+2 {
+		t.Fatalf("expected %d args, got %d: %v", len(want)+2, len(args), args)
+	}
+	for i, w := range want {
+		if args[i] != w {
+			t.Fatalf("arg %d = %v, want %q (all: %v)", i, args[i], w, args)
+		}
 	}
 }

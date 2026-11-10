@@ -97,19 +97,26 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 	tm, hasTM := security.TokenMapFromContext(r.Context())
 	// Hold the stream back only when the scan can change what the client
 	// receives (block or rewrite). Observe-only output steps (warn, log_only)
-	// pass through event by event; their findings are not recorded here.
+	// pass through event by event; their text is scanned after the stream.
 	needScan := h.security != nil && outputScanCanChangeResponse(profile)
 	needRestore := profile != nil && profile.PIIRestoreResponse && hasTM
+	monitorOnly := gatewaypolicy.From(r.Context()).MonitorOnly
 	// Complete response policies can block and must run before releasing any
 	// bytes. Buffering also closes PII/token boundaries split between events.
-	buffered := (needScan || needRestore) && !gatewaypolicy.From(r.Context()).MonitorOnly
+	buffered := (needScan || needRestore) && !monitorOnly
 	if buffered {
 		w.Header().Set("X-Bastio-Stream-Buffered", "security-policy")
+	}
+	// Monitor mode scans the recorded response itself (forwardNativeAPI).
+	var observer *streamObserver
+	if !buffered && !monitorOnly && h.security != nil && hasOutputSteps(profile) {
+		observer = newStreamObserver()
+		defer func() { responseFindingsFrom(r.Context()).observe(observer) }()
 	}
 	w.Header().Set("Cache-Control", "no-cache")
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeRouteError(w, &routeError{502, "streaming not supported"})
+		writeRouteError(w, &routeError{status: 502, message: "streaming not supported"})
 		return nil, 0, 0, "error"
 	}
 	var frames []providers.SSEFrame
@@ -131,6 +138,18 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 			recorded = append(recorded, frame.Raw...)
 		}
 		return nil
+	}
+	endpoint := ProviderEndpoint(r.URL.Path)
+	// A held-back stream still generating after the grace period commits
+	// its headers and sends keep-alives; once committed, a block or a
+	// failure ends it with an in-stream error event instead of a status.
+	var keepAlive *holdBackKeepAlive
+	if buffered {
+		keepAlive = h.startHoldBackKeepAlive(r.Context(), w, flusher, resp.StatusCode)
+	}
+	endHeld := func(code, message string) {
+		_, _ = w.Write(inStreamErrorEvent(endpoint, code, message))
+		flusher.Flush()
 	}
 	err := providers.ReadSSE(r.Context(), resp.Body, func(frame providers.SSEFrame) error {
 		in, out := nativeUsage(frame.Data)
@@ -173,64 +192,122 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 			}
 			if changed {
 				frame.Raw = providers.RewriteSSEData(frame, data)
+				frame.Data = data // the scan after the stream sees what the client got
 			}
 		}
-		return emit(frame)
+		if err := emit(frame); err != nil {
+			return err
+		}
+		if observer != nil {
+			observer.addFrame(frame.Data)
+		}
+		return nil
 	})
+	if keepAlive != nil {
+		committed = keepAlive.halt()
+	}
 	if err != nil {
 		if !committed {
 			metadata.HTTPStatus = 502
 		}
-		if !committed && r.Context().Err() == nil {
-			writeRouteError(w, err)
+		if r.Context().Err() == nil {
+			if !committed {
+				writeRouteError(w, err)
+			} else if buffered {
+				endHeld("gateway_error", err.Error())
+			}
 		}
 		return recorded, inTokens, outTokens, "error"
 	}
-	endpoint := ProviderEndpoint(r.URL.Path)
 	if !terminal && (endpoint == "/messages" || endpoint == "/responses" || endpoint == "/chat/completions") {
 		if !committed {
 			metadata.HTTPStatus = 502
-		}
-		if !committed {
-			writeRouteError(w, &routeError{502, "provider stream ended before its terminal event"})
+			writeRouteError(w, &routeError{status: 502, message: "provider stream ended before its terminal event"})
+		} else if buffered {
+			endHeld("gateway_error", "provider stream ended before its terminal event")
 		}
 		return recorded, inTokens, outTokens, "error"
 	}
 	if !buffered {
 		return recorded, inTokens, outTokens, status
 	}
-	channels := make(map[string]string)
-	for _, frame := range frames {
-		mapStreamDeltas(frame.Data, func(key, text string) string { channels[key] += text; return text })
+	payloads := make([][]byte, len(frames))
+	for i, frame := range frames {
+		payloads[i] = frame.Data
 	}
+	// Observe-only steps are scanned too: they cannot change the release,
+	// and the trace then records them as it does for unbuffered streams.
+	released, blocked, reason := h.scanHeldBackStream(r, payloads, tm, h.security != nil && hasOutputSteps(profile), needRestore)
+	if blocked {
+		if committed {
+			// Headers went out with the keep-alives: end the stream with
+			// an error event, no model content and no terminal event.
+			responseFindingsFrom(r.Context()).markBlockedInStream()
+			endHeld("response_blocked", reason)
+			return nil, inTokens, outTokens, "blocked"
+		}
+		metadata.HTTPStatus = 403
+		writeRouteError(w, &routeError{status: 403, message: reason})
+		return nil, inTokens, outTokens, "blocked"
+	}
+	for i, data := range released {
+		if data != nil {
+			frames[i].Raw = providers.RewriteSSEData(frames[i], data)
+		}
+	}
+	// Nothing is committed until every frame has passed the complete policy.
+	for _, frame := range frames {
+		if err := emit(frame); err != nil {
+			return recorded, inTokens, outTokens, "error"
+		}
+	}
+	return recorded, inTokens, outTokens, status
+}
+
+// scanHeldBackStream runs the complete response policy over the SSE data
+// payloads of a held-back stream: each delta channel is scanned and
+// restored as one text (the first event of a channel carries its full
+// processed text, later ones carry ""), and events without deltas are
+// post-processed whole. It returns the rewritten payload per event (nil
+// when unchanged), or blocked with the reason. Shared by the native and the
+// normalized stream paths.
+func (h *Handler) scanHeldBackStream(r *http.Request, payloads [][]byte, tm *security.TokenMap, needScan, needRestore bool) ([][]byte, bool, string) {
+	monitorOnly := gatewaypolicy.From(r.Context()).MonitorOnly
+	channels := make(map[string]string)
+	for _, data := range payloads {
+		mapStreamDeltas(data, func(key, text string) string { channels[key] += text; return text })
+	}
+	// Done/completed events repeat the channel text; the memo lets each
+	// distinct text be scanned once (valid because both use the same
+	// needScan/needRestore as postProcessNativeResponse).
+	memo := make(map[string]processedText)
 	for key, text := range channels {
 		var next, reason string
 		var blocked bool
-		if strings.HasPrefix(key, "block:") && strings.HasSuffix(key, ":thinking") {
+		signed := strings.HasPrefix(key, "block:") && strings.HasSuffix(key, ":thinking")
+		if signed {
 			next, blocked, reason = processSignedThinking(r, h.security, text, tm, needScan)
 		} else {
 			next, blocked, reason = processAssistantText(r.Context(), h.security, text, tm, needScan, needRestore)
+			memo[text] = processedText{next, blocked, reason}
 		}
 		if blocked {
-			metadata.HTTPStatus = 403
-			writeRouteError(w, &routeError{403, reason})
-			return nil, inTokens, outTokens, "blocked"
+			return nil, true, reason
 		}
-		if h.streamSecrets != nil && !gatewaypolicy.From(r.Context()).MonitorOnly {
+		if h.streamSecrets != nil && !monitorOnly {
 			masked := h.streamSecrets.Mask(next)
-			if masked != next && strings.HasPrefix(key, "block:") && strings.HasSuffix(key, ":thinking") {
-				metadata.HTTPStatus = 403
-				writeRouteError(w, &routeError{403, "security policy cannot rewrite signed thinking content"})
-				return nil, inTokens, outTokens, "blocked"
+			if masked != next && signed {
+				return nil, true, "security policy cannot rewrite signed thinking content"
 			}
 			next = masked
 		}
 		channels[key] = next
 	}
+	out := make([][]byte, len(payloads))
 	seen := make(map[string]bool)
-	for i, frame := range frames {
+	for i, payload := range payloads {
 		hasDelta := false
-		data, changed := mapStreamDeltas(frame.Data, func(key, _ string) string {
+		data, changed := mapStreamDeltas(payload, func(key, _ string) string {
 			hasDelta = true
 			if seen[key] {
 				return ""
@@ -243,25 +320,17 @@ func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, re
 		var probe struct {
 			Type string `json:"type"`
 		}
-		_ = json.Unmarshal(frame.Data, &probe)
+		_ = json.Unmarshal(payload, &probe)
 		if !hasDelta && !strings.HasSuffix(probe.Type, ".delta") && probe.Type != "content_block_delta" {
-			if next, blocked, reason := h.postProcessNativeResponse(r, data); blocked {
-				metadata.HTTPStatus = 403
-				writeRouteError(w, &routeError{403, reason})
-				return nil, inTokens, outTokens, "blocked"
+			if next, blocked, reason := h.postProcessNativeResponseMemo(r, data, memo); blocked {
+				return nil, true, reason
 			} else if next != nil {
 				data, changed = next, true
 			}
 		}
 		if changed {
-			frames[i].Raw = providers.RewriteSSEData(frame, data)
+			out[i] = data
 		}
 	}
-	// Nothing is committed until every frame has passed the complete policy.
-	for _, frame := range frames {
-		if err := emit(frame); err != nil {
-			return recorded, inTokens, outTokens, "error"
-		}
-	}
-	return recorded, inTokens, outTokens, status
+	return out, false, ""
 }

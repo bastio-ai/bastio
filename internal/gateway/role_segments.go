@@ -356,6 +356,11 @@ func mergeScanResults(dst, src *security.ScanResult) *security.ScanResult {
 	}
 	dst.ShouldBlock = dst.ShouldBlock || src.ShouldBlock
 	dst.RewriteUnavailable = dst.RewriteUnavailable || src.RewriteUnavailable
+	for _, d := range src.EncodedMasked {
+		if !containsString(dst.EncodedMasked, d) {
+			dst.EncodedMasked = append(dst.EncodedMasked, d)
+		}
+	}
 	dst.Action = security.StrongerAction(dst.Action, src.Action)
 	dst.ScanDuration += src.ScanDuration
 	return dst

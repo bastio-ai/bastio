@@ -156,6 +156,13 @@ type ScanRequest struct {
 	// from zero-value "unspecified, use secure default". Security-
 	// critical callers should leave this false.
 	DisableNormalize bool
+	// MaskEncodedPayloads lets a SkipSanitization caller that rewrites the
+	// original text itself (the gateway, via SanitizeDecisions) replace a
+	// sensitive value found only inside an encoded payload with a
+	// placeholder for the whole payload, instead of withholding the content.
+	// Off for callers that persist SanitizedContent (workspace, MCP), which
+	// keep the withheld (RewriteUnavailable) contract.
+	MaskEncodedPayloads bool
 	// RateAnomalyEnabled opts this scan into the rate_anomaly session
 	// detector (request-rate burst detection). Off by default — the
 	// gateway sets it from the profile's rate_anomaly_enabled column,
@@ -187,6 +194,28 @@ type ScanResult struct {
 	// TokenMap is the reversible placeholder → original mapping used when
 	// PIIAction == ActionTokenize. Never serialized — the map itself is PII.
 	TokenMap *TokenMap `json:"-"`
+	// UnappliedRewrites names the detectors whose mask/redact/tokenize step
+	// fired but that cannot rewrite text: the content still carries what
+	// they found. A caller delivering the content must not treat the
+	// rewrite as done (the response path blocks instead).
+	UnappliedRewrites []string `json:"unapplied_rewrites,omitempty"`
+	// UnmaskedEncoded names detectors whose mask step fired on a value
+	// found only inside an encoded payload (base64, hex, %-escapes) that
+	// could not be located and masked. The content was forwarded as
+	// before and the detector's action is recorded as warn, not mask.
+	UnmaskedEncoded []string `json:"unmasked_encoded,omitempty"`
+	// EncodedMasked names detectors whose finding lived only inside an
+	// encoded payload (base64, %-escapes) that the rewrite replaced whole
+	// with a [REDACTED_ENCODED_<DETECTOR>] placeholder. The recorded action
+	// stays mask; this is the reason.
+	EncodedMasked []string `json:"encoded_masked,omitempty"`
+}
+
+// ContextSanitizer is implemented by detectors whose rewrite depends on
+// request context (the content role, a request's token map). RunSteps
+// prefers it over Sanitizer.Mask for mask and redact steps.
+type ContextSanitizer interface {
+	MaskContext(ctx context.Context, content string) string
 }
 
 // Sanitizer is implemented by detectors that can rewrite their own
@@ -289,6 +318,7 @@ func (e *Engine) scan(ctx context.Context, req *ScanRequest) *ScanResult {
 		e.applySessionAware(ctx, req, r)
 		setWeightedScores(r.Findings)
 		e.finishEncodedScan(ctx, req, r, normResult)
+		e.blockUnverifiedInput(ctx, req, r, normResult.Original)
 		r.ScanDuration = time.Since(start)
 		return r
 	}
@@ -381,6 +411,9 @@ func (e *Engine) scanViaSteps(ctx context.Context, req *ScanRequest, start time.
 		ShouldBlock:     stepsRes.ShouldBlock,
 		TokenMap:        stepsRes.TokenMap,
 		ScanDuration:    time.Since(start),
+
+		UnappliedRewrites:  stepsRes.Unapplied,
+		RewriteUnavailable: stepsRes.RewriteUnavailable,
 	}
 
 	// Per-message sanitization is the gateway's responsibility (one
@@ -401,6 +434,9 @@ func (e *Engine) scanViaSteps(ctx context.Context, req *ScanRequest, start time.
 		}
 		if s.Skipped {
 			continue
+		}
+		if s.Reason == reasonEncodedForwarded {
+			result.UnmaskedEncoded = append(result.UnmaskedEncoded, s.Detector)
 		}
 		if previous, ok := result.DetectorActions[s.Detector]; !ok || actionRank(s.Action) > actionRank(previous) {
 			result.DetectorActions[s.Detector] = s.Action
@@ -486,36 +522,14 @@ func (e *Engine) SanitizeWithMap(content string, action Action, tm *TokenMap) st
 // to an individual native content field. Batch items cannot use the legacy
 // first-sanitizer helper: secrets and PII may have different configured actions.
 // Response-side tokenization becomes masking; only input vaults are reversible.
+//
+// The scan matched a canonical view of the text, so each rewrite is
+// verified against that view (rewrite_verify.go): an obfuscated match the
+// sanitizer's regex missed is remapped onto the original bytes, and ok is
+// false when it still cannot be removed. Callers fail closed on !ok.
 func (e *Engine) SanitizeDecisions(content string, steps []Step, actions map[string]Action, tm *TokenMap, response bool) (string, bool) {
-	byName := make(map[string]Detector, len(e.detectors))
-	for _, det := range e.detectors {
-		byName[det.Name()] = det
-	}
-	for _, step := range steps {
-		action := actions[step.Detector]
-		if action != ActionTokenize && !action.IsMaskLike() {
-			continue
-		}
-		det, ok := byName[step.Detector]
-		if !ok {
-			return content, false
-		}
-		sanitizer, ok := det.(Sanitizer)
-		if !ok {
-			return content, false
-		}
-		// Secrets are never tokenized: a reversible placeholder would let
-		// the response restore path put the secret back. The API and the
-		// migration 007 CHECK reject secrets_strategy=tokenize; this keeps
-		// any other route to that value (overlays, code-built profiles)
-		// from reaching the TokenMap.
-		if action == ActionTokenize && !response && step.Detector != "secrets" {
-			content = sanitizer.TokenizeInto(content, tm)
-		} else {
-			content = sanitizer.Mask(content)
-		}
-	}
-	return content, true
+	out, dr := e.sanitizeDecisions(context.Background(), content, steps, actions, tm, response)
+	return out, len(dr.failed) == 0
 }
 
 func hasPII(findings []Finding) bool {
