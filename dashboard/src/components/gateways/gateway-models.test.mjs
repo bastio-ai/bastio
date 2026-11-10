@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   SNIPPET_MODEL_PREFERENCES,
+  gatewayModelQueryEnabled,
+  gatewayModelQueryKey,
+  parseGatewayModelListing,
+  snippetModelState,
   isChatModelId,
   pickSnippetModel,
   resolveSnippetModel,
@@ -97,4 +101,96 @@ test("security blocks are recognized and explain why", () => {
   assert.equal(gatewayBlockReason({ error: "response blocked by security policy" }), "A security policy on this gateway stopped the request.");
   assert.equal(gatewayTestBlocked(403, { error: { type: "permission_denied", message: "nope" } }), false);
   assert.equal(gatewayTestBlocked(401, { error: "unauthorized" }), false);
+});
+
+test("discovery parsing: server error bodies surface their status and message, never throw", () => {
+  assert.deepEqual(
+    parseGatewayModelListing(502, JSON.stringify({ error: "no provider credential configured" }), "openai"),
+    { ok: false, status: 502, message: "no provider credential configured" },
+  );
+  assert.deepEqual(
+    parseGatewayModelListing(403, JSON.stringify({ error: { message: "workspace role not resolved for this request" } }), "openai"),
+    { ok: false, status: 403, message: "workspace role not resolved for this request" },
+  );
+  const html = parseGatewayModelListing(502, "<html><body>Bad gateway</body></html>", "openai");
+  assert.equal(html.ok, false);
+  assert.equal(html.status, 502);
+  assert.equal(html.message, "The server returned an HTML error page (HTTP 502).");
+  assert.deepEqual(parseGatewayModelListing(500, "", "openai"), { ok: false, status: 500, message: "HTTP 500" });
+});
+
+test("discovery parsing: 200 with an error envelope or no list is a failure, not an empty list", () => {
+  assert.deepEqual(parseGatewayModelListing(200, JSON.stringify({ error: "provider unavailable" }), "openai"), {
+    ok: false,
+    status: 200,
+    message: "provider unavailable",
+  });
+  assert.equal(parseGatewayModelListing(200, "not json", "openai").ok, false);
+  assert.equal(parseGatewayModelListing(200, "[]", "openai").ok, false);
+  assert.equal(
+    parseGatewayModelListing(200, JSON.stringify({ provider: "anthropic", source: "provider", models: [] }), "openai").ok,
+    false,
+  );
+});
+
+test("discovery parsing: accepts the OSS shape, a data array, and string IDs", () => {
+  assert.deepEqual(
+    parseGatewayModelListing(200, JSON.stringify({ provider: "openai", source: "provider", models: [{ id: "gpt-4o-mini" }, { id: " " }, { id: "gpt-5", name: "GPT-5" }] }), "openai"),
+    { ok: true, listing: { provider: "openai", source: "provider", models: [{ id: "gpt-4o-mini" }, { id: "gpt-5", name: "GPT-5" }] } },
+  );
+  assert.deepEqual(
+    parseGatewayModelListing(200, JSON.stringify({ data: [{ id: "gpt-4o-mini", object: "model" }] }), "openai"),
+    { ok: true, listing: { provider: "openai", source: "provider", models: [{ id: "gpt-4o-mini" }] } },
+  );
+  assert.deepEqual(
+    parseGatewayModelListing(200, JSON.stringify({ provider: "deepseek", source: "catalog", models: ["deepseek-chat"] }), "deepseek"),
+    { ok: true, listing: { provider: "deepseek", source: "catalog", models: [{ id: "deepseek-chat" }] } },
+  );
+});
+
+test("query keying and enabling follow the gateway, not provider-key state", () => {
+  const gw = { id: "gw-1", target_provider: "openai", is_active: true };
+  assert.deepEqual(gatewayModelQueryKey(gw), ["gateway-models", "gw-1", "openai"]);
+  assert.notDeepEqual(gatewayModelQueryKey({ ...gw, target_provider: "anthropic" }), gatewayModelQueryKey(gw));
+  // The key must share the ["gateway-models"] prefix that provider-key mutations invalidate.
+  assert.equal(gatewayModelQueryKey(gw)[0], "gateway-models");
+  assert.equal(gatewayModelQueryEnabled(gw), true);
+  assert.equal(gatewayModelQueryEnabled({ ...gw, is_active: false }), false);
+  assert.equal(gatewayModelQueryEnabled({ ...gw, id: "" }), false);
+  assert.equal(gatewayModelQueryEnabled({ ...gw, target_provider: "typesafe" }), false);
+});
+
+test("snippet state: discovered models drive a picker with the resolved default", () => {
+  const state = snippetModelState({
+    configured: "",
+    provider: "openai",
+    listing: listing("openai", ["gpt-5", "gpt-4o-mini", "whisper-1"]),
+    discovering: false,
+  });
+  assert.deepEqual(state, { model: "gpt-4o-mini", options: ["gpt-5", "gpt-4o-mini"], mode: "picker", reason: null });
+  assert.equal(snippetModelState({ configured: "", provider: "openai", listing: listing("openai", ["gpt-5", "gpt-4o-mini"]), discovering: false, picked: "gpt-5" }).model, "gpt-5");
+  // A picked ID that is not offered is ignored rather than trusted.
+  assert.equal(snippetModelState({ configured: "", provider: "openai", listing: listing("openai", ["gpt-4o-mini"]), discovering: false, picked: "made-up" }).model, "gpt-4o-mini");
+});
+
+test("snippet state: a failed discovery is a manual state, and a typed model ID enables the request", () => {
+  const failed = snippetModelState({ configured: "", provider: "openai", listing: undefined, discovering: false, error: "HTTP 502 · no provider credential configured" });
+  assert.deepEqual(failed, { model: "", options: [], mode: "manual", reason: "error" });
+  const typed = snippetModelState({ configured: "", provider: "openai", listing: undefined, discovering: false, error: "HTTP 502", typed: " gpt-4o-mini " });
+  assert.equal(typed.mode, "manual");
+  assert.equal(typed.model, "gpt-4o-mini");
+  assert.equal(snippetModelState({ configured: "", provider: "deepseek", listing: listing("deepseek", ["deepseek-chat"], "catalog"), discovering: false }).reason, "catalog");
+  assert.equal(snippetModelState({ configured: "", provider: "openai", listing: listing("openai", ["whisper-1"]), discovering: false }).reason, "empty");
+});
+
+test("snippet state: loading only without a configured default; configured default needs no discovery", () => {
+  assert.equal(snippetModelState({ configured: "", provider: "openai", discovering: true }).mode, "loading");
+  assert.deepEqual(
+    snippetModelState({ configured: "my-default", provider: "openai", discovering: true, error: "HTTP 502" }),
+    { model: "my-default", options: ["my-default"], mode: "configured", reason: null },
+  );
+  const withList = snippetModelState({ configured: "my-default", provider: "openai", listing: listing("openai", ["gpt-4o-mini"]), discovering: false });
+  assert.equal(withList.mode, "picker");
+  assert.equal(withList.model, "my-default");
+  assert.deepEqual(withList.options, ["my-default", "gpt-4o-mini"]);
 });

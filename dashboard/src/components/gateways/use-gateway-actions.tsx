@@ -89,6 +89,9 @@ export function useGatewayActions(onCreated: (id: string) => void) {
         qc.invalidateQueries({ queryKey: ["workspace", "provider-readiness"] }),
         qc.invalidateQueries({ queryKey: ["workspace", "models"] }),
         qc.invalidateQueries({ queryKey: ["workspace", "setup"] }),
+        // Discovery runs with the provider key: an earlier failure or empty
+        // list must not outlive the key change.
+        qc.invalidateQueries({ queryKey: ["gateway-models"] }),
       ]);
       setProviderDialog(null);
       setProviderSecret("");
@@ -107,6 +110,9 @@ export function useGatewayActions(onCreated: (id: string) => void) {
         qc.invalidateQueries({ queryKey: ["workspace", "provider-readiness"] }),
         qc.invalidateQueries({ queryKey: ["workspace", "models"] }),
         qc.invalidateQueries({ queryKey: ["workspace", "setup"] }),
+        // Discovery runs with the provider key: an earlier failure or empty
+        // list must not outlive the key change.
+        qc.invalidateQueries({ queryKey: ["gateway-models"] }),
       ]);
       setDeleteKey(null);
     },

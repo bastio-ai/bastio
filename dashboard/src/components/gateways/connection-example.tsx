@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, RotateCw, Send } from "lucide-react";
 import type { Proxy } from "@/api/client";
 import { SecurityNotice } from "@/components/admin/admin-primitives";
 import { MODEL_PLACEHOLDER } from "@/components/gateway-setup";
@@ -10,6 +10,7 @@ import {
   withApiKey,
 } from "@/components/getting-started/getting-started";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -20,8 +21,9 @@ import {
 import { cn } from "@/lib/utils";
 import { CopyButton, navigationClass } from "./primitives";
 import { useGatewayOrigin } from "./extension-context";
-import { resolveSnippetModel, snippetModelIds } from "./gateway-models";
+import { snippetModelState, type SnippetModelState } from "./gateway-models";
 import {
+  describeModelError,
   runGatewayTest,
   useGatewayModelListing,
   type GatewayTestResult,
@@ -53,14 +55,22 @@ export function ConnectionExample({
   const format = apiKey ? "curl" : selected;
 
   const typesafe = proxy.target_provider === "typesafe";
-  const configured = proxy.target_model.trim();
   const listing = useGatewayModelListing(proxy);
-  const discovered = snippetModelIds(listing.data);
-  const options = configured && !discovered.includes(configured) ? [configured, ...discovered] : discovered;
-  const resolved = resolveSnippetModel(proxy.target_provider, configured, listing.data);
   const [picked, setPicked] = useState<string | null>(null);
-  const model = picked && options.includes(picked) ? picked : resolved;
-  const discovering = listing.fetchStatus === "fetching" && !listing.data;
+  const [typed, setTyped] = useState("");
+  const errorDetail = describeModelError(listing.error);
+  const state = snippetModelState({
+    configured: proxy.target_model,
+    provider: proxy.target_provider,
+    listing: listing.data,
+    // Initial fetch only: a retry after an error keeps the manual state (and its input) mounted.
+    discovering: listing.fetchStatus === "fetching" && listing.status === "pending",
+    error: errorDetail,
+    picked,
+    typed,
+  });
+  const model = state.model;
+  const discovering = state.mode === "loading";
   const placeholder = !model && !typesafe;
 
   const snippets = firstRequestSnippets(proxy, origin, model);
@@ -91,7 +101,7 @@ export function ConnectionExample({
               </button>
             ))}
           </div>
-          {!typesafe && options.length > 0 ? (
+          {!typesafe && state.mode === "picker" ? (
             <Select
               value={model}
               onValueChange={(next) => {
@@ -105,7 +115,7 @@ export function ConnectionExample({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {options.map((option) => (
+                {state.options.map((option) => (
                   <SelectItem key={option} value={option} className="font-mono text-[11px]">
                     {option}
                   </SelectItem>
@@ -119,7 +129,7 @@ export function ConnectionExample({
             <Button
               variant="outline"
               disabled={placeholder || discovering || test.pending || !proxy.is_active}
-              title={placeholder ? "Choose a model first" : undefined}
+              title={placeholder ? "Enter a model ID first" : undefined}
               onClick={() => void test.send()}
             >
               {test.pending ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <Send />}
@@ -130,20 +140,28 @@ export function ConnectionExample({
         </div>
       </div>
 
-      <ModelStatus
-        discovering={discovering && !configured}
-        placeholder={placeholder}
-        failed={listing.isError}
-        noDiscovery={listing.data?.source === "catalog"}
-        inactive={!proxy.is_active}
-      />
+      {typesafe ? (
+        <div className="min-h-5" aria-hidden="true" />
+      ) : (
+        <ModelStatus
+          mode={state.mode}
+          reason={state.reason}
+          placeholder={placeholder}
+          inactive={!proxy.is_active}
+          errorDetail={errorDetail}
+          typed={typed}
+          onTyped={setTyped}
+          retrying={listing.isFetching}
+          onRetry={() => void listing.refetch()}
+        />
+      )}
 
       <pre
         id={id}
-        aria-busy={discovering && !configured ? true : undefined}
+        aria-busy={discovering ? true : undefined}
         className={cn(
           "max-h-72 overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs leading-relaxed transition-opacity",
-          discovering && !configured && "opacity-60 motion-reduce:transition-none",
+          discovering && "opacity-60 motion-reduce:transition-none",
         )}
       >
         <code>{markPlaceholder(snippet)}</code>
@@ -156,50 +174,94 @@ export function ConnectionExample({
 }
 
 /**
- * Fixed-height status line between the controls and the code block, so the
- * block does not move when discovery finishes. A missing model escalates to
- * the warning notice (the one case that may wrap).
+ * Status line between the controls and the code block. Loading keeps the
+ * same one-line height as the idle state, so the block does not move when
+ * discovery finishes. Without a discovered model it becomes the warning
+ * notice with the server's reason, a retry, and a free-text model ID input
+ * so the user is never stuck on the placeholder.
  */
 function ModelStatus({
-  discovering,
+  mode,
+  reason,
   placeholder,
-  failed,
-  noDiscovery,
   inactive,
+  errorDetail,
+  typed,
+  onTyped,
+  retrying,
+  onRetry,
 }: {
-  discovering: boolean;
+  mode: SnippetModelState["mode"];
+  reason: SnippetModelState["reason"];
   placeholder: boolean;
-  failed: boolean;
-  noDiscovery: boolean;
   inactive: boolean;
+  errorDetail: string | null;
+  typed: string;
+  onTyped: (value: string) => void;
+  retrying: boolean;
+  onRetry: () => void;
 }) {
-  if (discovering)
+  const inputId = useId();
+  if (mode === "loading")
     return (
       <p role="status" className="flex min-h-5 items-center gap-1.5 text-xs text-muted-foreground">
         <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
         Finding a model your provider key can use…
       </p>
     );
-  if (placeholder)
-    return (
-      <SecurityNotice
-        tone="warning"
-        className="px-3 py-2.5"
-        title={`Replace ${MODEL_PLACEHOLDER} with a model from your provider before running`}
-      >
-        <p className="text-xs">
-          {inactive
-            ? "This gateway is disabled, so its models can’t be listed."
-            : failed
-            ? "Bastio couldn’t list this provider key’s models."
-            : noDiscovery
-              ? "This provider doesn’t report its models to Bastio."
-              : "Your provider key reported no chat models."}{" "}
-          Or set a default model in the gateway’s settings.
-        </p>
-      </SecurityNotice>
-    );
-  return <div className="min-h-5" aria-hidden="true" />;
+  if (mode !== "manual") return <div className="min-h-5" aria-hidden="true" />;
+  const why = inactive
+    ? "This gateway is disabled, so its models can’t be listed."
+    : reason === "error"
+      ? "Bastio couldn’t list this provider key’s models."
+      : reason === "catalog"
+        ? "This provider doesn’t report its models to Bastio."
+        : "Your provider key reported no chat models.";
+  const input = (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <label htmlFor={inputId} className="text-xs font-medium text-foreground">
+        Model ID
+      </label>
+      <Input
+        id={inputId}
+        value={typed}
+        onChange={(event) => onTyped(event.target.value)}
+        placeholder="e.g. a model ID from your provider’s console"
+        autoComplete="off"
+        spellCheck={false}
+        className="h-8 min-w-0 flex-1 basis-48 font-mono text-xs"
+      />
+      {reason === "error" && !inactive ? (
+        <Button type="button" size="sm" variant="outline" disabled={retrying} onClick={onRetry}>
+          {retrying ? <Loader2 className="animate-spin motion-reduce:animate-none" /> : <RotateCw />}
+          Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+  return (
+    // One element tree for both states: typing must not remount the input.
+    <SecurityNotice
+      tone={placeholder ? "warning" : "info"}
+      className="px-3 py-2.5"
+      title={
+        placeholder
+          ? `Replace ${MODEL_PLACEHOLDER} with a model from your provider before running`
+          : "Using the model ID you entered"
+      }
+    >
+      <p className="text-xs">
+        {why}{" "}
+        {placeholder
+          ? "Type a model ID below, or set a default model in the gateway’s settings."
+          : "Check it matches a model your provider account can use."}
+      </p>
+      {errorDetail && reason === "error" ? (
+        <p className="mt-1 break-words font-mono text-[11px] text-muted-foreground">{errorDetail}</p>
+      ) : null}
+      {input}
+    </SecurityNotice>
+  );
 }
 
 function markPlaceholder(snippet: string): ReactNode {
