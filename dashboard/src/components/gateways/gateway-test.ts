@@ -54,6 +54,39 @@ export function gatewayTestReply(body: unknown): string {
   );
 }
 
+/** True when a Bastio security policy (not the provider) stopped the request. */
+export function gatewayTestBlocked(_status: number, body: unknown): boolean {
+  const data = record(body);
+  const error = record(data.error);
+  const code =
+    typeof error.type === "string"
+      ? error.type
+      : typeof data.error === "string"
+        ? data.error
+        : "";
+  return (
+    code.includes("security") ||
+    code.includes("blocked") ||
+    data.blocked === true
+  );
+}
+
+/**
+ * Human-readable "why" for a security block: the gateway's reason plus the
+ * detected threat types, e.g. "prompt injection detected · prompt_injection".
+ */
+export function gatewayBlockReason(body: unknown): string {
+  const data = record(body);
+  const reason = typeof data.reason === "string" ? data.reason.trim() : "";
+  const threats = Array.isArray(data.threat_types)
+    ? data.threat_types.filter((item): item is string => typeof item === "string" && item !== "")
+    : [];
+  const parts = [reason, threats.map((item) => item.replace(/_/g, " ")).join(", ")].filter(Boolean);
+  return parts.length
+    ? parts.join(" · ")
+    : "A security policy on this gateway stopped the request.";
+}
+
 export function gatewayTestFailure(status: number, body: unknown) {
   const data = record(body);
   const error = record(data.error);
@@ -73,11 +106,7 @@ export function gatewayTestFailure(status: number, body: unknown) {
       : typeof data.error === "string"
         ? data.error
         : "";
-  if (
-    code.includes("security") ||
-    code.includes("blocked") ||
-    data.blocked === true
-  )
+  if (gatewayTestBlocked(status, body))
     return { title: "Security policy blocked the test", detail };
   if (
     error.code === "model_not_found" ||

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   availableProviderKeys,
   gatewayAppKeys,
+  MODEL_PLACEHOLDER,
   gatewayConnection,
   gatewaySetupStatus,
   validateGatewaySearch,
@@ -116,6 +117,36 @@ test("normalized provider examples select their gateway and provider explicitly"
     assert.match(example.python, /default_headers=/);
     assert.match(example.python, /YOUR_MODEL_ID/);
   }
+});
+
+const curlURL = (curl) => /^curl '([^']+)'/.exec(curl)?.[1];
+const curlModel = (curl) => JSON.parse(/-d '([\s\S]*)'$/.exec(curl)?.[1] ?? "{}").model;
+
+test("model resolution: explicit model, then configured default, then YOUR_MODEL_ID", () => {
+  const unconfigured = { ...gateway, target_model: "" };
+  const placeholder = gatewayConnection(unconfigured, "https://api.bastio.com");
+  assert.equal(MODEL_PLACEHOLDER, "YOUR_MODEL_ID");
+  assert.equal(curlModel(placeholder.curl), "YOUR_MODEL_ID");
+  assert.match(placeholder.python, /model="YOUR_MODEL_ID"/);
+
+  const chosen = gatewayConnection(unconfigured, "https://api.bastio.com", "gpt-4o-mini");
+  assert.equal(curlModel(chosen.curl), "gpt-4o-mini");
+  assert.match(chosen.python, /model="gpt-4o-mini"/);
+  assert.doesNotMatch(chosen.curl, /YOUR_MODEL_ID/);
+  assert.doesNotMatch(chosen.python, /YOUR_MODEL_ID/);
+  assert.equal(curlURL(chosen.curl), "https://api.bastio.com/v1/guard/gateway-1/v1/chat/completions");
+
+  // A picked model overrides the configured default; blank falls back to it.
+  assert.equal(curlModel(gatewayConnection(gateway, "https://api.bastio.com", "gpt-4.1-nano").curl), "gpt-4.1-nano");
+  assert.equal(curlModel(gatewayConnection(gateway, "https://api.bastio.com", "  ").curl), "gpt-example");
+
+  const anthropic = gatewayConnection(
+    { ...unconfigured, target_provider: "anthropic" },
+    "https://api.bastio.com",
+    "claude-haiku-4-5",
+  );
+  assert.equal(curlModel(anthropic.curl), "claude-haiku-4-5");
+  assert.equal(curlURL(anthropic.curl), "https://api.bastio.com/v1/guard/gateway-1/v1/messages");
 });
 
 test("examples escape model IDs in shell payloads and Python strings", () => {

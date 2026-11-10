@@ -481,7 +481,7 @@ export function useGatewayActions(onCreated: (id: string) => void) {
                   Run this to send your first request through{" "}
                   {secretProxy.name}. It contains the key — don’t commit it.
                 </p>
-                <ConnectionExample proxy={secretProxy} apiKey={newSecret} />
+                <ConnectionExample proxy={secretProxy} apiKey={newSecret} showTest />
               </section>
             ) : null}
             <DialogFooter>

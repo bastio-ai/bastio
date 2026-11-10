@@ -70,8 +70,8 @@ export type FirstRequestSnippets = {
   sdkLabel: string;
 };
 
-export function firstRequestSnippets(proxy: Proxy, origin: string): FirstRequestSnippets {
-  const connection = gatewayConnection(proxy, origin);
+export function firstRequestSnippets(proxy: Proxy, origin: string, model?: string): FirstRequestSnippets {
+  const connection = gatewayConnection(proxy, origin, model);
   return {
     curl: connection.curl,
     sdk: connection.python,

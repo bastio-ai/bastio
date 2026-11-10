@@ -34,6 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useGatewayExtension, useGatewayOrigin } from "./extension-context";
 import { GatewayTestDialog } from "./gateway-test-dialog";
+import { ConnectionExample } from "./connection-example";
 import {
   CopyButton,
   ErrorMessage,
@@ -72,7 +73,6 @@ export function GatewayPanel({
   const [section, setSection] = useState<"setup" | "settings">("setup");
   const [name, setName] = useState(proxy.name);
   const [model, setModel] = useState(proxy.target_model);
-  const [example, setExample] = useState<"curl" | "python">("curl");
   const update = useMutation({
     mutationFn: (active: boolean) =>
       api.proxies.update(proxy.id, {
@@ -115,7 +115,6 @@ export function GatewayPanel({
     appKeys,
     extension.managedProviders,
   );
-  const snippet = example === "curl" ? connection.curl : connection.python;
   const dirty =
     name.trim() !== proxy.name || model.trim() !== proxy.target_model;
   const blocker = useBlocker({
@@ -462,40 +461,7 @@ export function GatewayPanel({
                   Save a provider key before trying the example.
                 </p>
               ) : null}
-              {!proxy.target_model ? (
-                <p className="text-xs text-muted-foreground">
-                  Replace YOUR_MODEL_ID with a model ID from{" "}
-                  {providerLabels[proxy.target_provider] ??
-                    proxy.target_provider}
-                  , or set a default in Gateway settings.
-                </p>
-              ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div
-                  className="flex gap-1"
-                  aria-label="Connection example format"
-                >
-                  {(["curl", "python"] as const).map((format) => (
-                    <button
-                      type="button"
-                      key={format}
-                      aria-pressed={example === format}
-                      className={cn(
-                        navigationClass,
-                        "min-h-9 px-3 text-xs",
-                        example === format && "bg-muted",
-                      )}
-                      onClick={() => setExample(format)}
-                    >
-                      {format === "curl" ? "cURL" : "Python"}
-                    </button>
-                  ))}
-                </div>
-                <CopyButton value={snippet} label="Copy connection example" />
-              </div>
-              <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/40 p-4 text-xs leading-relaxed">
-                <code>{snippet}</code>
-              </pre>
+              <ConnectionExample proxy={proxy} />
               <p className="text-xs leading-relaxed text-muted-foreground">
                 After sending a request, open{" "}
                 <Link

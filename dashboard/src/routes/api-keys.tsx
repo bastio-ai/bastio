@@ -603,6 +603,7 @@ export function ApiKeysPage() {
               <ConnectionExample
                 proxy={revealedProxy}
                 apiKey={revealedSecretKey}
+                showTest
               />
             </section>
           ) : null}
