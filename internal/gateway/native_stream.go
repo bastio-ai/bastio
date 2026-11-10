@@ -95,7 +95,10 @@ func mapStreamDeltas(raw []byte, transform func(string, string) string) ([]byte,
 func (h *Handler) forwardNativeStream(w http.ResponseWriter, r *http.Request, resp *http.Response, metadata *nativeMetadata) ([]byte, int, int, string) {
 	profile, _ := security.ProfileFromContext(r.Context())
 	tm, hasTM := security.TokenMapFromContext(r.Context())
-	needScan := profile != nil && profile.PIIScanResponse && h.security != nil
+	// Hold the stream back only when the scan can change what the client
+	// receives (block or rewrite). Observe-only output steps (warn, log_only)
+	// pass through event by event; their findings are not recorded here.
+	needScan := h.security != nil && outputScanCanChangeResponse(profile)
 	needRestore := profile != nil && profile.PIIRestoreResponse && hasTM
 	// Complete response policies can block and must run before releasing any
 	// bytes. Buffering also closes PII/token boundaries split between events.
