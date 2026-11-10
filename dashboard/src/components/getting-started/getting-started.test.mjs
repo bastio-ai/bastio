@@ -100,7 +100,7 @@ test("dismissal hides an incomplete guide", () => {
 
 test("snippets use the placeholder and the gateway origin; withApiKey fills every occurrence", () => {
   const snippets = firstRequestSnippets(gateway(), "https://api.bastio.com");
-  assert.match(snippets.curl, /https:\/\/api\.bastio\.com\/v1\/guard\/gw-1\/v1\/chat\/completions/);
+  assert.ok(snippets.curl.includes("https://api.bastio.com/v1/guard/gw-1/v1/chat/completions"));
   assert.match(snippets.curl, /\$BASTIO_API_KEY/);
   assert.match(snippets.sdk, /from openai import OpenAI/);
   assert.equal(snippets.sdkLabel, "OpenAI SDK");
