@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/bastio-ai/bastio/pkg/cache"
@@ -65,7 +67,7 @@ func EnvironmentFromRequest(ctx context.Context, db *pgxpool.Pool, info *APIKeyI
 		)
 	`, info.CustomerID, requested).Scan(&exists)
 	if err != nil {
-		return "", fmt.Errorf("validate environment override: %w", err)
+		return "", fmt.Errorf("validate environment override: %w: %w", ErrLookupUnavailable, err)
 	}
 	if !exists {
 		return "", fmt.Errorf("environment %q is not registered in this workspace", requested)
@@ -90,15 +92,94 @@ func Environment(ctx context.Context, info *APIKeyInfo) string {
 	return ""
 }
 
+// Authentication outcomes. ErrKeyNotFound and ErrKeyExpired are definite
+// answers about the key (401). ErrLookupUnavailable means the key could not
+// be checked at all (cancelled request, Redis and PostgreSQL both failing,
+// pool closed during shutdown) and must never be reported as an invalid key.
+var (
+	ErrKeyNotFound       = errors.New("api key not found")
+	ErrKeyExpired        = errors.New("api key expired")
+	ErrLookupUnavailable = errors.New("api key lookup unavailable")
+)
+
+// RetryAfterSeconds is the Retry-After hint sent with a 503 when the key
+// store could not be reached. Restarts finish within a few seconds.
+const RetryAfterSeconds = "1"
+
+// keyCache is the cache tier of the API key lookup.
+type keyCache interface {
+	getKey(ctx context.Context, keyHash string) (*APIKeyInfo, bool, error)
+	setKey(ctx context.Context, keyHash string, info *APIKeyInfo) error
+}
+
+// keyStore is the authoritative tier of the API key lookup. lookupKey
+// returns pgx.ErrNoRows (possibly wrapped) when no active key matches.
+type keyStore interface {
+	lookupKey(ctx context.Context, keyHash string) (*APIKeyInfo, error)
+	touchKey(ctx context.Context, id uuid.UUID)
+}
+
+type redisKeyCache struct{ c *cache.Cache }
+
+func (k redisKeyCache) getKey(ctx context.Context, keyHash string) (*APIKeyInfo, bool, error) {
+	var info APIKeyInfo
+	found, err := k.c.Get(ctx, "apikey:"+keyHash, &info)
+	if err != nil || !found {
+		return nil, false, err
+	}
+	return &info, true, nil
+}
+
+func (k redisKeyCache) setKey(ctx context.Context, keyHash string, info *APIKeyInfo) error {
+	return k.c.Set(ctx, "apikey:"+keyHash, info, 5*time.Minute)
+}
+
+type pgKeyStore struct{ db *pgxpool.Pool }
+
+func (p pgKeyStore) lookupKey(ctx context.Context, keyHash string) (*APIKeyInfo, error) {
+	var info APIKeyInfo
+	err := p.db.QueryRow(ctx, `
+		SELECT k.id, k.customer_id, k.name, k.key_prefix, k.scopes, k.rate_limit_rpm,
+		       COALESCE(e.name, ''), k.allow_environment_override, k.expires_at
+		FROM gateway_api_keys k
+		LEFT JOIN environments e ON e.id = k.environment_id
+		WHERE k.key_hash = $1 AND k.is_active = true
+	`, keyHash).Scan(
+		&info.ID, &info.CustomerID, &info.Name, &info.KeyPrefix,
+		&info.Scopes, &info.RateLimitRPM, &info.Environment,
+		&info.AllowEnvironmentOverride, &info.ExpiresAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+func (p pgKeyStore) touchKey(ctx context.Context, id uuid.UUID) {
+	_, _ = p.db.Exec(ctx, "UPDATE gateway_api_keys SET last_used_at = now() WHERE id = $1", id)
+}
+
 // Service handles API key authentication.
 type Service struct {
 	db    *pgxpool.Pool
 	cache *cache.Cache
+	keys  keyCache
+	store keyStore
 }
 
 // NewService creates a new auth service.
 func NewService(db *pgxpool.Pool, cache *cache.Cache) *Service {
-	return &Service{db: db, cache: cache}
+	return &Service{db: db, cache: cache, keys: redisKeyCache{c: cache}, store: pgKeyStore{db: db}}
+}
+
+// WriteLookupUnavailable writes the 503 sent when an API key could not be
+// checked. Clients should retry after Retry-After instead of treating the
+// key as revoked.
+func WriteLookupUnavailable(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", RetryAfterSeconds)
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = w.Write([]byte(`{"error":{"type":"service_unavailable","code":"auth_unavailable","message":"service restarting, retry shortly"}}`))
 }
 
 // Middleware returns a Chi middleware that authenticates requests via API key.
@@ -111,12 +192,23 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 		}
 
 		info, err := s.Authenticate(r.Context(), apiKey)
+		if errors.Is(err, ErrLookupUnavailable) {
+			// Fixed fields only: the key and the error text derive from the request.
+			slog.Warn("api key lookup unavailable, returning 503", "request_cancelled", r.Context().Err() != nil)
+			WriteLookupUnavailable(w)
+			return
+		}
 		if err != nil {
 			slog.Warn("auth failed", "error", err, "prefix", safePrefix(apiKey))
 			http.Error(w, `{"error":"invalid api key"}`, http.StatusUnauthorized)
 			return
 		}
 		environment, err := EnvironmentFromRequest(r.Context(), s.db, info, r.Header.Get("X-Bastio-Environment"))
+		if errors.Is(err, ErrLookupUnavailable) {
+			slog.Warn("environment lookup unavailable, returning 503", "request_cancelled", r.Context().Err() != nil)
+			WriteLookupUnavailable(w)
+			return
+		}
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
@@ -135,58 +227,57 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 
 // Authenticate validates an API key and returns the associated identity.
 // Uses a two-tier lookup: Redis cache first, then PostgreSQL.
+//
+// Errors: ErrKeyNotFound / ErrKeyExpired are definite (401). Anything that
+// prevented a definite answer wraps ErrLookupUnavailable (503). A Redis
+// failure alone falls back to PostgreSQL as before.
 func (s *Service) Authenticate(ctx context.Context, apiKey string) (*APIKeyInfo, error) {
 	keyHash := HashAPIKey(apiKey)
-	cacheKey := "apikey:" + keyHash
 
 	// Tier 1: cache lookup
-	var info APIKeyInfo
-	found, err := s.cache.Get(ctx, cacheKey, &info)
+	cached, found, err := s.keys.getKey(ctx, keyHash)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			// The request is gone or timed out; the DB query would fail
+			// the same way, so don't spend a pool connection on it.
+			return nil, fmt.Errorf("%w: %w", ErrLookupUnavailable, ctxErr)
+		}
 		slog.Warn("cache lookup failed, falling back to db", "error", err)
 	}
 	if found {
-		if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
-			return nil, fmt.Errorf("api key expired")
+		if cached.ExpiresAt != nil && cached.ExpiresAt.Before(time.Now()) {
+			return nil, ErrKeyExpired
 		}
-		return &info, nil
+		return cached, nil
 	}
 
 	// Tier 2: database lookup
-	row := s.db.QueryRow(ctx, `
-		SELECT k.id, k.customer_id, k.name, k.key_prefix, k.scopes, k.rate_limit_rpm,
-		       COALESCE(e.name, ''), k.allow_environment_override, k.expires_at
-		FROM gateway_api_keys k
-		LEFT JOIN environments e ON e.id = k.environment_id
-		WHERE k.key_hash = $1 AND k.is_active = true
-	`, keyHash)
-
-	if err := row.Scan(
-		&info.ID, &info.CustomerID, &info.Name, &info.KeyPrefix,
-		&info.Scopes, &info.RateLimitRPM, &info.Environment,
-		&info.AllowEnvironmentOverride, &info.ExpiresAt,
-	); err != nil {
-		return nil, fmt.Errorf("api key not found")
+	info, err := s.store.lookupKey(ctx, keyHash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrKeyNotFound
+		}
+		return nil, fmt.Errorf("%w: %w", ErrLookupUnavailable, err)
 	}
 
 	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
-		return nil, fmt.Errorf("api key expired")
+		return nil, ErrKeyExpired
 	}
 
-	// Cache for 5 minutes
-	if err := s.cache.Set(ctx, cacheKey, &info, 5*time.Minute); err != nil {
+	// Positive results only are cached (5 minutes); misses and lookup
+	// failures are never written.
+	if err := s.keys.setKey(ctx, keyHash, info); err != nil {
 		slog.Warn("failed to cache api key", "error", err)
 	}
 
 	// Update last_used_at asynchronously (fire and forget)
-	go func() {
+	go func(id uuid.UUID) {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_, _ = s.db.Exec(bgCtx,
-			"UPDATE gateway_api_keys SET last_used_at = now() WHERE id = $1", info.ID)
-	}()
+		s.store.touchKey(bgCtx, id)
+	}(info.ID)
 
-	return &info, nil
+	return info, nil
 }
 
 // HashAPIKey produces a SHA-256 hash of an API key for storage/lookup.
