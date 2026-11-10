@@ -582,13 +582,35 @@ func (s *Server) Start(ctx context.Context) error {
 		slog.Info("context cancelled, shutting down")
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.opts.shutdownTimeout)
-	defer cancel()
-
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+	// Drain HTTP first; the deferred maintenance stops and the caller's
+	// Close (pools, recorder) run only after this returns.
+	if err := drainHTTP(httpSrv, s.opts.shutdownTimeout); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	slog.Info("stopped")
+	return nil
+}
+
+// drainHTTP stops accepting new connections and lets in-flight requests
+// finish for up to timeout. Request contexts are not cancelled while
+// draining (they derive from each connection, not from a shutdown context).
+// Requests still running at the bound — typically long SSE streams — have
+// their connections closed so shutdown never outlives the bound and the
+// caller can still close pools before the container is killed.
+func drainHTTP(httpSrv *http.Server, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err := httpSrv.Shutdown(ctx)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	slog.Warn("drain bound reached, closing remaining connections", "timeout", timeout.String())
+	if err := httpSrv.Close(); err != nil {
+		return fmt.Errorf("force close: %w", err)
+	}
 	return nil
 }
 
