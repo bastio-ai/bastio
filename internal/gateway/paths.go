@@ -76,6 +76,41 @@ func InputText(raw []byte) string {
 	}
 	return extractInputText(raw)
 }
+
+// isGoogleInput mirrors InputText's choice between the Gemini walk and
+// the generic one.
+func isGoogleInput(raw []byte) bool {
+	var google struct {
+		Contents json.RawMessage `json:"contents"`
+		Content  json.RawMessage `json:"content"`
+	}
+	_ = json.Unmarshal(raw, &google)
+	return len(google.Contents) > 0 || (len(google.Content) > 0 && bytes.Contains(google.Content, []byte(`"parts"`)))
+}
+
+// MapInputText rewrites exactly the text fields InputText reads, with
+// the same walk, so a caller that masks what InputText showed it reaches
+// every such field and nothing else.
+func MapInputText(raw []byte, transform func(string) string) ([]byte, bool) {
+	if isGoogleInput(raw) {
+		return batchMapInput(raw, providers.ProviderGemini, transform)
+	}
+	return mapInput(raw, transform)
+}
+
+// MapOutputText rewrites the text fields OutputText reads from a
+// non-streamed (JSON) response body, with the same walk. SSE bodies are
+// not rewritten.
+func MapOutputText(raw []byte, transform func(string) string) ([]byte, bool) {
+	if !json.Valid(raw) {
+		return raw, false
+	}
+	if out, changed := mapBatchOutput(raw, providers.ProviderOpenAI, transform); changed {
+		return out, true
+	}
+	return mapGoogleContent(raw, transform)
+}
+
 func OutputText(raw []byte) string {
 	if !json.Valid(raw) {
 		var parts []string

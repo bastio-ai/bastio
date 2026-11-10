@@ -32,7 +32,7 @@ import {
   providerLabels,
 } from "@/components/gateway-setup";
 import { cn } from "@/lib/utils";
-import { useGatewayExtension } from "./extension-context";
+import { useGatewayExtension, useGatewayOrigin } from "./extension-context";
 import { GatewayTestDialog } from "./gateway-test-dialog";
 import {
   CopyButton,
@@ -107,10 +107,7 @@ export function GatewayPanel({
     proxy.target_provider,
   );
   const configured = keys.length > 0 || serverAuth || managedAuth;
-  const origin = new URL(
-    import.meta.env.VITE_API_URL || window.location.origin,
-    window.location.origin,
-  ).href.replace(/\/$/, "");
+  const origin = useGatewayOrigin();
   const connection = gatewayConnection(proxy, origin);
   const status = gatewaySetupStatus(
     proxy,

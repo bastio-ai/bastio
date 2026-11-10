@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -53,6 +55,61 @@ type Handler struct {
 	batchGate             chan struct{}
 	batchInputMiddleware  func(http.Handler) http.Handler
 	batchOutputMiddleware func(http.Handler) http.Handler
+	// observedScanSlots bounds the after-stream scans of pass-through
+	// streams (see recordTrace); onObservedScanSkipped counts the scans
+	// skipped because every slot was busy. nil = not counted.
+	observedScanSlots     chan struct{}
+	onObservedScanSkipped func()
+	// holdBackGrace / holdBackInterval: see SetHoldBackKeepAlive.
+	holdBackGrace    time.Duration
+	holdBackInterval time.Duration
+}
+
+// defaultObservedScanSlots sizes the after-stream scan bound from the
+// usable CPUs (see observedScanSlotsFor).
+func defaultObservedScanSlots() int {
+	return observedScanSlotsFor(runtime.GOMAXPROCS(0))
+}
+
+// observedScanSlotsFor keeps the after-stream scans to a quarter of the
+// CPUs, and to one scan on boxes with four or fewer, so they never compete
+// with live request handling for a large share of the machine.
+func observedScanSlotsFor(procs int) int {
+	if procs <= 4 {
+		return 1
+	}
+	return max(1, procs/4)
+}
+
+// Defaults for keeping held-back streams alive behind proxy idle timeouts.
+const (
+	defaultHoldBackGrace    = 15 * time.Second
+	defaultHoldBackInterval = 10 * time.Second
+)
+
+// SetHoldBackKeepAlive sets when a held-back stream that is still
+// generating commits its headers (grace) and how often it then sends SSE
+// keep-alive comments (interval) while the stream is buffered and scanned.
+// grace 0 keeps the default (15s), a negative grace disables keep-alives;
+// interval <= 0 keeps the default (10s). Call before serving traffic.
+func (h *Handler) SetHoldBackKeepAlive(grace, interval time.Duration) {
+	if grace == 0 {
+		grace = defaultHoldBackGrace
+	}
+	if interval <= 0 {
+		interval = defaultHoldBackInterval
+	}
+	h.holdBackGrace, h.holdBackInterval = grace, interval
+}
+
+// SetObservedScanSkipped installs a callback run once per after-stream
+// scan skipped for lack of a free slot (e.g. a metrics counter).
+func (h *Handler) SetObservedScanSkipped(fn func()) { h.onObservedScanSkipped = fn }
+
+// SetObservedScanLimit replaces the after-stream scan bound with n slots
+// (n < 1 means 1). Call before serving traffic.
+func (h *Handler) SetObservedScanLimit(n int) {
+	h.observedScanSlots = make(chan struct{}, max(1, n))
 }
 
 func (h *Handler) SetBatchInspection(input, output func(http.Handler) http.Handler) {
@@ -79,6 +136,9 @@ func NewHandler(providerRegistry *providers.Registry, proxySvc *proxy.Service, s
 		recorder:          recorder,
 		securityMode:      securityMode,
 		batchGate:         make(chan struct{}, 4),
+		observedScanSlots: make(chan struct{}, defaultObservedScanSlots()),
+		holdBackGrace:     defaultHoldBackGrace,
+		holdBackInterval:  defaultHoldBackInterval,
 		streamSecrets:     detection.NewSecretsDetector(),
 		imageURLAllowlist: parseImageURLAllowlist(os.Getenv("BASTIO_IMAGE_URL_ALLOWLIST")),
 	}
@@ -203,7 +263,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, oversized := err.(*http.MaxBytesError); oversized {
-			writeRouteError(w, &routeError{413, "request exceeds gateway body limit"})
+			writeRouteError(w, &routeError{status: 413, message: "request exceeds gateway body limit"})
 			return
 		}
 		http.Error(w, `{"error":"failed to read request"}`, http.StatusBadRequest)
@@ -302,7 +362,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if scanResult != nil && scanResult.ShouldBlock {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		blockedBody := blockedResponseBody(traceID, scanResult.ThreatTypes, scanResult.ThreatScore)
+		blockedBody := scanBlockedBody(traceID, scanResult)
 		_, _ = w.Write(blockedBody)
 		h.recordTrace(r.Context(), recordInput{
 			TraceID:   traceID,
@@ -622,7 +682,7 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	if scanResult != nil && scanResult.ShouldBlock {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		blockedBody := blockedResponseBody(anthropicTraceID, scanResult.ThreatTypes, scanResult.ThreatScore)
+		blockedBody := scanBlockedBody(anthropicTraceID, scanResult)
 		_, _ = w.Write(blockedBody)
 		h.recordTrace(r.Context(), recordInput{
 			TraceID:   anthropicTraceID,
@@ -892,15 +952,33 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 		return []byte(errBody), 0, 0, "error", nil
 	}
 
+	// Response scanning matches the native stream path: when the scan can
+	// change what the client receives (block or rewrite) the stream is
+	// held back until the complete text passed it; otherwise chunks pass
+	// through as they arrive and their text is scanned after the stream.
+	// Nothing is written before ChatStream succeeded, and errors after
+	// that end the stream rather than return, so a fallback can never
+	// follow bytes already sent.
+	profile, _ := security.ProfileFromContext(r.Context())
+	tm, hasTM := security.TokenMapFromContext(r.Context())
+	monitorOnly := gatewaypolicy.From(r.Context()).MonitorOnly
+	holdBack := h.security != nil && outputScanCanChangeResponse(profile) && !monitorOnly
+	if holdBack {
+		w.Header().Set("X-Bastio-Stream-Buffered", "security-policy")
+		return h.holdBackStream(w, r, flusher, stream, client, req, start, traceID, scan, genSpan, profile, tm)
+	}
+	var observer *streamObserver
+	if !monitorOnly && h.security != nil && hasOutputSteps(profile) {
+		observer = newStreamObserver()
+		defer func() { responseFindingsFrom(r.Context()).observe(observer) }()
+	}
+
 	// Build a StreamRestorer from the request-scoped TokenMap so
 	// placeholders emitted in delta.content are restored before the
-	// caller sees them. Response-side scanning on streams is deferred
-	// to a later release — tracking in the plan's §5.3.
+	// caller sees them.
 	var restorer *security.StreamRestorer
-	if profile, ok := security.ProfileFromContext(r.Context()); ok && profile.PIIRestoreResponse {
-		if tm, hasTM := security.TokenMapFromContext(r.Context()); hasTM {
-			restorer = security.NewStreamRestorer(tm)
-		}
+	if profile != nil && profile.PIIRestoreResponse && hasTM {
+		restorer = security.NewStreamRestorer(tm)
 	}
 
 	var buf []byte
@@ -972,7 +1050,136 @@ func (h *Handler) handleStreamWithRetry(w http.ResponseWriter, r *http.Request, 
 		}
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
+		if observer != nil {
+			observer.addFrame(data)
+		}
 	}
+	return buf, inputTokens, outputTokens, "ok", nil
+}
+
+// maxHeldBackStream caps a held-back stream, as on the native path.
+const maxHeldBackStream = 32 << 20
+
+// holdBackStream is handleStreamWithRetry for a stream whose response scan
+// can block or rewrite it: every chunk is held until the stream ended and
+// its complete text passed the response policy (scan, then PII restore,
+// then the secrets mask), and only then released. A block answers 403
+// with the sync path's error body and releases nothing. A stream that ends
+// without its done marker (upstream error) releases what passed the
+// policy without the final events, as the pass-through path does.
+func (h *Handler) holdBackStream(w http.ResponseWriter, r *http.Request, flusher http.Flusher, stream <-chan providers.StreamChunk, client providers.Client, req *providers.ChatRequest, start time.Time, traceID uuid.UUID, scan *security.ScanResult, genSpan *observability.SpanBuilder, profile *security.Profile, tm *security.TokenMap) ([]byte, int, int, string, error) {
+	var payloads [][]byte
+	var size, inputTokens, outputTokens int
+	var buf []byte
+	done, overflow := false, false
+	defer func() {
+		if h.recorder == nil {
+			return
+		}
+		genSpan.Finish("ok", "")
+		gr := genSpan.Record()
+		gr.Model = req.Model
+		gr.InputTokens = uint32(inputTokens)
+		gr.OutputTokens = uint32(outputTokens)
+		gr.Input = truncate(string(req.Raw), maxSpanBodyChars)
+		gr.Output = truncate(string(buf), maxSpanBodyChars)
+		gr.ModelParameters = extractModelParameters(req.Raw)
+		gr.CostCents = llmpipeline.EstimateCostCents(gr.Model, inputTokens, outputTokens)
+		h.recordGatewayObservation(r.Context(), gr)
+	}()
+	// Past the grace period the headers are committed and keep-alives
+	// sent while the stream is still buffered (see holdBackKeepAlive).
+	keepAlive := h.startHoldBackKeepAlive(r.Context(), w, flusher, http.StatusOK)
+	endpoint := ProviderEndpoint(r.URL.Path)
+read:
+	for {
+		var chunk providers.StreamChunk
+		select {
+		case c, ok := <-stream:
+			if !ok {
+				break read
+			}
+			chunk = c
+		case <-r.Context().Done():
+			break read
+		}
+		if chunk.Error != nil {
+			slog.Error("stream error", "error", chunk.Error)
+			break
+		}
+		if chunk.Done {
+			done = true
+			break
+		}
+		if size += len(chunk.Data); size > maxHeldBackStream {
+			overflow = true
+			break
+		}
+		payloads = append(payloads, chunk.Data)
+		if in, out, ok := parseUsageFromSSE(chunk.Data); ok {
+			if in > 0 {
+				inputTokens = in
+			}
+			if out > 0 {
+				outputTokens = out
+			}
+		}
+	}
+	committed := keepAlive.halt()
+	if r.Context().Err() != nil {
+		// The client left: nothing more is written.
+		return nil, inputTokens, outputTokens, "error", nil
+	}
+	blockWith := func(reason string) ([]byte, int, int, string, error) {
+		const message = "response blocked by security policy"
+		if committed {
+			// Headers went out with the keep-alives: end the stream with
+			// an error event, no model content and no [DONE].
+			responseFindingsFrom(r.Context()).markBlockedInStream()
+			buf = inStreamErrorEvent(endpoint, "response_blocked", message+": "+reason)
+			_, _ = w.Write(buf)
+			flusher.Flush()
+			return buf, inputTokens, outputTokens, "blocked", nil
+		}
+		errBody := fmt.Sprintf(`{"error":%q,"trace_id":%q,"reason":%q}`, message, traceID.String(), reason)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(errBody))
+		buf = []byte(errBody)
+		return buf, inputTokens, outputTokens, "blocked", nil
+	}
+	if overflow {
+		// Unscanned output is never released; same answer as the native path.
+		const message = "stream exceeds security buffer limit"
+		if committed {
+			buf = inStreamErrorEvent(endpoint, "gateway_error", message)
+			_, _ = w.Write(buf)
+			flusher.Flush()
+			return buf, inputTokens, outputTokens, "error", nil
+		}
+		writeRouteError(w, &routeError{status: http.StatusBadGateway, message: message})
+		buf = []byte(`{"error":"stream exceeds security buffer limit"}`)
+		return buf, inputTokens, outputTokens, "error", nil
+	}
+	needRestore := profile != nil && profile.PIIRestoreResponse && tm != nil
+	released, blocked, reason := h.scanHeldBackStream(r, payloads, tm, hasOutputSteps(profile), needRestore)
+	if blocked {
+		return blockWith(reason)
+	}
+	for i, data := range payloads {
+		if released[i] != nil {
+			data = released[i]
+		}
+		buf = append(buf, data...)
+		buf = append(buf, '\n')
+		fmt.Fprintf(w, "data: %s\n\n", data)
+	}
+	if done {
+		envelope := buildBastioEnvelope(r.Context(), traceID, start, string(client.Name()), scan)
+		fmt.Fprintf(w, "data: %s\n\n", mustJSON(map[string]any{"bastio": envelope}))
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+	}
+	flusher.Flush()
 	return buf, inputTokens, outputTokens, "ok", nil
 }
 
@@ -1484,6 +1691,9 @@ func (h *Handler) runSecurityScanParts(r *http.Request, info *auth.APIKeyInfo, c
 			SkipSanitization: true, // gateway tokenizes per-message itself
 			Output:           source == "response",
 			Role:             security.RoleUser,
+			// Request fields are rewritten per field by SanitizeDecisions,
+			// which can replace an encoded payload whole.
+			MaskEncodedPayloads: source != "response",
 		})
 
 		// Overlay plugin detectors run after the core scan and fold their
@@ -1521,17 +1731,18 @@ func (h *Handler) runSecurityScanParts(r *http.Request, info *auth.APIKeyInfo, c
 			continue
 		}
 		segResult := llmpipeline.PreflightScan(r.Context(), llmpipeline.PreflightOptions{
-			Engine:            h.security,
-			Profile:           profile,
-			Content:           seg.text,
-			CustomerID:        info.CustomerID,
-			EndUserID:         r.Header.Get("X-End-User-Id"),
-			IPAddress:         r.RemoteAddr,
-			UserAgent:         r.UserAgent(),
-			SkipSanitization:  true,
-			Role:              seg.role,
-			Detectors:         seg.detectors,
-			StrategyOverrides: overrides,
+			Engine:              h.security,
+			Profile:             profile,
+			Content:             seg.text,
+			CustomerID:          info.CustomerID,
+			EndUserID:           r.Header.Get("X-End-User-Id"),
+			IPAddress:           r.RemoteAddr,
+			UserAgent:           r.UserAgent(),
+			SkipSanitization:    true,
+			Role:                seg.role,
+			Detectors:           seg.detectors,
+			StrategyOverrides:   overrides,
+			MaskEncodedPayloads: source != "response",
 		})
 		if segResult != nil {
 			// Record which part of the request produced the finding
@@ -1659,10 +1870,95 @@ type recordInput struct {
 // events are dropped if the recorder buffer is saturated. Delegates to
 // llmpipeline.RecordChatTrace so gateway and workspace write the same
 // shape from one code path — no drift, no double-writes.
+//
+// A stream that passed through unbuffered queued its text on the response
+// collector; that text is scanned here, after the client has the whole
+// stream. The scan and the write then run off the request goroutine so the
+// client connection is never held open for them.
 func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
+	findings := responseFindingsFrom(ctx)
+	if texts := findings.takeObserved(); len(texts) > 0 && h.security != nil {
+		// At most cap(observedScanSlots) of these scans run at once (a
+		// 256 KB scan is ~0.3-0.5 s of CPU). With no free slot the scan is
+		// skipped, never queued: the trace is written now, tagged, and
+		// counted, so neither the client nor the trace waits.
+		select {
+		case h.observedScanSlots <- struct{}{}:
+		default:
+			tags := make(map[string]string, len(in.Tags)+1)
+			maps.Copy(tags, in.Tags)
+			tags["response_scan_skipped"] = "busy"
+			in.Tags = tags
+			if h.onObservedScanSkipped != nil {
+				h.onObservedScanSkipped()
+			}
+			h.writeTrace(ctx, in)
+			return
+		}
+		detached := context.WithoutCancel(ctx)
+		go func() {
+			defer func() { <-h.observedScanSlots }()
+			if !h.scanObserved(detached, findings, texts) {
+				tags := make(map[string]string, len(in.Tags)+1)
+				maps.Copy(tags, in.Tags)
+				tags["response_scan_failed"] = "true"
+				in.Tags = tags
+			}
+			// Recorder writes never block or panic after Close: they are
+			// dropped or left unflushed, so a scan outliving shutdown is
+			// abandoned cleanly.
+			h.writeTrace(detached, in)
+		}()
+		return
+	}
+	h.writeTrace(ctx, in)
+}
+
+// scanObserved runs the after-stream scan of pass-through stream text and
+// reports whether it completed. A panic is recovered and logged without
+// the content, so the trace is still written.
+func (h *Handler) scanObserved(ctx context.Context, findings *responseFindings, texts []string) (ok bool) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("after-stream response scan failed", "panic_type", fmt.Sprintf("%T", rec))
+			ok = false
+		}
+	}()
+	for _, text := range texts {
+		scan := scanAssistantTextWithProfile(ctx, h.security, text)
+		if scan != nil && scan.ShouldBlock {
+			// The client already has this text unmodified: record
+			// what was found, never a block that did not happen.
+			observed := *scan
+			observed.ShouldBlock = false
+			observed.Action = security.ActionWarn
+			scan = &observed
+		}
+		findings.add(scan)
+	}
+	return true
+}
+
+func (h *Handler) writeTrace(ctx context.Context, in recordInput) {
+	findings := responseFindingsFrom(ctx)
+	if findings.wasBlockedInStream() {
+		tags := make(map[string]string, len(in.Tags)+1)
+		maps.Copy(tags, in.Tags)
+		tags["response_blocked_in_stream"] = "true"
+		in.Tags = tags
+		in.HTTPStatus = http.StatusOK
+	}
+	if findings.scanTruncated() {
+		tags := make(map[string]string, len(in.Tags)+1)
+		for k, v := range in.Tags {
+			tags[k] = v
+		}
+		tags["response_scan_truncated"] = "true"
+		in.Tags = tags
+	}
 	// Response-scan findings (enforcing path) are recorded beside the input
 	// findings; without this a response block left no threat row.
-	in.Scan = withResponseScan(in.Scan, responseFindingsFrom(ctx).snapshot(), in.Status == "blocked")
+	in.Scan = withResponseScan(in.Scan, findings.snapshot(), in.Status == "blocked")
 	if gatewaypolicy.From(ctx).OmitContent {
 		in.ReqBody = nil
 		in.RespBody = nil
@@ -1704,7 +2000,7 @@ func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
 	if httpStatus == 0 {
 		httpStatus = statusToHTTPCode(in.Status)
 	}
-	llmpipeline.RecordChatTrace(llmpipeline.ChatTraceInput{
+	trace := llmpipeline.ChatTraceInput{
 		ProxyID:      in.ProxyID,
 		Method:       in.Method,
 		Recorder:     h.recorder,
@@ -1732,7 +2028,14 @@ func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
 		RequestBody:  string(in.ReqBody),
 		ResponseBody: string(in.RespBody),
 		ScanResult:   in.Scan,
-	})
+	}
+	// A wrapping middleware may still replace this response; it decides
+	// the outcome and writes the trace when it finishes.
+	if outcome := responseOutcomeFrom(ctx); outcome != nil {
+		outcome.record(trace, gatewaypolicy.From(ctx).OmitContent)
+		return
+	}
+	llmpipeline.RecordChatTrace(trace)
 }
 
 // truncate clips s to n chars with a tail marker. Used by span-input
@@ -1913,7 +2216,7 @@ func scanAssistantTextWithProfile(ctx context.Context, engine *security.Engine, 
 			steps[i].Strategy = security.ActionMask
 		}
 	}
-	return engine.Scan(ctx, &security.ScanRequest{
+	scan := engine.Scan(ctx, &security.ScanRequest{
 		Content:      text,
 		PIIAction:    security.ActionMask,
 		Steps:        steps,
@@ -1925,6 +2228,30 @@ func scanAssistantTextWithProfile(ctx context.Context, engine *security.Engine, 
 			Decode:  profile.NormalizeDecode,
 		},
 	})
+	return blockUnappliedRewrites(scan)
+}
+
+// blockUnappliedRewrites turns a response scan whose mask/redact step could
+// not rewrite the text (no sanitizer for that detector) into a block: the
+// response would otherwise be delivered with what the step was meant to
+// remove. The recorded action for those detectors becomes block.
+func blockUnappliedRewrites(scan *security.ScanResult) *security.ScanResult {
+	if scan == nil || len(scan.UnappliedRewrites) == 0 || scan.ShouldBlock {
+		return scan
+	}
+	out := *scan
+	out.ShouldBlock = true
+	out.Action = security.ActionBlock
+	out.DetectorActions = maps.Clone(scan.DetectorActions)
+	if out.DetectorActions == nil {
+		out.DetectorActions = make(map[string]security.Action)
+	}
+	out.BlockingDetectors = append([]string(nil), scan.BlockingDetectors...)
+	for _, d := range scan.UnappliedRewrites {
+		out.DetectorActions[d] = security.ActionBlock
+		out.BlockingDetectors = append(out.BlockingDetectors, d)
+	}
+	return &out
 }
 
 // responseBlockReason names what blocked a response for the client error.
@@ -1945,7 +2272,7 @@ func responseBlockReason(scan *security.ScanResult) string {
 // forwarding the text unmodified. Mirrors forwardNativeAPI.
 func (h *Handler) writeRewriteUnavailable(w http.ResponseWriter, r *http.Request, info *auth.APIKeyInfo, traceID uuid.UUID, model, provider string, start time.Time, scan *security.ScanResult, reqBody []byte) {
 	const msg = "security policy requires a rewrite that is unavailable"
-	respBody := []byte(mustJSON(map[string]string{"error": msg, "trace_id": traceID.String()}))
+	respBody := []byte(mustJSON(map[string]string{"error": msg, "trace_id": traceID.String(), "code": codeRewriteUnavailable, "reason": reasonRewriteUnavailable}))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
 	_, _ = w.Write(respBody)
@@ -2072,6 +2399,53 @@ func mustJSON(v any) string {
 // instead of hand-crafted via fmt.Sprintf so the response is always
 // well-formed regardless of what makes it into ThreatTypes — closes
 // the unsafe-quoting class flagged by CodeQL (go/unsafe-quoting).
+// Machine-readable reason for a 403 whose cause is a configured rewrite
+// (mask/redact/tokenize) that could not be applied safely, as opposed to a
+// configured block. Added beside the existing error fields so SDK error
+// parsing (error / error.type / error.message) is unchanged.
+const (
+	codeRewriteUnavailable   = "rewrite_unavailable"
+	reasonRewriteUnavailable = "the security policy asks for this content to be masked, but it could not be safely masked, so the request was withheld"
+)
+
+// scanBlockedBody is blockedResponseBody for a request scan: when the
+// block comes from an unverifiable rewrite it adds code and reason.
+func scanBlockedBody(traceID uuid.UUID, scan *security.ScanResult) []byte {
+	if scan == nil || !scan.RewriteUnavailable {
+		return blockedResponseBody(traceID, scanThreatTypes(scan), scanThreatScore(scan))
+	}
+	body, _ := json.Marshal(struct {
+		Error       string                `json:"error"`
+		Code        string                `json:"code"`
+		Reason      string                `json:"reason"`
+		TraceID     string                `json:"trace_id"`
+		ThreatTypes []security.ThreatType `json:"threat_types"`
+		ThreatScore float64               `json:"threat_score"`
+	}{
+		Error:       "request blocked by security policy",
+		Code:        codeRewriteUnavailable,
+		Reason:      reasonRewriteUnavailable,
+		TraceID:     traceID.String(),
+		ThreatTypes: scan.ThreatTypes,
+		ThreatScore: scan.ThreatScore,
+	})
+	return body
+}
+
+func scanThreatTypes(scan *security.ScanResult) []security.ThreatType {
+	if scan == nil {
+		return nil
+	}
+	return scan.ThreatTypes
+}
+
+func scanThreatScore(scan *security.ScanResult) float64 {
+	if scan == nil {
+		return 0
+	}
+	return scan.ThreatScore
+}
+
 func blockedResponseBody(traceID uuid.UUID, types []security.ThreatType, score float64) []byte {
 	body, _ := json.Marshal(struct {
 		Error       string                `json:"error"`

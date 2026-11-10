@@ -20,7 +20,7 @@ import (
 func (h *Handler) Observe(w http.ResponseWriter, r *http.Request) {
 	info, ok := auth.FromContext(r.Context())
 	if !ok {
-		writeRouteError(w, &routeError{401, "unauthorized"})
+		writeRouteError(w, &routeError{status: 401, message: "unauthorized"})
 		return
 	}
 	var body struct {
@@ -31,7 +31,7 @@ func (h *Handler) Observe(w http.ResponseWriter, r *http.Request) {
 		DurationMs uint32 `json:"duration_ms"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 160<<10)).Decode(&body) != nil || len(body.Request) > 64<<10 || len(body.Response) > 64<<10 || len(body.Model) > 256 {
-		writeRouteError(w, &routeError{400, "invalid local AI observation"})
+		writeRouteError(w, &routeError{status: 400, message: "invalid local AI observation"})
 		return
 	}
 	route, err := h.nativeRoute(r, info, providers.ProviderOllama, body.Model)

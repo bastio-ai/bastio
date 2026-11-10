@@ -290,13 +290,13 @@ func RoleFromCtx(ctx context.Context) Role {
 // package the single source of truth while exposing the surface cloud
 // actually needs.
 type (
-	Store       = workspace.Store
-	AuditEntry  = workspace.AuditEntry
-	AuditTarget          = workspace.AuditTarget
-	Invitation           = workspace.Invitation
-	TXTResolver          = workspace.TXTResolver
-	MCPApproval          = mcp.Approval
-	MCPApprovalNotifier  = mcp.ApprovalNotifier
+	Store               = workspace.Store
+	AuditEntry          = workspace.AuditEntry
+	AuditTarget         = workspace.AuditTarget
+	Invitation          = workspace.Invitation
+	TXTResolver         = workspace.TXTResolver
+	MCPApproval         = mcp.Approval
+	MCPApprovalNotifier = mcp.ApprovalNotifier
 )
 
 // WithMCPApprovalNotifier registers a callback invoked whenever an MCP tool call
@@ -721,6 +721,11 @@ func (s *Server) registerV1Routes(r chi.Router) {
 
 	gw := gateway.NewHandler(providerRegistry, proxySvc, secEngine, profileLookup, s.recorder, string(s.cfg.SecurityMode))
 	gw.SetBatchInspection(s.opts.batchInputMiddleware, s.opts.batchOutputMiddleware)
+	gw.SetObservedScanSkipped(metrics.responseScanSkipped.Inc)
+	if s.cfg.ResponseScanSlots > 0 {
+		gw.SetObservedScanLimit(s.cfg.ResponseScanSlots)
+	}
+	gw.SetHoldBackKeepAlive(s.cfg.HoldBackKeepAliveGrace, s.cfg.HoldBackKeepAliveInterval)
 	batchCipher := s.opts.encryption
 	if batchCipher == nil && s.cfg.MasterEncryptionKey != "" {
 		var err error

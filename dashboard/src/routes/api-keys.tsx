@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/api/client";
 import type { APIKey, Proxy } from "@/api/client";
 import { CopyButton } from "@/components/gateways/primitives";
+import { ConnectionExample } from "@/components/gateways/connection-example";
 import { EnvironmentPicker } from "@/components/gateways/environment-picker";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +66,7 @@ export function ApiKeysPage() {
   const [revealedSecretKey, setRevealedSecretKey] = useState<string | null>(
     null,
   );
+  const [revealedProxyId, setRevealedProxyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<KeyFilter>("active");
   const [search, setSearch] = useState("");
 
@@ -91,8 +93,9 @@ export function ApiKeysPage() {
       environment: string;
       allow_environment_override: boolean;
     }) => api.apiKeys.create(data),
-    onSuccess: (res: { key?: string }) => {
+    onSuccess: (res: { key?: string }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      setRevealedProxyId(variables.proxy_id || null);
       setCreateOpen(false);
       setKeyName("");
       setSelectedProxyId("global");
@@ -131,6 +134,8 @@ export function ApiKeysPage() {
     },
   });
 
+  const revealedProxy =
+    proxies?.find((proxy: Proxy) => proxy.id === revealedProxyId) ?? null;
   const activeCount = keys?.filter((key: APIKey) => key.is_active).length ?? 0;
   const revokedCount = (keys?.length ?? 0) - activeCount;
   const globalCount =
@@ -589,6 +594,18 @@ export function ApiKeysPage() {
               label="Copy new Bastio API key"
             />
           </div>
+          {revealedSecretKey && revealedProxy ? (
+            <section aria-label="Send a test request" className="min-w-0">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Run this to send your first request through{" "}
+                {revealedProxy.name}. It contains the key — don’t commit it.
+              </p>
+              <ConnectionExample
+                proxy={revealedProxy}
+                apiKey={revealedSecretKey}
+              />
+            </section>
+          ) : null}
           <DialogFooter>
             <Button onClick={() => setRevealedSecretKey(null)}>
               I stored the key

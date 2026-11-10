@@ -91,8 +91,8 @@ type Detector interface {
 ```
 
 Register it in `engine.go`'s detector list. Patterns get compiled
-once at startup; never compile per-request — the latency budget
-won't allow it.
+once at startup; never compile per-request — detection runs in
+the request path.
 
 ## Cloud-only detectors
 
@@ -102,10 +102,10 @@ extra detectors, all hosted on managed infrastructure:
 
 | Detector | What it does | Stack |
 |---|---|---|
-| **Privacy Filter** *(Cloud only)* | Transformer-grade PII classification (~97% F1 on PII-Masking-300k) | Microsoft Presidio analyzer |
+| **Privacy Filter** *(Cloud only)* | Model-based PII classification | Microsoft Presidio analyzer |
 | **Prompt Guard** *(Cloud only)* | ML classifier for prompt injection + jailbreak | DeBERTa-v3 |
 | **Threat Vector** *(Cloud only)* | Embedding-similarity lookup against a curated attack-fingerprint corpus | pgvector |
-| **Injection Semantic** *(Cloud only)* | Heuristic semantic analyzer for role manipulation, framing attacks, context hijacking — pure CPU, sub-millisecond | In-process |
+| **Injection Semantic** *(Cloud only)* | Heuristic semantic analyzer for role manipulation, framing attacks, context hijacking — pure CPU, no model call | In-process |
 | **Session Risk Score** *(Cloud only)* | Multi-turn behavioral scorer over a rolling per-conversation window | In-process |
 
 OSS gets the regex + entropy detectors in the catalog above — same

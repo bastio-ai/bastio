@@ -23,6 +23,10 @@ import (
 type routeError struct {
 	status  int
 	message string
+	// code is an optional machine-readable reason (error.code), e.g.
+	// "rewrite_unavailable" when the configured rewrite could not be
+	// applied safely. Empty keeps the historical {type, message} shape.
+	code string
 }
 
 func (e *routeError) Error() string { return e.message }
@@ -38,7 +42,7 @@ func (h *Handler) nativeRoute(r *http.Request, info *auth.APIKeyInfo, requested 
 	selected := requested
 	if header := r.Header.Get("X-Bastio-Provider"); header != "" {
 		if requested != "" && requested != providers.Provider(header) {
-			return nil, &routeError{400, "provider header conflicts with API route"}
+			return nil, &routeError{status: 400, message: "provider header conflicts with API route"}
 		}
 		selected = providers.Provider(header)
 	}
@@ -66,24 +70,24 @@ func (h *Handler) nativeRoute(r *http.Request, info *auth.APIKeyInfo, requested 
 			}
 		}
 		if !allowed {
-			return nil, &routeError{403, "API key is restricted to its configured proxies"}
+			return nil, &routeError{status: 403, message: "API key is restricted to its configured proxies"}
 		}
 	}
 	route := &nativeRoute{model: model}
 	if proxyID != "" {
 		id, err := uuid.Parse(proxyID)
 		if err != nil {
-			return nil, &routeError{400, "invalid proxy ID"}
+			return nil, &routeError{status: 400, message: "invalid proxy ID"}
 		}
 		if h.proxies == nil {
-			return nil, &routeError{404, "proxy not found"}
+			return nil, &routeError{status: 404, message: "proxy not found"}
 		}
 		p, err := h.proxies.GetByID(r.Context(), info.CustomerID, id)
 		if err != nil || p.CustomerID != info.CustomerID || !p.IsActive {
-			return nil, &routeError{404, "proxy not found"}
+			return nil, &routeError{status: 404, message: "proxy not found"}
 		}
 		if selected != "" && selected != p.TargetProvider {
-			return nil, &routeError{400, "provider conflicts with configured proxy"}
+			return nil, &routeError{status: 400, message: "provider conflicts with configured proxy"}
 		}
 		selected, route.proxyID = p.TargetProvider, id
 		if route.model == "" {
@@ -98,7 +102,7 @@ func (h *Handler) nativeRoute(r *http.Request, info *auth.APIKeyInfo, requested 
 		route.key = h.nativeKeyResolver(r, selected)
 	}
 	if _, err := h.providers.Get(selected); err != nil {
-		return nil, &routeError{400, "unknown provider"}
+		return nil, &routeError{status: 400, message: "unknown provider"}
 	}
 	if h.proxies != nil {
 		// Default credentials are tenant-scoped. Explicit proxy credentials
@@ -130,16 +134,22 @@ func writeRouteError(w http.ResponseWriter, err error) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+	var code string
+	if e != nil {
+		code = e.code
+	}
 	_ = json.NewEncoder(w).Encode(struct {
 		Error struct {
 			Type    string `json:"type"`
 			Message string `json:"message"`
+			Code    string `json:"code,omitempty"`
 		} `json:"error"`
 	}{
 		Error: struct {
 			Type    string `json:"type"`
 			Message string `json:"message"`
-		}{Type: "gateway_error", Message: err.Error()},
+			Code    string `json:"code,omitempty"`
+		}{Type: "gateway_error", Message: err.Error(), Code: code},
 	})
 }
 
@@ -167,10 +177,10 @@ func (h *Handler) NativeAPI(provider providers.Provider, path string) http.Handl
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			if _, oversized := err.(*http.MaxBytesError); oversized {
-				writeRouteError(w, &routeError{413, "request exceeds gateway body limit"})
+				writeRouteError(w, &routeError{status: 413, message: "request exceeds gateway body limit"})
 				return
 			}
-			writeRouteError(w, &routeError{400, "failed to read request"})
+			writeRouteError(w, &routeError{status: 400, message: "failed to read request"})
 			return
 		}
 		h.forwardNativeAPI(w, r, provider, endpoint, body)
@@ -181,14 +191,14 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	start := time.Now()
 	info, ok := auth.FromContext(r.Context())
 	if !ok {
-		writeRouteError(w, &routeError{401, "unauthorized"})
+		writeRouteError(w, &routeError{status: 401, message: "unauthorized"})
 		return
 	}
 	r = withResponseFindings(r)
 	var obj map[string]json.RawMessage
 	isJSON := len(body) > 0 && (r.Header.Get("Content-Type") == "" || strings.Contains(r.Header.Get("Content-Type"), "json"))
 	if isJSON && (json.Unmarshal(body, &obj) != nil || obj == nil) {
-		writeRouteError(w, &routeError{400, "invalid JSON request body"})
+		writeRouteError(w, &routeError{status: 400, message: "invalid JSON request body"})
 		return
 	}
 	var model string
@@ -211,11 +221,11 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		}
 	}
 	if len(fallbacks) > 0 && route.provider == providers.ProviderOpenRouter && endpoint != "/chat/completions" {
-		writeRouteError(w, &routeError{400, "Bastio fallback_models on native OpenRouter routes require Chat Completions"})
+		writeRouteError(w, &routeError{status: 400, message: "Bastio fallback_models on native OpenRouter routes require Chat Completions"})
 		return
 	}
 	if len(fallbacks) > 0 && route.provider != providers.ProviderOpenRouter {
-		writeRouteError(w, &routeError{400, "use the shared chat route for Bastio model fallbacks, or OpenRouter native models routing"})
+		writeRouteError(w, &routeError{status: 400, message: "use the shared chat route for Bastio model fallbacks, or OpenRouter native models routing"})
 		return
 	}
 	client, err := h.providers.Native(route.provider)
@@ -224,7 +234,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		return
 	}
 	if route.key == "" && !(route.provider == providers.ProviderOpenRouter && r.Method == http.MethodGet && (strings.HasPrefix(endpoint, "/models") || endpoint == "/providers")) {
-		writeRouteError(w, &routeError{502, "no provider credential configured"})
+		writeRouteError(w, &routeError{status: 502, message: "no provider credential configured"})
 		return
 	}
 	// Native Messages must go to Claude or OpenRouter, never OpenAI's Chat
@@ -243,7 +253,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	}
 	r = r.WithContext(ctx)
 	if rejected, allowed := validateImageContent(body, h.imageURLAllowlist); !allowed {
-		writeRouteError(w, &routeError{403, "image URL is outside trusted hosts: " + rejected})
+		writeRouteError(w, &routeError{status: 403, message: "image URL is outside trusted hosts: " + rejected})
 		return
 	}
 	// Same split as ChatCompletions: the full input pipeline runs on what
@@ -265,7 +275,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 	if scan != nil && scan.ShouldBlock {
 		metadata.HTTPStatus = 403
 		status = "blocked"
-		responseBody = blockedResponseBody(traceID, scan.ThreatTypes, scan.ThreatScore)
+		responseBody = scanBlockedBody(traceID, scan)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(403)
 		_, _ = w.Write(responseBody)
@@ -286,7 +296,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		if !available {
 			status = "blocked"
 			metadata.HTTPStatus = 403
-			writeRouteError(w, &routeError{403, "security policy requires a rewrite that is unavailable"})
+			writeRouteError(w, &routeError{status: 403, message: "security policy requires a rewrite that is unavailable", code: codeRewriteUnavailable})
 			return
 		}
 		if tm != nil && tm.Size() > 0 {
@@ -312,7 +322,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		}
 		if len(fallbacks) > 0 {
 			if hasModels {
-				writeRouteError(w, &routeError{400, "models and fallback_models cannot both define a fallback chain"})
+				writeRouteError(w, &routeError{status: 400, message: "models and fallback_models cannot both define a fallback chain"})
 				return
 			}
 			chain := []string{}
@@ -374,7 +384,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		if blocked {
 			status = "blocked"
 			metadata.HTTPStatus = 403
-			writeRouteError(w, &routeError{403, reason})
+			writeRouteError(w, &routeError{status: 403, message: reason})
 			return
 		}
 		if processed != nil {
@@ -572,6 +582,21 @@ func mapNativeOutputPolicy(raw json.RawMessage, transform, thinking textTransfor
 }
 
 func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte, bool, string) {
+	return h.postProcessNativeResponseMemo(r, raw, nil)
+}
+
+// processedText is one processAssistantText outcome.
+type processedText struct {
+	next    string
+	blocked bool
+	reason  string
+}
+
+// postProcessNativeResponseMemo is postProcessNativeResponse with a memo of
+// processed assistant texts (nil = none): a held-back stream repeats the
+// same text in its delta channel and its done/completed events, and each
+// distinct text is scanned once.
+func (h *Handler) postProcessNativeResponseMemo(r *http.Request, raw []byte, memo map[string]processedText) ([]byte, bool, string) {
 	if gatewaypolicy.From(r.Context()).MonitorOnly {
 		return nil, false, ""
 	}
@@ -586,7 +611,14 @@ func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte
 	}
 	blocked, reason := false, ""
 	out, changed := mapNativeOutputPolicy(raw, func(text string) string {
-		next, block, why := processAssistantText(r.Context(), h.security, text, tm, needScan, needRestore)
+		p, seen := memo[text]
+		if !seen {
+			p.next, p.blocked, p.reason = processAssistantText(r.Context(), h.security, text, tm, needScan, needRestore)
+			if memo != nil {
+				memo[text] = p
+			}
+		}
+		next, block, why := p.next, p.blocked, p.reason
 		if block {
 			blocked, reason = true, why
 		}

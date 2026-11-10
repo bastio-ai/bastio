@@ -27,7 +27,7 @@ func walkBatchJSONL(reader io.Reader, write io.Writer, apply func([]byte, int) (
 	for {
 		chunk, err := buf.ReadSlice('\n')
 		if len(line)+len(chunk) > batchLineLimit {
-			return &routeError{413, "batch JSONL item exceeds 64 MiB"}
+			return &routeError{status: 413, message: "batch JSONL item exceeds 64 MiB"}
 		}
 		line = append(line, chunk...)
 		if errors.Is(err, bufio.ErrBufferFull) {
@@ -37,14 +37,14 @@ func walkBatchJSONL(reader io.Reader, write io.Writer, apply func([]byte, int) (
 			return err
 		}
 		if limited.N <= 0 {
-			return &routeError{413, "batch file exceeds 2 GiB"}
+			return &routeError{status: 413, message: "batch file exceeds 2 GiB"}
 		}
 		if len(line) > 0 {
 			if !json.Valid(line) {
-				return &routeError{400, fmt.Sprintf("invalid batch JSONL at line %d", index+1)}
+				return &routeError{status: 400, message: fmt.Sprintf("invalid batch JSONL at line %d", index+1)}
 			}
 			if index >= batchItemLimit {
-				return &routeError{413, "batch exceeds 100000 items"}
+				return &routeError{status: 413, message: "batch exceeds 100000 items"}
 			}
 			next, e := apply(line, index)
 			if e != nil {
@@ -66,7 +66,7 @@ func walkBatchJSONL(reader io.Reader, write io.Writer, apply func([]byte, int) (
 		}
 	}
 	if index == 0 {
-		return &routeError{400, "batch JSONL must contain at least one item"}
+		return &routeError{status: 400, message: "batch JSONL must contain at least one item"}
 	}
 	return nil
 }
@@ -76,23 +76,23 @@ func (b *batchCall) inputJSONL(reader io.Reader, write io.Writer, manifest *batc
 	return walkBatchJSONL(reader, write, func(line []byte, index int) ([]byte, error) {
 		var obj map[string]json.RawMessage
 		if json.Unmarshal(line, &obj) != nil || obj == nil {
-			return nil, &routeError{400, "batch JSONL must contain objects"}
+			return nil, &routeError{status: 400, message: "batch JSONL must contain objects"}
 		}
 		id, field := batchString(obj, "custom_id"), "body"
 		if b.route.provider == providers.ProviderGemini {
 			id, field = batchString(obj, "key"), "request"
 		}
 		if id == "" || len(id) > 256 || seen[id] {
-			return nil, &routeError{400, fmt.Sprintf("batch line %d requires a unique ID of 1 to 256 bytes", index+1)}
+			return nil, &routeError{status: 400, message: fmt.Sprintf("batch line %d requires a unique ID of 1 to 256 bytes", index+1)}
 		}
 		seen[id] = true
 		if b.route.provider == providers.ProviderOpenAI {
 			method, endpoint := batchString(obj, "method"), batchString(obj, "url")
 			if method != "POST" || !batchAllowedOpenAIEndpoint(endpoint) {
-				return nil, &routeError{400, "batch JSONL requires a supported POST /v1 endpoint"}
+				return nil, &routeError{status: 400, message: "batch JSONL requires a supported POST /v1 endpoint"}
 			}
 			if manifest.Endpoint != "" && manifest.Endpoint != endpoint {
-				return nil, &routeError{400, "OpenAI batch items must use the same endpoint"}
+				return nil, &routeError{status: 400, message: "OpenAI batch items must use the same endpoint"}
 			}
 			manifest.Endpoint = endpoint
 		}
@@ -116,7 +116,7 @@ func (b *batchCall) openAIUpload(w http.ResponseWriter) error {
 	b.tags["batch.operation"] = "upload"
 	media, params, err := mime.ParseMediaType(b.r.Header.Get("Content-Type"))
 	if err != nil || media != "multipart/form-data" || params["boundary"] == "" {
-		return &routeError{400, "files upload requires multipart/form-data"}
+		return &routeError{status: 400, message: "files upload requires multipart/form-data"}
 	}
 	reader := multipart.NewReader(b.r.Body, params["boundary"])
 	type field struct{ name, value string }
@@ -136,11 +136,11 @@ func (b *batchCall) openAIUpload(w http.ResponseWriter) error {
 			break
 		}
 		if e != nil {
-			return &routeError{400, "invalid multipart upload"}
+			return &routeError{status: 400, message: "invalid multipart upload"}
 		}
 		if part.FormName() == "file" {
 			if haveFile {
-				return &routeError{400, "files upload accepts exactly one file"}
+				return &routeError{status: 400, message: "files upload accepts exactly one file"}
 			}
 			haveFile = true
 			filename = filepath.Base(part.FileName())
@@ -150,7 +150,7 @@ func (b *batchCall) openAIUpload(w http.ResponseWriter) error {
 				return e
 			}
 			if n > 200<<20 {
-				return &routeError{413, "OpenAI batch files are limited to 200 MiB"}
+				return &routeError{status: 413, message: "OpenAI batch files are limited to 200 MiB"}
 			}
 		} else {
 			value, e := io.ReadAll(io.LimitReader(part, 64<<10+1))
@@ -158,7 +158,7 @@ func (b *batchCall) openAIUpload(w http.ResponseWriter) error {
 				return e
 			}
 			if len(value) > 64<<10 || len(fields) >= 32 {
-				return &routeError{413, "multipart metadata too large"}
+				return &routeError{status: 413, message: "multipart metadata too large"}
 			}
 			fields = append(fields, field{part.FormName(), string(value)})
 			if part.FormName() == "purpose" {
@@ -168,7 +168,7 @@ func (b *batchCall) openAIUpload(w http.ResponseWriter) error {
 		_ = part.Close()
 	}
 	if !haveFile || purpose == "" {
-		return &routeError{400, "files upload requires file and purpose"}
+		return &routeError{status: 400, message: "files upload requires file and purpose"}
 	}
 	if _, err = rewindBatch(source); err != nil {
 		return err
@@ -241,7 +241,7 @@ func (b *batchCall) openAIUpload(w http.ResponseWriter) error {
 	_ = json.Unmarshal(raw, &obj)
 	id := batchString(obj, "id")
 	if id == "" {
-		return &routeError{502, "provider returned no file ID"}
+		return &routeError{status: 502, message: "provider returned no file ID"}
 	}
 	if err = b.put("file", id, resource); err != nil {
 		return err
@@ -286,10 +286,10 @@ func (b *batchCall) isResults(path string) bool {
 func (b *batchCall) downloadResults(w http.ResponseWriter, path string) error {
 	b.tags["batch.operation"] = "download"
 	if b.r.Method != http.MethodGet {
-		return &routeError{405, "batch result download requires GET"}
+		return &routeError{status: 405, message: "batch result download requires GET"}
 	}
 	if b.r.Header.Get("Range") != "" {
-		return &routeError{400, "range downloads are not supported for inspected batch results"}
+		return &routeError{status: 400, message: "range downloads are not supported for inspected batch results"}
 	}
 	resourcePath := path
 	if b.route.provider == providers.ProviderGemini {
@@ -331,7 +331,7 @@ func (b *batchCall) downloadResults(w http.ResponseWriter, path string) error {
 	err = walkBatchJSONL(resp.Body, spool, func(line []byte, index int) ([]byte, error) {
 		var item map[string]json.RawMessage
 		if json.Unmarshal(line, &item) != nil || item == nil {
-			return nil, &routeError{502, "provider batch results must contain JSON objects"}
+			return nil, &routeError{status: 502, message: "provider batch results must contain JSON objects"}
 		}
 		id := batchString(item, "custom_id", "key")
 		key := batchHash(id)
@@ -345,11 +345,11 @@ func (b *batchCall) downloadResults(w http.ResponseWriter, path string) error {
 			if id == "" && (bytes.Contains(item["error"], []byte("{")) || bytes.Contains(item["result"], []byte(`"errored"`))) {
 				key = batchHash(fmt.Sprintf("#error-%d", index))
 			} else {
-				return nil, &routeError{502, "provider batch result correlation ID does not match the submitted input"}
+				return nil, &routeError{status: 502, message: "provider batch result correlation ID does not match the submitted input"}
 			}
 		}
 		if seen[key] {
-			return nil, &routeError{502, "duplicate correlation ID in batch results"}
+			return nil, &routeError{status: 502, message: "duplicate correlation ID in batch results"}
 		}
 		seen[key] = true
 		return b.outputItem(line, key, resource)
@@ -357,7 +357,7 @@ func (b *batchCall) downloadResults(w http.ResponseWriter, path string) error {
 	if err != nil {
 		var policy *routeError
 		if errors.As(err, &policy) && (policy.status == 400 || policy.status == 413) {
-			return &routeError{502, "provider batch result is malformed or exceeds inspection limits"}
+			return &routeError{status: 502, message: "provider batch result is malformed or exceeds inspection limits"}
 		}
 		return err
 	}

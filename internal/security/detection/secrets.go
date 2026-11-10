@@ -96,6 +96,46 @@ func (d *SecretsDetector) Mask(content string) string {
 	return result
 }
 
+// RewriteSpans implements security.SpanSanitizer: the byte ranges Mask
+// replaces in content, with the tag Mask writes there.
+func (d *SecretsDetector) RewriteSpans(_ context.Context, content string) []security.RewriteSpan {
+	var spans []security.RewriteSpan
+	for _, p := range d.prefixes {
+		if p.kind == "private_key" {
+			spans = append(spans, privateKeySpans(content)...)
+			continue
+		}
+		tag := "[REDACTED_" + strings.ToUpper(p.kind) + "]"
+		for _, m := range p.regex.FindAllStringIndex(content, -1) {
+			if p.accepts(content[m[0]:m[1]]) {
+				spans = append(spans, security.RewriteSpan{Start: m[0], End: m[1], Replacement: tag})
+			}
+		}
+	}
+	return spans
+}
+
+// privateKeySpans mirrors maskPrivateKeyBlocks: header through matching
+// footer, or to end of content when the block is incomplete.
+func privateKeySpans(content string) []security.RewriteSpan {
+	var spans []security.RewriteSpan
+	offset := 0
+	for {
+		span := privateKeyHeader.FindStringIndex(content[offset:])
+		if span == nil {
+			return spans
+		}
+		start, headerEnd := offset+span[0], offset+span[1]
+		footer := strings.Replace(content[start:headerEnd], "BEGIN", "END", 1)
+		end := strings.Index(content[headerEnd:], footer)
+		if end < 0 {
+			return append(spans, security.RewriteSpan{Start: start, End: len(content), Replacement: "[REDACTED_PRIVATE_KEY]"})
+		}
+		offset = headerEnd + end + len(footer)
+		spans = append(spans, security.RewriteSpan{Start: start, End: offset, Replacement: "[REDACTED_PRIVATE_KEY]"})
+	}
+}
+
 // TokenizeInto is a pass-through: we do not produce reversible
 // placeholders for secrets. Restoring an API key in the response
 // would defeat the whole point.

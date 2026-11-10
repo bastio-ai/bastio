@@ -80,6 +80,20 @@ type Config struct {
 	// raw; check.torproject.org bulk exit list).
 	IPListFireHOLURL string
 	IPListTorURL     string
+
+	// ResponseScanSlots bounds the after-stream response scans of
+	// pass-through streams that run at once (BASTIO_RESPONSE_SCAN_SLOTS).
+	// 0 = default: 1 with GOMAXPROCS <= 4, else GOMAXPROCS/4.
+	ResponseScanSlots int
+
+	// HoldBackKeepAliveGrace is how long a held-back (scanned-before-
+	// release) stream may run before its headers are committed and SSE
+	// keep-alives start, so proxy idle timeouts do not cut it
+	// (BASTIO_HOLDBACK_KEEPALIVE_GRACE). HoldBackKeepAliveInterval spaces the
+	// keep-alives (BASTIO_HOLDBACK_KEEPALIVE_INTERVAL). 0 = default (15s /
+	// 10s); a negative grace disables keep-alives.
+	HoldBackKeepAliveGrace    time.Duration
+	HoldBackKeepAliveInterval time.Duration
 }
 
 func Load() (*Config, error) {
@@ -106,6 +120,10 @@ func Load() (*Config, error) {
 		IPListRefresh:    envDurationOr("BASTIO_IPLIST_REFRESH", 6*time.Hour),
 		IPListFireHOLURL: os.Getenv("BASTIO_IPLIST_FIREHOL_URL"),
 		IPListTorURL:     os.Getenv("BASTIO_IPLIST_TOR_URL"),
+
+		ResponseScanSlots:         envIntOr("BASTIO_RESPONSE_SCAN_SLOTS", 0),
+		HoldBackKeepAliveGrace:    envDurationOr("BASTIO_HOLDBACK_KEEPALIVE_GRACE", 0),
+		HoldBackKeepAliveInterval: envDurationOr("BASTIO_HOLDBACK_KEEPALIVE_INTERVAL", 0),
 	}
 
 	if err := cfg.validate(); err != nil {

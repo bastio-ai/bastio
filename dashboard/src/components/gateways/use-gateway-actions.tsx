@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
@@ -26,6 +26,20 @@ import { providerLabels } from "@/components/gateway-setup";
 import { controlClass, CopyButton, ErrorMessage } from "./primitives";
 import { useGatewayExtension } from "./extension-context";
 import { EnvironmentPicker } from "./environment-picker";
+import { ConnectionExample } from "./connection-example";
+
+export type ProviderDialogOptions = {
+  /**
+   * Setup chaining: after the key is saved, open "Create a gateway" for the
+   * same provider. Opt-in so adding a key to an existing gateway (gateway
+   * panel, workspace model connections) keeps its current behavior.
+   */
+  thenCreateGateway?: boolean;
+};
+
+// Open the next dialog after the current one has started closing, so the
+// dialog primitive releases focus and scroll lock before the next one opens.
+const nextDialog = (open: () => void) => window.setTimeout(open, 0);
 
 export function useGatewayActions(onCreated: (id: string) => void) {
   const extension = useGatewayExtension();
@@ -45,7 +59,15 @@ export function useGatewayActions(onCreated: (id: string) => void) {
   const [keyEnvironment, setKeyEnvironment] = useState("");
   const [rateLimit, setRateLimit] = useState("");
   const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [secretProxy, setSecretProxy] = useState<Proxy | null>(null);
+  const chainToCreate = useRef(false);
 
+  const openCreate = (presetProvider?: string) => {
+    create.reset();
+    if (presetProvider && presetProvider in providerLabels)
+      setProvider(presetProvider);
+    setCreateOpen(true);
+  };
   const create = useMutation({
     mutationFn: api.proxies.create,
     onSuccess: async (p) => {
@@ -54,11 +76,13 @@ export function useGatewayActions(onCreated: (id: string) => void) {
       setName("");
       setModel("");
       onCreated(p.id);
+      // A new gateway has no app key yet — continue straight to creating one.
+      nextDialog(() => openAppKey(p));
     },
   });
   const storeProvider = useMutation({
     mutationFn: api.providerKeys.create,
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["provider-keys"] }),
         qc.invalidateQueries({ queryKey: ["proxy-provider-keys"] }),
@@ -68,6 +92,10 @@ export function useGatewayActions(onCreated: (id: string) => void) {
       ]);
       setProviderDialog(null);
       setProviderSecret("");
+      if (chainToCreate.current) {
+        chainToCreate.current = false;
+        nextDialog(() => openCreate(variables.provider));
+      }
     },
   });
   const removeProvider = useMutation({
@@ -99,8 +127,12 @@ export function useGatewayActions(onCreated: (id: string) => void) {
       await qc.invalidateQueries({ queryKey: ["api-keys"] });
     },
   });
-  const openProviderDialog = (value: string) => {
+  const openProviderDialog = (
+    value: string,
+    options: ProviderDialogOptions = {},
+  ) => {
     storeProvider.reset();
+    chainToCreate.current = options.thenCreateGateway === true;
     setProviderSecret("");
     setProviderLabel("");
     setProviderDialog(value);
@@ -114,10 +146,7 @@ export function useGatewayActions(onCreated: (id: string) => void) {
   };
 
   return {
-    openCreate: () => {
-      create.reset();
-      setCreateOpen(true);
-    },
+    openCreate: () => openCreate(),
     openProviderDialog,
     openAppKey,
     deleteProvider: (key: ProviderKey) => {
@@ -135,7 +164,7 @@ export function useGatewayActions(onCreated: (id: string) => void) {
             <DialogHeader>
               <DialogTitle>Create a gateway</DialogTitle>
               <DialogDescription>
-                Step 1 of 3 · Choose where your application’s AI requests go.
+                Choose where your application’s AI requests go.
               </DialogDescription>
             </DialogHeader>
             <form
@@ -194,8 +223,8 @@ export function useGatewayActions(onCreated: (id: string) => void) {
                 </p>
               </div>
               <p className="rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
-                Next, we’ll help you add the provider key and connect your
-                application.
+                Next, you’ll create the Bastio API key your application uses
+                to call this gateway.
               </p>
               <ErrorMessage error={create.error} />
               <DialogFooter>
@@ -222,6 +251,7 @@ export function useGatewayActions(onCreated: (id: string) => void) {
           open={providerDialog !== null}
           onOpenChange={(open) => {
             if (!open) {
+              chainToCreate.current = false;
               setProviderDialog(null);
               setProviderSecret("");
               storeProvider.reset();
@@ -314,6 +344,7 @@ export function useGatewayActions(onCreated: (id: string) => void) {
                   type="button"
                   variant="outline"
                   onClick={() => {
+                    chainToCreate.current = false;
                     setProviderDialog(null);
                     setProviderSecret("");
                   }}
@@ -354,8 +385,9 @@ export function useGatewayActions(onCreated: (id: string) => void) {
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (appKeyProxy)
-                  createAppKey.mutate({
+                if (!appKeyProxy) return;
+                setSecretProxy(appKeyProxy);
+                createAppKey.mutate({
                     name: keyName.trim(),
                     proxy_id: appKeyProxy.id,
                     environment: keyEnvironment,
@@ -430,8 +462,8 @@ export function useGatewayActions(onCreated: (id: string) => void) {
               <DialogTitle>Save your Bastio API key</DialogTitle>
               <DialogDescription>
                 This is the only time the full key is shown. Store it in your
-                app’s secrets manager as BASTIO_API_KEY, then use the connection
-                example.
+                app’s secrets manager as BASTIO_API_KEY, then send a test
+                request.
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-start gap-2 rounded-lg border border-border bg-muted p-3">
@@ -443,6 +475,15 @@ export function useGatewayActions(onCreated: (id: string) => void) {
                 label="Copy new Bastio API key"
               />
             </div>
+            {newSecret && secretProxy ? (
+              <section aria-label="Send a test request" className="min-w-0">
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Run this to send your first request through{" "}
+                  {secretProxy.name}. It contains the key — don’t commit it.
+                </p>
+                <ConnectionExample proxy={secretProxy} apiKey={newSecret} />
+              </section>
+            ) : null}
             <DialogFooter>
               <Button
                 onClick={() => {

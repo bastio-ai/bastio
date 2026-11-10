@@ -10,6 +10,7 @@
     "test:security": "node --experimental-strip-types --test src/components/observe/security-decision.test.mjs src/components/observe/mcp-trace-presentation.test.mjs src/components/observe/finding-explanation.test.mjs src/components/observe/trace-filters.test.mjs",
     "test:artifacts": "node --experimental-strip-types --test src/components/workspace/artifact-document.test.mjs",
     "test:gateways": "node --experimental-strip-types --test src/components/gateway-setup.test.mjs src/components/gateways/gateway-test.test.mjs",
+    "test:getting-started": "node --experimental-strip-types --test src/components/getting-started/getting-started.test.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "generate:api": "openapi-typescript ../cmd/server/openapi.yaml -o src/api/schema.ts",

@@ -7,12 +7,12 @@ While exact-match caching matches identical request strings byte-for-byte, **Sem
 
 ```
 "How do I reset my password?"  ──▶ [Cache Store] ──▶ Generated Answer (Miss)
-"What are the steps to reset password?" ──▶ Cosine Similarity: 0.97 ──▶ Cached Answer (HIT in 3ms)
+"What are the steps to reset password?" ──▶ Cosine Similarity: 0.97 ──▶ Cached Answer (HIT)
 ```
 
 ## How It Works
 
-1. **Exact Cache First**: Bastio checks exact SHA-256 hash match in Redis (under 2ms).
+1. **Exact Cache First**: Bastio checks exact SHA-256 hash match in Redis.
 2. **Semantic Similarity Search**: If exact cache misses, Bastio searches the in-memory vector index computing cosine similarity against cached query embeddings.
 3. **Threshold Evaluation**: If similarity is at or above threshold (default: `0.95`), the cached completion is served instantly with:
    - `X-Bastio-Cache: SEMANTIC_HIT`
@@ -48,7 +48,7 @@ resp2 = client.chat.completions.create(
         "X-Bastio-Cache-Threshold": "0.92",
     },
 )
-# Returns cached response in under 5ms with X-Bastio-Cache: SEMANTIC_HIT
+# Served from cache, without a provider call, with X-Bastio-Cache: SEMANTIC_HIT
 ```
 
 ## Tuning Similarity Thresholds
@@ -56,7 +56,7 @@ resp2 = client.chat.completions.create(
 | Header | Default | Purpose |
 |---|:---:|---|
 | `X-Bastio-Cache-Threshold` | `0.95` | Minimum cosine similarity score (0.0 to 1.0) required to trigger a semantic cache hit. |
-| `X-Bastio-Embedding` | optional | Pass precomputed 1536/3072-dimensional vector embedding for sub-millisecond similarity lookups. |
+| `X-Bastio-Embedding` | optional | Pass precomputed 1536/3072-dimensional vector embedding so Bastio can skip computing one before the similarity lookup. |
 
 ## Isolation & Security
 

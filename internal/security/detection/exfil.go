@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/bastio-ai/bastio/internal/security"
@@ -116,6 +117,108 @@ func (d *ExfilDetector) Detect(ctx context.Context, content string) ([]security.
 		findings = append(findings, d.detectRenderedURLs(ctx, content)...)
 	}
 	return findings, nil
+}
+
+// Markers that replace what a mask/redact step removes.
+const (
+	exfilLinkMarker    = "[link removed]"
+	exfilPatternMarker = "[removed]"
+)
+
+// MaskContext implements security.ContextSanitizer: it removes what Detect
+// would flag. Each rendered URL that carries data (same rules and context
+// as Detect: assistant role, the request's token placeholders) is replaced
+// by "[link removed]"; the surrounding markdown or HTML stays in place, and
+// since the marker holds a space it no longer parses as a fetchable or
+// clickable destination. Disclosure phrases are replaced by "[removed]".
+// It repeats until the text is stable, so nothing Detect flags remains.
+func (d *ExfilDetector) MaskContext(ctx context.Context, content string) string {
+	for range 4 {
+		next := d.maskOnce(ctx, content)
+		if next == content {
+			break
+		}
+		content = next
+	}
+	return content
+}
+
+type exfilSpan struct {
+	start, end int
+	marker     string
+}
+
+// RewriteSpans implements security.SpanSanitizer with the spans one
+// MaskContext pass replaces.
+func (d *ExfilDetector) RewriteSpans(ctx context.Context, content string) []security.RewriteSpan {
+	spans := d.maskSpans(ctx, content)
+	out := make([]security.RewriteSpan, 0, len(spans))
+	for _, s := range spans {
+		out = append(out, security.RewriteSpan{Start: s.start, End: s.end, Replacement: s.marker})
+	}
+	return out
+}
+
+func (d *ExfilDetector) maskOnce(ctx context.Context, content string) string {
+	spans := d.maskSpans(ctx, content)
+	if len(spans) == 0 {
+		return content
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
+	var b strings.Builder
+	last := 0
+	for _, s := range spans {
+		if s.start < last {
+			continue // overlaps a span already replaced
+		}
+		b.WriteString(content[last:s.start])
+		b.WriteString(s.marker)
+		last = s.end
+	}
+	b.WriteString(content[last:])
+	return b.String()
+}
+
+func (d *ExfilDetector) maskSpans(ctx context.Context, content string) []exfilSpan {
+	var spans []exfilSpan
+	for _, p := range d.patterns {
+		for _, m := range p.regex.FindAllStringIndex(content, -1) {
+			spans = append(spans, exfilSpan{m[0], m[1], exfilPatternMarker})
+		}
+	}
+	if security.RoleFromContext(ctx) == security.RoleAssistant && strings.Contains(content, "//") {
+		hasImageRef := strings.Contains(content, "![")
+		var placeholders []string
+		if tm, ok := security.TokenMapFromContext(ctx); ok && tm != nil && tm.Size() > 0 {
+			placeholders = tm.Placeholders()
+		}
+		for _, ref := range d.urlRefs {
+			// Unlike Detect, no per-text URL cap: every flagged URL goes.
+			for _, m := range ref.regex.FindAllStringSubmatchIndex(content, -1) {
+				start, end := m[2*ref.urlGroup], m[2*ref.urlGroup+1]
+				autoFetch := false
+				switch {
+				case ref.tagGroup > 0:
+					tag := strings.ToLower(content[m[2*ref.tagGroup]:m[2*ref.tagGroup+1]])
+					switch {
+					case isAutoFetchTag(tag):
+						autoFetch = true
+					case isClickTag(tag):
+					default:
+						continue
+					}
+				case ref.bangGroup > 0:
+					autoFetch = m[2*ref.bangGroup+1] > m[2*ref.bangGroup]
+				default:
+					autoFetch = hasImageRef
+				}
+				if _, ok := d.assessRenderedURL(content[start:end], autoFetch, ref.markdown, placeholders); ok {
+					spans = append(spans, exfilSpan{start, end, exfilLinkMarker})
+				}
+			}
+		}
+	}
+	return spans
 }
 
 func (d *ExfilDetector) initPatterns() {

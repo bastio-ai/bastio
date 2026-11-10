@@ -34,7 +34,7 @@ reach either side.
   `detection/` (regex + entropy + classifier ensemble),
   `prevention/` (block / mask / tokenize / warn / log-only
   actions), `scoring/` (per-request risk score 0-100).
-  Latency budget: `<50ms` total across all detectors.
+  Detectors run concurrently; see [Scan latency](#scan-latency).
 - **Provider clients** (`internal/providers/`) — registered clients for OpenAI, Anthropic, Bedrock, and Ollama. The public gateway router currently selects OpenAI and Anthropic model families; Azure and Vertex identifiers are reserved but their clients are not registered.
 - **Observability** (`internal/observability/`) — structured
   trace per request written to PostgreSQL (real-time inspection)
@@ -65,15 +65,16 @@ OSS server stamps every request with a single default customer
 Bastio Cloud overrides the tenant middleware to thread the
 authenticated user's customer through, gating every query.
 
-## Latency budget
+## Scan latency
 
-Each detector runs in a goroutine. The slowest one determines
-total latency. Targets:
-
-- Regex / pattern detectors: `<2ms` p99
-- Entropy + secret detection: `<8ms` p99
-- Classifier (Presidio when configured): `<30ms` p99
-- Total scan including coordination: `<50ms` p99
+Each detector runs in a goroutine, so the slowest enabled detector
+sets the scan time. Regex and pattern detectors are compiled once
+at startup and are the cheapest; entropy and secret detection add a
+little more; an external classifier such as Presidio, when
+configured, adds a network round trip and is usually the slowest.
+Bastio has not published a gateway-overhead benchmark. Measure the
+overhead on your own traffic with the per-stage timings in each
+trace (see [Observability](/docs/observability)).
 
 The scan blocks the provider call only when it produces a
 `block` decision. `mask` / `tokenize` rewrite the message in

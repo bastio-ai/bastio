@@ -182,6 +182,9 @@ func (e *Engine) finishEncodedScan(ctx context.Context, req *ScanRequest, result
 	if decoded != raw.SanitizedContent {
 		opts.Canonicalize = req.Canonicalize
 		checked := e.RunSteps(ctx, decoded, req.Steps, opts)
+		if !checked.ShouldBlock && checked.SanitizedContent != decoded && e.maskEncodedPayloads(ctx, req, result, nr.Original) {
+			return
+		}
 		if checked.ShouldBlock || checked.SanitizedContent != decoded {
 			result.ShouldBlock = true
 			result.Action = ActionBlock
@@ -193,4 +196,36 @@ func (e *Engine) finishEncodedScan(ctx context.Context, req *ScanRequest, result
 	if !req.SkipSanitization {
 		result.SanitizedContent = raw.SanitizedContent
 	}
+}
+
+// maskEncodedPayloads is the gateway's opt-in (ScanRequest.MaskEncodedPayloads)
+// alternative to withholding: when the only thing the declared rewrites
+// could not reach sits inside an encoded payload, and every such payload
+// can be located in the original text, the caller's per-field rewrite
+// (SanitizeDecisions) replaces each payload whole with a
+// [REDACTED_ENCODED_<DETECTOR>] placeholder and the request continues
+// with the recorded mask decision. It reports false — the caller keeps
+// withholding (RewriteUnavailable) — when a payload cannot be located or
+// anything still fires on the decoded view of the rewritten text.
+// Callers that use SanitizedContent (workspace, MCP) do not opt in and
+// keep the withheld contract.
+func (e *Engine) maskEncodedPayloads(ctx context.Context, req *ScanRequest, result *ScanResult, original string) bool {
+	if !req.MaskEncodedPayloads || !req.SkipSanitization {
+		return false
+	}
+	rewritten, dr := e.sanitizeDecisions(ctx, original, req.Steps, result.DetectorActions, NewTokenMap(TokenStyleAngle), req.Role == RoleAssistant)
+	if len(dr.failed) > 0 || len(dr.encoded) == 0 {
+		return false
+	}
+	normalizeOpts := req.Normalize
+	if normalizeOpts == (normalize.Options{}) {
+		normalizeOpts = normalize.DefaultOptions()
+	}
+	view := normalize.Normalize(rewritten, normalizeOpts).Normalized
+	recheck := e.RunSteps(ctx, view, req.Steps, &RunOptions{Role: req.Role, Suppressions: req.Suppressions, Canonicalize: req.Canonicalize})
+	if recheck.ShouldBlock || recheck.SanitizedContent != view {
+		return false
+	}
+	result.EncodedMasked = appendUnique(result.EncodedMasked, dr.encoded...)
+	return true
 }

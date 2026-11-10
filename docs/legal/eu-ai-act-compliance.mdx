@@ -10,7 +10,7 @@ Bastio provides automated audit trails and technical controls designed to satisf
 | Standard / Regulation | Control Section | Requirement Summary | Bastio Technical Implementation |
 |---|---|---|---|
 | **EU AI Act** | Article 14 | Human Oversight & Operational Intercepts | Real-time threat intercept engine blocks high-risk prompts before execution; dashboard trace viewer allows human security team oversight. |
-| **EU AI Act** | Article 15 | Cybersecurity, Robustness & Prompt Injection Shield | Neural and heuristic prompt injection detectors run at &lt;20ms latency to neutralize indirect injection and jailbreak attacks. |
+| **EU AI Act** | Article 15 | Cybersecurity, Robustness & Prompt Injection Shield | Neural and heuristic prompt injection detectors run inline in the request path to neutralize indirect injection and jailbreak attacks. |
 | **EU AI Act** | Article 50 | Transparency & Output Labeling | Cryptographic trace hashing and request/response metadata tagging for verifiable AI provenance. |
 | **ISO/IEC 42001:2023** | Control A.6.2 | AI System Impact & Risk Assessment | `/v1/guardrails/agent-action` provides real-time risk scoring on tool calls, shell execution, and database queries. |
 | **ISO/IEC 42001:2023** | Control A.7.4 | Data Governance & PII Redaction | Reversible tokenization and masking for SSNs, IBANs, Credit Cards, API Keys, and custom regular expressions. |

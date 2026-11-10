@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/bastio-ai/bastio/internal/security"
@@ -22,6 +24,175 @@ type responseFindings struct {
 	mu     sync.Mutex
 	result *security.ScanResult
 	seen   map[string]bool
+	// observed is pass-through stream text awaiting the scan that runs
+	// after the stream ended (recordTrace runs it); truncated notes that
+	// the text hit maxObservedStreamText.
+	observed        []string
+	truncated       bool
+	blockedInStream bool
+}
+
+// maxObservedStreamText bounds the pass-through stream text kept for the
+// scan after the stream ends.
+const maxObservedStreamText = 256 << 10
+
+// streamObserver accumulates the assistant text of a stream that passes
+// through unbuffered, per channel as the hold-back path does, so text split
+// across chunks is scanned as one string. Gemini frames are incremental and
+// append to one channel. Other frames without delta channels (Responses
+// done/completed events, Claude message snapshots) repeat text the deltas
+// already carried: they are ignored once any delta was seen, and otherwise
+// only the most complete one (the longest) is kept, so the text is taken
+// once and not once per event type.
+type streamObserver struct {
+	channels  map[string]*strings.Builder
+	order     []string
+	size      int
+	truncated bool
+	sawDelta  bool
+	full      string
+}
+
+func newStreamObserver() *streamObserver {
+	return &streamObserver{channels: make(map[string]*strings.Builder)}
+}
+
+func (o *streamObserver) addFrame(data []byte) {
+	found := false
+	mapStreamDeltas(data, func(key, text string) string {
+		found = true
+		o.append(key, text)
+		return text
+	})
+	if found {
+		o.sawDelta = true
+		return
+	}
+	var probe struct {
+		Candidates json.RawMessage `json:"candidates"`
+	}
+	_ = json.Unmarshal(data, &probe)
+	if len(probe.Candidates) > 0 {
+		mapNativeOutput(data, func(text string) string {
+			o.append("candidates", text)
+			return text
+		})
+		return
+	}
+	if o.sawDelta {
+		return
+	}
+	// A snapshot frame can reach the same text by more than one key.
+	var parts []string
+	seen := make(map[string]bool)
+	mapNativeOutput(data, func(text string) string {
+		if text != "" && !seen[text] {
+			seen[text] = true
+			parts = append(parts, text)
+		}
+		return text
+	})
+	if text := strings.Join(parts, "\n"); len(text) > len(o.full) {
+		if len(text) > maxObservedStreamText {
+			text = text[:maxObservedStreamText]
+			o.truncated = true
+		}
+		o.full = text
+	}
+}
+
+// texts returns the accumulated text, one string per channel.
+func (o *streamObserver) texts() []string {
+	if o.sawDelta || len(o.order) > 0 || o.full == "" {
+		out := make([]string, 0, len(o.order))
+		for _, key := range o.order {
+			out = append(out, o.channels[key].String())
+		}
+		return out
+	}
+	if room := maxObservedStreamText - o.size; len(o.full) > room {
+		o.full = o.full[:max(room, 0)]
+		o.truncated = true
+	}
+	return []string{o.full}
+}
+
+func (o *streamObserver) append(key, text string) {
+	if text == "" {
+		return
+	}
+	if room := maxObservedStreamText - o.size; len(text) > room {
+		text = text[:max(room, 0)]
+		o.truncated = true
+		if text == "" {
+			return
+		}
+	}
+	b, ok := o.channels[key]
+	if !ok {
+		b = &strings.Builder{}
+		o.channels[key] = b
+		o.order = append(o.order, key)
+	}
+	b.WriteString(text)
+	o.size += len(text)
+}
+
+// observe queues the accumulated stream text for the scan after the stream.
+func (c *responseFindings) observe(o *streamObserver) {
+	if c == nil || o == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, text := range o.texts() {
+		if text != "" {
+			c.observed = append(c.observed, text)
+		}
+	}
+	c.truncated = c.truncated || o.truncated
+}
+
+// takeObserved returns and clears the queued stream text.
+func (c *responseFindings) takeObserved() []string {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.observed
+	c.observed = nil
+	return out
+}
+
+func (c *responseFindings) scanTruncated() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.truncated
+}
+
+// markBlockedInStream notes that a held-back stream was blocked after its
+// headers were committed (keep-alives): the client got HTTP 200 and an
+// in-stream error event, which the trace records as such.
+func (c *responseFindings) markBlockedInStream() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.blockedInStream = true
+}
+
+func (c *responseFindings) wasBlockedInStream() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.blockedInStream
 }
 
 // withResponseFindings attaches a collector to the request unless one is

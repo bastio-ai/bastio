@@ -30,7 +30,7 @@ func (b *batchCall) prepareGoogleCreate(path string, obj map[string]json.RawMess
 	batch, _ := googleObject(obj, "batch", "batch")
 	config, configKey := googleObject(batch, "inputConfig", "input_config")
 	if config == nil {
-		return nil, resource, &routeError{400, "Google batch requires batch.inputConfig"}
+		return nil, resource, &routeError{status: 400, message: "Google batch requires batch.inputConfig"}
 	}
 	model := strings.TrimPrefix(strings.Split(strings.TrimPrefix(path, "/models/"), ":")[0], "models/")
 	resource.Manifest.Model = model
@@ -40,10 +40,10 @@ func (b *batchCall) prepareGoogleCreate(path string, obj map[string]json.RawMess
 			return nil, resource, err
 		}
 		if known.Role != "input" {
-			return nil, resource, &routeError{400, "Google batch input must be a JSONL file uploaded through this gateway"}
+			return nil, resource, &routeError{status: 400, message: "Google batch input must be a JSONL file uploaded through this gateway"}
 		}
 		if known.Manifest.Policy != b.inputPolicyFingerprint() {
-			return nil, resource, &routeError{428, "batch input was inspected under a different security policy; upload the input file again before submitting this batch"}
+			return nil, resource, &routeError{status: 428, message: "batch input was inspected under a different security policy; upload the input file again before submitting this batch"}
 		}
 		resource.Manifest = known.Manifest
 		resource.Manifest.Model = model
@@ -58,7 +58,7 @@ func (b *batchCall) prepareGoogleCreate(path string, obj map[string]json.RawMess
 	}
 	var items []map[string]json.RawMessage
 	if json.Unmarshal(requests[itemsKey], &items) != nil || len(items) == 0 || len(items) > batchItemLimit {
-		return nil, resource, &routeError{400, "Google inline batch requires 1 to 100000 requests"}
+		return nil, resource, &routeError{status: 400, message: "Google inline batch requires 1 to 100000 requests"}
 	}
 	seen := map[string]bool{}
 	for i, item := range items {
@@ -69,7 +69,7 @@ func (b *batchCall) prepareGoogleCreate(path string, obj map[string]json.RawMess
 		}
 		key := batchHash(id)
 		if seen[key] {
-			return nil, resource, &routeError{400, "Google batch metadata keys must be unique"}
+			return nil, resource, &routeError{status: 400, message: "Google batch metadata keys must be unique"}
 		}
 		seen[key] = true
 		raw, err := b.inputItem(item["request"], key, &resource.Manifest)
@@ -243,17 +243,17 @@ func (b *batchCall) googleInlineResults(raw []byte, resource batchResource) ([]b
 			innerKey := key
 			if json.Unmarshal(value, &items) != nil {
 				if json.Unmarshal(value, &wrapper) != nil {
-					return nil, &routeError{502, "malformed Google inline batch results"}
+					return nil, &routeError{status: 502, message: "malformed Google inline batch results"}
 				}
 				if _, exists := wrapper[innerKey]; !exists {
 					innerKey = "inlinedResponses"
 				}
 				if json.Unmarshal(wrapper[innerKey], &items) != nil {
-					return nil, &routeError{502, "malformed Google inline batch results"}
+					return nil, &routeError{status: 502, message: "malformed Google inline batch results"}
 				}
 			}
 			if len(items) > len(resource.Manifest.Keys) {
-				return nil, &routeError{502, "Google batch returned more results than input requests"}
+				return nil, &routeError{status: 502, message: "Google batch returned more results than input requests"}
 			}
 			for i, item := range items {
 				next, err := b.outputItem(item, resource.Manifest.Keys[i], resource)
@@ -301,16 +301,16 @@ func (b *batchCall) publicOrigin() string {
 func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 	b.tags["batch.operation"] = "upload"
 	if b.r.Method != http.MethodPost {
-		return &routeError{405, "resumable uploads require POST"}
+		return &routeError{status: 405, message: "resumable uploads require POST"}
 	}
 	command := strings.ToLower(strings.ReplaceAll(b.r.Header.Get("X-Goog-Upload-Command"), " ", ""))
 	if strings.HasPrefix(path, "/upload/") {
 		if command != "start" || !strings.EqualFold(b.r.Header.Get("X-Goog-Upload-Protocol"), "resumable") {
-			return &routeError{400, "Google files require the resumable upload protocol"}
+			return &routeError{status: 400, message: "Google files require the resumable upload protocol"}
 		}
 		size, err := strconv.ParseInt(b.r.Header.Get("X-Goog-Upload-Header-Content-Length"), 10, 64)
 		if err != nil || size < 0 || size > batchFileLimit {
-			return &routeError{413, "Google upload size must be between 0 and 2 GiB"}
+			return &routeError{status: 413, message: "Google upload size must be between 0 and 2 GiB"}
 		}
 		metadata, err := readBatchJSON(b.r.Body, 1<<20)
 		if err != nil {
@@ -325,7 +325,7 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 		id := uuid.NewString()
 		if err = b.h.batchStore.CreateUpload(b.r.Context(), b.key("upload", id), raw, size); err != nil {
 			if errors.Is(err, batchstate.ErrCapacity) {
-				return &routeError{429, "temporary batch upload capacity unavailable; finalize or cancel existing uploads"}
+				return &routeError{status: 429, message: "temporary batch upload capacity unavailable; finalize or cancel existing uploads"}
 			}
 			return err
 		}
@@ -337,19 +337,19 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 	}
 	id := strings.TrimPrefix(path, "/batch-uploads/")
 	if _, err := uuid.Parse(id); err != nil {
-		return &routeError{404, "upload session not found"}
+		return &routeError{status: 404, message: "upload session not found"}
 	}
 	key := b.key("upload", id)
 	record, err := b.h.batchStore.Get(b.r.Context(), key)
 	if errors.Is(err, batchstate.ErrMissing) {
-		return &routeError{404, "upload session unavailable or expired"}
+		return &routeError{status: 404, message: "upload session unavailable or expired"}
 	}
 	if err != nil {
 		return err
 	}
 	var state googleUploadState
 	if json.Unmarshal(record.Payload, &state) != nil {
-		return &routeError{502, "invalid encrypted upload state"}
+		return &routeError{status: 502, message: "invalid encrypted upload state"}
 	}
 	status := "active"
 	if record.Completed {
@@ -370,7 +370,7 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 		return nil
 	}
 	if command != "upload" && command != "upload,finalize" && command != "finalize" {
-		return &routeError{400, "unsupported resumable upload command"}
+		return &routeError{status: 400, message: "unsupported resumable upload command"}
 	}
 	if record.Completed {
 		if strings.Contains(command, "finalize") {
@@ -378,11 +378,11 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 			_, err = w.Write(state.Response)
 			return err
 		}
-		return &routeError{409, "upload already finalized"}
+		return &routeError{status: 409, message: "upload already finalized"}
 	}
 	offset, err := strconv.ParseInt(b.r.Header.Get("X-Goog-Upload-Offset"), 10, 64)
 	if err != nil || offset != record.Received {
-		return &routeError{409, "upload offset does not match received bytes; query the session before retrying"}
+		return &routeError{status: 409, message: "upload offset does not match received bytes; query the session before retrying"}
 	}
 	if strings.HasPrefix(command, "upload") {
 		chunk := make([]byte, 2<<20)
@@ -390,11 +390,11 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 			n, e := io.ReadFull(b.r.Body, chunk)
 			if n > 0 {
 				if offset+int64(n) > state.Size {
-					return &routeError{413, "upload exceeds declared file size"}
+					return &routeError{status: 413, message: "upload exceeds declared file size"}
 				}
 				offset, err = b.h.batchStore.Append(b.r.Context(), key, offset, chunk[:n])
 				if errors.Is(err, batchstate.ErrOffset) {
-					return &routeError{409, "upload offset changed; query session before retrying"}
+					return &routeError{status: 409, message: "upload offset changed; query session before retrying"}
 				}
 				if err != nil {
 					return err
@@ -414,14 +414,14 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 		return nil
 	}
 	if offset != state.Size {
-		return &routeError{400, "cannot finalize an incomplete upload"}
+		return &routeError{status: 400, message: "cannot finalize an incomplete upload"}
 	}
 	leased, err := b.h.batchStore.Lease(b.r.Context(), key)
 	if err != nil {
 		return err
 	}
 	if !leased {
-		return &routeError{409, "upload finalization already in progress"}
+		return &routeError{status: 409, message: "upload finalization already in progress"}
 	}
 	defer func() { _ = b.h.batchStore.Release(b.r.Context(), key) }()
 	input := &batchChunkReader{b: b, key: key, size: state.Size}
@@ -461,10 +461,10 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 	}
 	uploadURL := start.Header.Get("X-Goog-Upload-URL")
 	if uploadURL == "" {
-		return &routeError{502, "Google returned no resumable upload URL"}
+		return &routeError{status: 502, message: "Google returned no resumable upload URL"}
 	}
 	if _, err = url.ParseRequestURI(uploadURL); err != nil {
-		return &routeError{502, "invalid provider upload URL"}
+		return &routeError{status: 502, message: "invalid provider upload URL"}
 	}
 	headers = make(http.Header)
 	headers.Set("Content-Type", state.MIME)
@@ -487,7 +487,7 @@ func (b *batchCall) googleUpload(w http.ResponseWriter, path string) error {
 	file, _ := googleObject(obj, "file", "file")
 	name := batchString(file, "name")
 	if !strings.HasPrefix(name, "files/") {
-		return &routeError{502, "Google returned no file name"}
+		return &routeError{status: 502, message: "Google returned no file name"}
 	}
 	if err = b.put("file", name, resource); err != nil {
 		return err

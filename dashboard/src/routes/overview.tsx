@@ -26,6 +26,7 @@ import { Pill } from "@/components/data/pill";
 import { RequestVolumeChart } from "@/components/data/request-volume-chart";
 import { StatusDot } from "@/components/data/status-dot";
 import { useOverviewExtension } from "@/components/overview-extension";
+import { GetStartedChecklist } from "@/components/getting-started/get-started-checklist";
 import { WorkspaceSummaryStrip } from "@/components/observe/workspace-summary-strip";
 import { Skeleton } from "@/components/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -107,8 +108,10 @@ export function OverviewPage() {
     placeholderData: (previous) => previous,
     queryFn: () => api.users.list({ limit: 5, order_by: "threats" }),
   });
-  const apiKeys = useQuery({ queryKey: ["overview", "api-keys"], queryFn: api.apiKeys.list });
-  const proxies = useQuery({ queryKey: ["overview", "proxies"], queryFn: api.proxies.list });
+  // Canonical keys: shared with the Get started checklist and invalidated by
+  // the gateway dialogs, so Attention required updates in the same tick.
+  const apiKeys = useQuery({ queryKey: ["api-keys"], queryFn: api.apiKeys.list });
+  const proxies = useQuery({ queryKey: ["proxies"], queryFn: api.proxies.list });
 
   const current = analytics.data ?? EMPTY_ANALYTICS;
   const previous = previousAnalytics.data ?? EMPTY_ANALYTICS;
@@ -200,6 +203,8 @@ export function OverviewPage() {
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <div className="flex flex-col gap-3">
+          <GetStartedChecklist />
+
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
             {isLoading ? (
               <Skeleton className="h-[214px] rounded-xl" />
