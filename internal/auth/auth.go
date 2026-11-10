@@ -193,7 +193,8 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 
 		info, err := s.Authenticate(r.Context(), apiKey)
 		if errors.Is(err, ErrLookupUnavailable) {
-			slog.Warn("api key lookup unavailable, returning 503", "error", err, "prefix", safePrefix(apiKey))
+			// Fixed fields only: the key and the error text derive from the request.
+			slog.Warn("api key lookup unavailable, returning 503", "request_cancelled", r.Context().Err() != nil)
 			WriteLookupUnavailable(w)
 			return
 		}
@@ -204,7 +205,7 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 		}
 		environment, err := EnvironmentFromRequest(r.Context(), s.db, info, r.Header.Get("X-Bastio-Environment"))
 		if errors.Is(err, ErrLookupUnavailable) {
-			slog.Warn("environment lookup unavailable, returning 503", "error", err, "prefix", safePrefix(apiKey))
+			slog.Warn("environment lookup unavailable, returning 503", "request_cancelled", r.Context().Err() != nil)
 			WriteLookupUnavailable(w)
 			return
 		}
