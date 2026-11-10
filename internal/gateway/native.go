@@ -579,7 +579,7 @@ func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte
 		return nil, false, ""
 	}
 	tm, hasTM := security.TokenMapFromContext(r.Context())
-	needScan, needRestore := profile.PIIScanResponse && h.security != nil, hasTM && profile.PIIRestoreResponse
+	needScan, needRestore := h.security != nil && hasOutputSteps(profile), hasTM && profile.PIIRestoreResponse
 	if !needScan && !needRestore {
 		return nil, false, ""
 	}
@@ -604,6 +604,41 @@ func (h *Handler) postProcessNativeResponse(r *http.Request, raw []byte) ([]byte
 		return out, false, ""
 	}
 	return nil, false, ""
+}
+
+// hasOutputSteps reports whether the profile has any response-side
+// detector (exfil, secrets, or PII with response scanning). The response
+// scan must run whenever one is configured; gating it on PIIScanResponse
+// alone skipped output_exfil for profiles with PII response scanning off.
+func hasOutputSteps(profile *security.Profile) bool {
+	if profile == nil {
+		return false
+	}
+	_, out := security.StepsFromLegacyProfile(*profile)
+	return len(out) > 0
+}
+
+// outputScanCanChangeResponse reports whether the response scan can change
+// what the client receives, so a stream must be held back until it ran:
+// some output step blocks or rewrites (mask, redact, tokenize, which the
+// response side turns into mask). Steps on warn, log or log_only only
+// observe, so their streams pass through. PIIScanResponse keeps buffering
+// unconditionally, as it did before output steps decided this.
+func outputScanCanChangeResponse(profile *security.Profile) bool {
+	if profile == nil {
+		return false
+	}
+	if profile.PIIScanResponse {
+		return true
+	}
+	_, out := security.StepsFromLegacyProfile(*profile)
+	for _, step := range out {
+		switch step.Strategy {
+		case security.ActionBlock, security.ActionMask, security.ActionRedact, security.ActionTokenize:
+			return true
+		}
+	}
+	return false
 }
 
 // RegisterNativeRoutes installs provider-native APIs inside the caller's authenticated gateway group.
