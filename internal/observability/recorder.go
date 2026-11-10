@@ -217,6 +217,31 @@ func (r *Recorder) Dropped() (traces, threats, analytics, observations uint64) {
 	return r.tracesDropped.Load(), r.threatsDropped.Load(), r.analyticsDropped.Load(), r.observationsDropped.Load()
 }
 
+// PendingTraces drains and returns the traces still buffered in memory,
+// without blocking. Meant for an unstarted Recorder (tests, diagnostics):
+// on a started one the batcher competes for the same events.
+func (r *Recorder) PendingTraces() []*TraceRecord {
+	return drainPending(r.traceCh)
+}
+
+// PendingThreats drains and returns the threat rows still buffered in
+// memory, without blocking. Same caveat as PendingTraces.
+func (r *Recorder) PendingThreats() []*ThreatEvent {
+	return drainPending(r.threatCh)
+}
+
+func drainPending[T any](src chan *T) []*T {
+	var out []*T
+	for {
+		select {
+		case v := <-src:
+			out = append(out, v)
+		default:
+			return out
+		}
+	}
+}
+
 // RecordTrace enqueues a trace for batched insertion. Non-blocking; drops
 // the event if the buffer is full.
 func (r *Recorder) RecordTrace(trace *TraceRecord) {

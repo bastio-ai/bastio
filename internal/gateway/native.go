@@ -184,6 +184,7 @@ func (h *Handler) forwardNativeAPI(w http.ResponseWriter, r *http.Request, provi
 		writeRouteError(w, &routeError{401, "unauthorized"})
 		return
 	}
+	r = withResponseFindings(r)
 	var obj map[string]json.RawMessage
 	isJSON := len(body) > 0 && (r.Header.Get("Content-Type") == "" || strings.Contains(r.Header.Get("Content-Type"), "json"))
 	if isJSON && (json.Unmarshal(body, &obj) != nil || obj == nil) {
