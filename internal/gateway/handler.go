@@ -198,6 +198,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
+	r = withResponseFindings(r)
 	// Read request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -553,6 +554,7 @@ func (h *Handler) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
+	r = withResponseFindings(r)
 
 	proxyIDStr := chi.URLParam(r, "proxyId")
 	proxyID, err := uuid.Parse(proxyIDStr)
@@ -1658,6 +1660,9 @@ type recordInput struct {
 // llmpipeline.RecordChatTrace so gateway and workspace write the same
 // shape from one code path — no drift, no double-writes.
 func (h *Handler) recordTrace(ctx context.Context, in recordInput) {
+	// Response-scan findings (enforcing path) are recorded beside the input
+	// findings; without this a response block left no threat row.
+	in.Scan = withResponseScan(in.Scan, responseFindingsFrom(ctx).snapshot(), in.Status == "blocked")
 	if gatewaypolicy.From(ctx).OmitContent {
 		in.ReqBody = nil
 		in.RespBody = nil
@@ -1888,6 +1893,13 @@ func processAssistantText(ctx context.Context, engine *security.Engine, text str
 // placeholders. Without a profile on ctx it falls back to the legacy
 // all-detector scan.
 func scanAssistantText(ctx context.Context, engine *security.Engine, text string) *security.ScanResult {
+	scan := scanAssistantTextWithProfile(ctx, engine, text)
+	// The caller only acts on the verdict; keep the findings for the trace.
+	responseFindingsFrom(ctx).add(scan)
+	return scan
+}
+
+func scanAssistantTextWithProfile(ctx context.Context, engine *security.Engine, text string) *security.ScanResult {
 	profile, ok := security.ProfileFromContext(ctx)
 	if !ok || profile == nil {
 		return engine.Scan(ctx, &security.ScanRequest{Content: text, PIIAction: security.ActionMask})
