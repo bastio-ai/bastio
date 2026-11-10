@@ -7,7 +7,6 @@ import { GatewayModelPicker } from "./gateway-model-picker";
 import {
   defaultListedGatewayModel,
   listedGatewayModelChoices,
-  type GatewayModelListing,
 } from "./gateway-models";
 import type { ModelChoice } from "@/components/workspace/model-catalog";
 import {
@@ -18,21 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { helloPrompt } from "./gateway-test";
 import {
-  buildGatewayTestRequest,
-  gatewayTestFailure,
-  gatewayTestReply,
-  gatewayTraceId,
-  helloPrompt,
-} from "./gateway-test";
-
-type TestResult = {
-  reply?: string;
-  title?: string;
-  detail?: string;
-  traceId?: string;
-  elapsed: number;
-};
+  fetchGatewayModelListing,
+  runGatewayTest,
+  type GatewayTestResult,
+} from "./gateway-requests";
 
 export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
   const [open, setOpen] = useState(false);
@@ -44,10 +34,6 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
     "provider",
   );
   const modelController = useRef<AbortController | null>(null);
-  const apiOrigin = new URL(
-    import.meta.env.VITE_API_URL || window.location.origin,
-    window.location.origin,
-  ).href.replace(/\/$/, "");
   const loadModels = async () => {
     modelController.current?.abort();
     const abort = new AbortController();
@@ -57,28 +43,9 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
     setModel("");
     setChoices([]);
     setResult(null);
-    const timeout = window.setTimeout(() => abort.abort("timeout"), 30000);
     try {
-      const response = await fetch(
-        `${apiOrigin}/v1/proxies/${encodeURIComponent(proxy.id)}/models`,
-        {
-          credentials: "include",
-          cache: "no-store",
-          redirect: "error",
-          signal: abort.signal,
-        },
-      );
-      const body = await response.json();
-      if (!response.ok)
-        throw new Error(gatewayTestFailure(response.status, body).detail);
-      if (
-        body.provider !== proxy.target_provider ||
-        !Array.isArray(body.models) ||
-        !["provider", "catalog"].includes(body.source)
-      )
-        throw new Error("The provider returned an unexpected model list.");
+      const listing = await fetchGatewayModelListing(proxy, abort.signal);
       if (!abort.signal.aborted) {
-        const listing = body as GatewayModelListing;
         const available = listedGatewayModelChoices(listing);
         setChoices(available);
         setModelSource(listing.source);
@@ -89,14 +56,13 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
           );
       }
     } catch (error) {
-      if (!abort.signal.aborted || abort.signal.reason === "timeout")
+      if (!abort.signal.aborted)
         setModelError(
           error instanceof Error
             ? error.message
             : "Could not load models. Check this gateway’s provider key or try again.",
         );
     } finally {
-      window.clearTimeout(timeout);
       if (modelController.current === abort) {
         modelController.current = null;
         setLoadingModels(false);
@@ -104,7 +70,7 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
     }
   };
   const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<TestResult | null>(null);
+  const [result, setResult] = useState<GatewayTestResult | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
@@ -123,74 +89,16 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
   };
   const runTest = async () => {
     if (!model.trim() || loadingModels || !proxy.is_active || pending) return;
-    const request = buildGatewayTestRequest(
-      proxy,
-      model,
-      new URL(
-        import.meta.env.VITE_API_URL || window.location.origin,
-        window.location.origin,
-      ).href,
-    );
     setResult(null);
     setPending(true);
     const abort = new AbortController();
     controller.current = abort;
-    const timeout = window.setTimeout(() => abort.abort("timeout"), 30000);
-    const started = performance.now();
     try {
-      const response = await fetch(request.url, {
-        method: "POST",
-        body: request.body,
-        credentials: "include",
-        redirect: "error",
-        signal: abort.signal,
-        headers: request.headers,
-      });
-      const raw = await response.text();
-      let body: unknown;
-      try {
-        body = JSON.parse(raw);
-      } catch {
-        body = {
-          message:
-            "The gateway returned an unexpected response. Check provider configuration and the gateway logs.",
-        };
-      }
-      const traceId = gatewayTraceId(
-        response.headers.get("X-Bastio-Trace-Id"),
-        body,
-      );
-      const elapsed = Math.round(performance.now() - started);
-      const reply = gatewayTestReply(body);
-      if (!abort.signal.aborted)
-        setResult(
-          response.ok && reply
-            ? { reply, traceId, elapsed }
-            : {
-                ...(response.ok
-                  ? {
-                      title: "The model returned no text",
-                      detail:
-                        "Choose a chat model or try again. No text reply was returned, so we could not confirm the hello test.",
-                    }
-                  : gatewayTestFailure(response.status, body)),
-                traceId,
-                elapsed,
-              },
-        );
+      const outcome = await runGatewayTest(proxy, model, abort.signal);
+      if (!abort.signal.aborted) setResult(outcome);
     } catch {
-      if (!abort.signal.aborted || abort.signal.reason === "timeout")
-        setResult({
-          title:
-            abort.signal.reason === "timeout"
-              ? "The gateway took too long to reply"
-              : "Could not reach the gateway",
-          detail:
-            "Check the model, provider credentials, and gateway availability, then try again.",
-          elapsed: Math.round(performance.now() - started),
-        });
+      // Aborted by close/unmount: nothing to show.
     } finally {
-      window.clearTimeout(timeout);
       if (controller.current === abort) {
         controller.current = null;
         setPending(false);
@@ -312,7 +220,13 @@ export function GatewayTestDialog({ proxy }: { proxy: Proxy }) {
                   </>
                 ) : (
                   <div role="alert">
-                    <p className="text-sm font-medium text-destructive">
+                    <p
+                      className={
+                        result.outcome === "blocked"
+                          ? "text-sm font-medium text-warn"
+                          : "text-sm font-medium text-destructive"
+                      }
+                    >
                       {result.title}
                     </p>
                     <p className="mt-1 break-words text-sm text-muted-foreground">

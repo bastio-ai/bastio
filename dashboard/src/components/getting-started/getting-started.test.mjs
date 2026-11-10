@@ -114,6 +114,16 @@ test("snippets use the placeholder and the gateway origin; withApiKey fills ever
   assert.equal(firstRequestSnippets(gateway({ target_provider: "anthropic" }), "http://localhost:4000").sdkLabel, "Anthropic SDK");
 });
 
+test("snippets carry the chosen model, and the filled key never leaves the placeholder behind", () => {
+  const unconfigured = gateway({ target_model: "" });
+  const placeholder = firstRequestSnippets(unconfigured, "https://api.bastio.com");
+  assert.match(placeholder.curl, /"model": "YOUR_MODEL_ID"/);
+  const chosen = firstRequestSnippets(unconfigured, "https://api.bastio.com", "gpt-4o-mini");
+  assert.match(chosen.curl, /"model": "gpt-4o-mini"/);
+  assert.match(chosen.sdk, /model="gpt-4o-mini"/);
+  assert.doesNotMatch(withApiKey(chosen.curl, "bst_secret"), /YOUR_MODEL_ID|\$BASTIO_API_KEY/);
+});
+
 test("dismissal storage round-trips and survives throwing storage", () => {
   const values = new Map();
   const storage = { getItem: (k) => values.get(k) ?? null, setItem: (k, v) => values.set(k, v) };

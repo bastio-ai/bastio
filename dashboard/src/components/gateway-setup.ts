@@ -58,10 +58,19 @@ export function gatewayBasePath(proxy: Proxy) {
     : "/v1";
 }
 
-export function gatewayConnection(proxy: Proxy, origin: string) {
+/** Shown when no real model is known. Never sent by Bastio on its own. */
+export const MODEL_PLACEHOLDER = "YOUR_MODEL_ID";
+
+/**
+ * Copy-paste connection examples for a gateway. `model` is the model to put in
+ * the request (see resolveSnippetModel); it falls back to the gateway's
+ * configured default, then to MODEL_PLACEHOLDER.
+ */
+export function gatewayConnection(proxy: Proxy, origin: string, model?: string) {
   const baseURL = `${origin.replace(/\/$/, "")}${gatewayBasePath(proxy)}`;
+  const chosen = model?.trim() || proxy.target_model.trim();
   if (proxy.target_provider === "typesafe") {
-    const payload = {model: proxy.target_model || "jev-latest", state: "Hello from Bastio", questions: {greeting:{type:"noul",instructions:"Does the state contain a greeting?"}}};
+    const payload = {model: chosen || "jev-latest", state: "Hello from Bastio", questions: {greeting:{type:"noul",instructions:"Does the state contain a greeting?"}}};
     return {baseURL,sdkBaseURL:baseURL,
       curl: `curl '${baseURL}/systemone' -H "Authorization: Bearer $BASTIO_API_KEY" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
       python: `import os, requests\nresponse = requests.post(${JSON.stringify(baseURL+"/systemone")}, headers={"Authorization": "Bearer " + os.environ["BASTIO_API_KEY"]}, json=${JSON.stringify(payload)})\nresponse.raise_for_status()\nprint(response.json())`,
@@ -69,10 +78,10 @@ export function gatewayConnection(proxy: Proxy, origin: string) {
   }
   const anthropic = proxy.target_provider === "anthropic";
   const native = gatewayBasePath(proxy) !== "/v1";
-  const model = proxy.target_model || "YOUR_MODEL_ID";
+  const requestModel = chosen || MODEL_PLACEHOLDER;
   const payload = JSON.stringify(
     {
-      model,
+      model: requestModel,
       ...(anthropic ? { max_tokens: 256 } : {}),
       messages: [{ role: "user", content: "Hello" }],
     },
@@ -107,7 +116,7 @@ export function gatewayConnection(proxy: Proxy, origin: string) {
         ")",
         "",
         "response = client.messages.create(",
-        `    model=${JSON.stringify(model)},`,
+        `    model=${JSON.stringify(requestModel)},`,
         "    max_tokens=256,",
         '    messages=[{"role": "user", "content": "Hello"}],',
         ")",
@@ -128,7 +137,7 @@ export function gatewayConnection(proxy: Proxy, origin: string) {
         ")",
         "",
         "response = client.chat.completions.create(",
-        `    model=${JSON.stringify(model)},`,
+        `    model=${JSON.stringify(requestModel)},`,
         '    messages=[{"role": "user", "content": "Hello"}],',
         ")",
         "print(response)",

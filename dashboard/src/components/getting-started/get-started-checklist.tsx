@@ -161,7 +161,7 @@ export function GetStartedChecklist() {
           >
             {gateway && state.done.gateway ? (
               <div className="mt-3 space-y-2">
-                <ConnectionExample proxy={gateway} />
+                <ConnectionExample proxy={gateway} showTest />
                 <p role="status" className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
                   <StatusDot tone="neutral" size={6} />
                   Waiting for the first trace · checks every {REFRESH_INTERVALS[0].short}

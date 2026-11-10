@@ -116,3 +116,66 @@ function friendlyOpenAIModel(id: string): string {
     )
     .replace(/-(\d{4}-\d{2}-\d{2})$/, " · $1");
 }
+
+// ── Snippet model resolution ────────────────────────────────────────────────
+// Connection examples need a real model ID or a copy-pasted request fails.
+// Order: the gateway's configured default, then a small general chat model
+// from the IDs the provider key actually reported, then MODEL_PLACEHOLDER.
+// Never return an ID that is not in the reported list.
+
+const NON_CHAT_MODEL =
+  /embed|whisper|tts|audio|transcri|speech|dall-e|image|imagen|moderation|realtime|rerank|guard|davinci|babbage|turbo-instruct|search|computer-use|codex|deep-research|sora|veo|lyria|aqa/i;
+
+/** Heuristic: true unless the ID is obviously not a chat-completions model. */
+export function isChatModelId(id: string): boolean {
+  return id.trim() !== "" && !NON_CHAT_MODEL.test(id);
+}
+
+/**
+ * Per-provider preference lists, cheapest general chat models first. Matched
+ * by exact ID (Gemini also as `models/<id>`) against the reported list.
+ */
+export const SNIPPET_MODEL_PREFERENCES: Record<string, readonly string[]> = {
+  openai: ["gpt-4.1-nano", "gpt-4o-mini", "gpt-4.1-mini", "gpt-5-nano", "gpt-5-mini", "gpt-5.4-mini"],
+  anthropic: ["claude-haiku-4-5", "claude-3-5-haiku-latest", "claude-3-5-haiku-20241022", "claude-3-haiku-20240307"],
+  openrouter: ["openai/gpt-4.1-nano", "openai/gpt-4o-mini", "google/gemini-2.0-flash-001", "anthropic/claude-3.5-haiku", "meta-llama/llama-3.1-8b-instruct"],
+  gemini: ["gemini-2.0-flash-lite", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"],
+  groq: ["llama-3.1-8b-instant", "gemma2-9b-it", "llama3-8b-8192", "llama-3.3-70b-versatile"],
+  deepseek: ["deepseek-chat"],
+  xai: ["grok-3-mini", "grok-3-mini-fast", "grok-4-fast-non-reasoning", "grok-2-latest"],
+  ollama: ["llama3.2", "llama3.2:latest", "llama3.1:8b", "qwen2.5:7b", "mistral"],
+};
+
+/** Chat-capable IDs reported by the provider key, in reported order. */
+export function snippetModelIds(listing?: GatewayModelListing | null): string[] {
+  if (!listing || listing.source !== "provider") return [];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const { id } of listing.models) {
+    const trimmed = id.trim();
+    if (isChatModelId(trimmed) && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      ids.push(trimmed);
+    }
+  }
+  return ids;
+}
+
+/** Deterministic pick from reported IDs; "" when none is chat-capable. */
+export function pickSnippetModel(provider: string, ids: readonly string[]): string {
+  const chat = ids.filter(isChatModelId);
+  for (const preferred of SNIPPET_MODEL_PREFERENCES[provider] ?? []) {
+    const match = chat.find((id) => id === preferred || id === `models/${preferred}`);
+    if (match) return match;
+  }
+  return chat[0] ?? "";
+}
+
+/** Model for connection examples: configured → reported pick → "" (placeholder). */
+export function resolveSnippetModel(
+  provider: string,
+  configured: string,
+  listing?: GatewayModelListing | null,
+): string {
+  return configured.trim() || pickSnippetModel(provider, snippetModelIds(listing));
+}
