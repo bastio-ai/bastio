@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   User,
@@ -18,6 +18,7 @@ interface UserProfileProps {
   planName?: string;
   onLogout?: () => void;
   variant?: "sidebar" | "header";
+  compact?: boolean;
 }
 
 export function UserProfileWidget({
@@ -28,9 +29,19 @@ export function UserProfileWidget({
   planName,
   onLogout,
   variant = "sidebar",
+  compact = false,
 }: UserProfileProps) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>("a, button")?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -40,7 +51,7 @@ export function UserProfileWidget({
       }
     }
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape" && open) { event.preventDefault(); setOpen(false); triggerRef.current?.focus(); }
     }
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
@@ -48,7 +59,7 @@ export function UserProfileWidget({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, []);
+  }, [open]);
 
   const hasUsage = typeof usageCount === "number" && typeof usageLimit === "number" && usageLimit > 0;
   const usagePercent = hasUsage ? Math.min(100, Math.round((usageCount / usageLimit) * 100)) : 0;
@@ -63,6 +74,10 @@ export function UserProfileWidget({
       {/* Dropdown Menu Popup */}
       {open && (
         <div
+          ref={menuRef}
+          id={menuId}
+          role="region"
+          aria-label="Account menu"
           className={cn(
             "absolute z-50 w-64 rounded-xl border border-border-subtle bg-popover p-2 shadow-md animate-in fade-in duration-150",
             variant === "header"
@@ -140,29 +155,32 @@ export function UserProfileWidget({
 
       {/* Main Trigger Button */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(!open)}
         aria-label="Open account menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         className={cn(
           "flex items-center text-left transition-colors duration-150",
           variant === "header"
             ? "h-8 w-8 justify-center rounded-full hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            : "w-full gap-2.5 rounded-xl border border-border-subtle/60 bg-card/80 px-2.5 py-2 hover:border-border-default hover:bg-surface-2/60",
+            : "w-full gap-2.5 rounded-md px-2.5 py-2 hover:bg-sidebar-accent",
           variant === "sidebar" && open && "border-border-default bg-surface-2",
+          compact && "w-9 justify-center px-0",
         )}
       >
         {/* Avatar circle */}
-        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-amber-500 to-amber-300 text-[11px] font-semibold text-black shadow-sm">
+        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[11px] font-medium text-foreground">
           {name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "LO"}
         </div>
         
-        {variant === "sidebar" ? <div className="min-w-0 flex-1">
+        {variant === "sidebar" && !compact ? <div className="min-w-0 flex-1">
           <p className="text-[12px] font-medium text-foreground truncate leading-none mb-0.5">{name}</p>
           {email ? <p className="text-[10px] text-muted-foreground truncate leading-none">{email}</p> : null}
         </div> : null}
 
-        {variant === "sidebar" ? <ChevronUp className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform duration-200", open ? "rotate-0" : "rotate-180")} /> : null}
+        {variant === "sidebar" && !compact ? <ChevronUp className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform duration-200", open ? "rotate-0" : "rotate-180")} /> : null}
       </button>
     </div>
   );

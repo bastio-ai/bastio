@@ -1,0 +1,14 @@
+{
+  "results": [
+    "mobile Traces route renders",
+    "mobile initial view leaves work area unobstructed",
+    "closed mobile navigation is inert",
+    "open drawer prevents background interaction",
+    "drawer focuses its close control",
+    "escape restores work area interaction",
+    "navigation closes drawer after changing routes",
+    "mobile full trace investigation renders",
+    "no runtime errors (0)"
+  ],
+  "errors": []
+}

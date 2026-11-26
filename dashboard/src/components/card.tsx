@@ -25,7 +25,7 @@ export function PageHeader({
     <header className={cn("mb-5 flex items-start gap-4 border-b border-border/60 pb-4", className)}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-[24px] font-bold tracking-tight text-text-primary leading-tight">
+          <h1 className="text-[25px] font-medium tracking-tight text-text-primary leading-tight">
             {title}
           </h1>
           {badge}
@@ -85,7 +85,7 @@ export function SectionHeader({
   return (
     <div className={cn("mb-3 flex items-center justify-between", className)}>
       <div className="min-w-0">
-        <h2 className="text-[14px] font-bold tracking-tight text-text-primary">{title}</h2>
+        <h2 className="text-[14px] font-medium tracking-tight text-text-primary">{title}</h2>
         {description && (
           <p className="text-[11px] text-text-muted mt-0.5">{description}</p>
         )}

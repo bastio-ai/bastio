@@ -1,68 +1,370 @@
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { ExternalLink, MessagesSquare, X } from "lucide-react";
-
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  ShieldAlert,
+  X,
+} from "lucide-react";
 import type { Trace } from "@/api/client";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { formatCost, formatDuration, formatNumber } from "@/lib/utils";
+import { securityDecision } from "@/components/observe/security-decision";
+import { TraceStatus } from "@/components/observe/trace-status";
+import { TRACE_TYPES, traceType } from "@/components/observe/trace-filters";
+import { Button } from "@/components/ui/button";
+import { cn, formatCost, formatDuration, formatNumber } from "@/lib/utils";
 
-export function TraceInspector({ trace, onClose }: { trace: Trace; onClose: () => void }) {
+export function TraceInspector({
+  trace,
+  onClose,
+}: {
+  trace: Trace;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"request" | "security">("request");
+  const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const decision = securityDecision(trace.security_action);
+  useEffect(() => {
+    setTab("request");
+    setCopied(false);
+    setCopyFailed(false);
+  }, [trace.id]);
+  const copyID = async () => {
+    try {
+      await navigator.clipboard.writeText(trace.id);
+      setCopied(true);
+      setCopyFailed(false);
+    } catch {
+      setCopyFailed(true);
+    }
+  };
+
   return (
-    <aside className="hidden h-full w-[326px] flex-shrink-0 flex-col border-l border-border-subtle bg-background xl:flex">
-      <div className="flex items-start gap-2 border-b border-border-subtle px-4 py-4">
-        <span className={trace.status === "ok" ? "mt-1 h-2 w-2 rounded-full bg-success" : "mt-1 h-2 w-2 rounded-full bg-danger"} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate text-sm font-semibold">{trace.trace_name || trace.path || trace.model}</h2>
-            <Badge variant={trace.status === "ok" ? "success" : trace.status === "blocked" ? "destructive" : "warning"} className="px-1.5 py-0 text-[9px]">{trace.status}</Badge>
-          </div>
-          <p className="mt-1 font-mono text-[10px] leading-4 text-muted-foreground">{trace.id}</p>
+    <aside
+      aria-label="Trace inspector"
+      className="hidden h-full w-[320px] flex-shrink-0 flex-col border-l border-border-subtle bg-background xl:flex 2xl:w-[350px]"
+    >
+      <header className="flex items-start justify-between gap-3 px-5 pb-4 pt-6">
+        <div className="min-w-0">
+          <p className="mb-2 text-[10px] text-muted-foreground">
+            Trace details
+          </p>
+          <h2 className="break-words text-base font-medium tracking-tight">
+            {trace.trace_name || trace.path || trace.model || "Unnamed trace"}
+          </h2>
         </div>
-        <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close trace details"><X className="h-3.5 w-3.5" /></Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onClose}
+          aria-label="Close trace details"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </header>
+      <div className="flex items-center justify-between gap-3 px-5 pb-5">
+        <TraceStatus status={trace.status} />
+        <time
+          dateTime={trace.started_at}
+          title={new Date(trace.started_at).toLocaleString()}
+          className="font-mono text-[10px] text-muted-foreground"
+        >
+          {new Date(trace.started_at).toLocaleTimeString()}
+        </time>
       </div>
-
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        <InspectorCard title="Request">
-          <Metric label="Started" value={new Date(trace.started_at).toLocaleString()} mono />
-          <Metric label="Duration" value={formatDuration(trace.duration_ms)} mono />
-          <Metric label="Provider" value={trace.provider || "—"} />
-          <Metric label="Model" value={trace.model || "—"} mono />
-          <Metric label="Environment" value={trace.environment || "—"} />
-          <Metric label="Release" value={trace.release || "—"} mono />
-        </InspectorCard>
-
-        <InspectorCard title="Usage">
-          <Metric label="Input tokens" value={formatNumber(trace.input_tokens ?? 0)} mono />
-          <Metric label="Output tokens" value={formatNumber(trace.output_tokens ?? 0)} mono />
-          <Metric label="Total tokens" value={formatNumber((trace.input_tokens ?? 0) + (trace.output_tokens ?? 0))} mono />
-          <Metric label="Cost" value={formatCost(trace.cost_cents ?? 0)} mono />
-        </InspectorCard>
-
-        <InspectorCard title="Security">
-          <Metric label="Verdict" value={trace.status === "blocked" ? "Blocked" : trace.threat_detected ? (trace.security_action === "pass" ? "Signals · no enforcement" : "Security event recorded") : "No signals"} />
-          <Metric label="Signal score" value={trace.threat_detected ? `${Math.round((trace.threat_score ?? 0) * 100)}%` : "—"} mono />
-          <Metric label="Signal types" value={(trace.threat_types ?? []).join(", ") || "—"} mono />
-        </InspectorCard>
-
-        <InspectorCard title="Context">
-          <Metric label="End user" value={trace.end_user_id || "—"} mono />
-          <Metric label="Session" value={trace.session_id || "—"} mono />
-          <Metric label="Path" value={trace.path || "—"} mono />
-        </InspectorCard>
+      <div
+        role="tablist"
+        aria-label="Trace details"
+        className="flex gap-5 border-y border-border-subtle px-5"
+      >
+        {(["request", "security"] as const).map((value) => (
+          <button
+            key={value}
+            id={`trace-inspector-tab-${value}`}
+            role="tab"
+            aria-selected={tab === value}
+            aria-controls="trace-inspector-panel"
+            tabIndex={tab === value ? 0 : -1}
+            onClick={() => setTab(value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                const next = value === "request" ? "security" : "request";
+                setTab(next);
+                document.getElementById(`trace-inspector-tab-${next}`)?.focus();
+              }
+            }}
+            className={cn(
+              "border-b-2 border-transparent py-3 text-[11px] text-muted-foreground hover:text-foreground",
+              tab === value && "border-foreground text-foreground",
+            )}
+          >
+            {value === "request" ? "Request" : "Security"}
+            {value === "security" && trace.threat_detected ? " · signals" : ""}
+          </button>
+        ))}
       </div>
-
-      <div className="space-y-2 border-t border-border-subtle p-3">
-        <Link to="/traces/$id" params={{ id: trace.id }} className={buttonVariants({ size: "sm" }) + " w-full text-[11px]"}>Open full trace <ExternalLink className="h-3.5 w-3.5" /></Link>
-        {trace.session_id ? <Link to="/sessions/$id" params={{ id: trace.session_id }} className={buttonVariants({ variant: "outline", size: "sm" }) + " w-full text-[11px]"}><MessagesSquare className="h-3.5 w-3.5" /> Open session</Link> : null}
+      <div
+        id="trace-inspector-panel"
+        role="tabpanel"
+        aria-labelledby={`trace-inspector-tab-${tab}`}
+        className="min-h-0 flex-1 overflow-y-auto px-5"
+      >
+        {tab === "security" ? (
+          <InspectorSection title="Security decision">
+            <p
+              className={cn(
+                "mb-3 flex items-center gap-2 text-[13px]",
+                decision.tone === "danger" || decision.tone === "warning"
+                  ? "text-warn"
+                  : "text-foreground",
+              )}
+            >
+              <ShieldAlert className="h-4 w-4" />
+              {trace.threat_detected ? decision.label : "No signals recorded"}
+            </p>
+            <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+              {trace.threat_detected
+                ? decision.explanation
+                : "No detector signals were recorded for this request."}
+            </p>
+            <dl>
+              <Metric
+                label="Signals"
+                value={
+                  (trace.threat_types ?? []).join(", ").replaceAll("_", " ") ||
+                  "None recorded"
+                }
+              />
+              <Metric
+                label="Policy action"
+                value={trace.security_action || "Not recorded"}
+                mono
+              />
+              <Metric
+                label="Signal score"
+                value={
+                  trace.threat_detected
+                    ? `${Math.round((trace.threat_score ?? 0) * 100)}%`
+                    : "—"
+                }
+                mono
+              />
+            </dl>
+            {trace.threat_detected ? (
+              <p className="mt-4 text-[10px] leading-relaxed text-muted-foreground">
+                Detector signals and policy enforcement are separate. A signal
+                alone does not confirm that a request was blocked.
+              </p>
+            ) : null}
+          </InspectorSection>
+        ) : (
+          <>
+            {trace.threat_detected ? (
+              <button
+                type="button"
+                onClick={() => setTab("security")}
+                className="flex w-full items-center gap-2.5 border-b border-border-subtle py-4 text-left text-warn"
+              >
+                <ShieldAlert className="h-4 w-4" />
+                <span className="min-w-0 flex-1 text-[11px]">
+                  {(trace.threat_types ?? [])[0]?.replaceAll("_", " ") ||
+                    "Security signal"}
+                  <span className="mt-1 block text-[10px] text-muted-foreground">
+                    {decision.label}
+                  </span>
+                </span>
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            ) : null}
+            {trace.error_message ? (
+              <p className="border-b border-border-subtle py-4 text-xs leading-relaxed text-danger">
+                {trace.error_message}
+              </p>
+            ) : null}
+            <InspectorSection title="Request">
+              <dl>
+                <Metric
+                  label="Type"
+                  value={
+                    TRACE_TYPES.find((item) => item.value === traceType(trace))
+                      ?.label || "Other"
+                  }
+                />
+                <Metric
+                  label="Provider"
+                  value={trace.provider || "Not recorded"}
+                />
+                <Metric
+                  label="Model / tool"
+                  value={trace.model || "Not recorded"}
+                  mono
+                />
+                <Metric
+                  label="Route"
+                  value={`${trace.method || ""} ${trace.path || "—"}`.trim()}
+                  mono
+                />
+                <Metric
+                  label="HTTP status"
+                  value={
+                    trace.http_status
+                      ? String(trace.http_status)
+                      : "Not recorded"
+                  }
+                  mono
+                />
+              </dl>
+            </InspectorSection>
+            <InspectorSection title="Performance">
+              <dl>
+                <Metric
+                  label="Latency"
+                  value={formatDuration(trace.duration_ms)}
+                  mono
+                />
+                <Metric
+                  label="Input tokens"
+                  value={formatNumber(trace.input_tokens ?? 0)}
+                  mono
+                />
+                <Metric
+                  label="Output tokens"
+                  value={formatNumber(trace.output_tokens ?? 0)}
+                  mono
+                />
+                <Metric
+                  label="Provider cost"
+                  value={formatCost(trace.cost_cents ?? 0)}
+                  mono
+                />
+              </dl>
+            </InspectorSection>
+            <InspectorSection title="Context">
+              <dl>
+                <Metric
+                  label="Environment"
+                  value={trace.environment || "Not recorded"}
+                />
+                <Metric
+                  label="End user"
+                  value={
+                    trace.end_user_id ? (
+                      <Link
+                        to="/users/$id"
+                        params={{ id: trace.end_user_id }}
+                        className="hover:underline"
+                      >
+                        {trace.end_user_id}
+                      </Link>
+                    ) : (
+                      "Not recorded"
+                    )
+                  }
+                  mono
+                />
+                <Metric
+                  label="Session"
+                  value={
+                    trace.session_id ? (
+                      <Link
+                        to="/sessions/$id"
+                        params={{ id: trace.session_id }}
+                        className="hover:underline"
+                      >
+                        {trace.session_id}
+                      </Link>
+                    ) : (
+                      "Not recorded"
+                    )
+                  }
+                  mono
+                />
+                <Metric
+                  label="Release"
+                  value={trace.release || "Not recorded"}
+                  mono
+                />
+                {Object.entries(trace.tags ?? {}).map(([key, value]) => (
+                  <Metric key={key} label={key} value={value} />
+                ))}
+              </dl>
+            </InspectorSection>
+          </>
+        )}
+        <section className="py-5">
+          <p className="mb-2 text-[10px] text-muted-foreground">Trace ID</p>
+          <p className="break-all font-mono text-[10px] text-text-secondary">
+            {trace.id}
+          </p>
+          <button
+            type="button"
+            onClick={() => void copyID()}
+            className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            {copied ? (
+              <Check className="h-3 w-3" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+            {copied ? "Copied" : "Copy ID"}
+          </button>
+          {copyFailed ? (
+            <p role="status" className="mt-2 text-[10px] text-muted-foreground">
+              Copy unavailable. Select the trace ID above to copy it.
+            </p>
+          ) : null}
+        </section>
       </div>
+      <footer className="border-t border-border-subtle px-5 py-3">
+        <Link
+          to="/traces/$id"
+          params={{ id: trace.id }}
+          className="inline-flex items-center gap-2 text-xs text-text-secondary hover:text-foreground"
+        >
+          Open full trace
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+      </footer>
     </aside>
   );
 }
-
-function InspectorCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="rounded-md border border-border-subtle bg-surface-1 p-3"><h3 className="mb-2 text-[10px] font-medium text-muted-foreground">{title}</h3><div className="space-y-1.5">{children}</div></section>;
+function InspectorSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border-b border-border-subtle py-5">
+      <h3 className="mb-3 text-[11px] font-medium">{title}</h3>
+      {children}
+    </section>
+  );
 }
-
-function Metric({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return <div className="flex items-start gap-3 text-[10px] leading-4"><span className="w-[88px] flex-shrink-0 text-muted-foreground">{label}</span><span className={(mono ? "font-mono tabular-nums " : "") + "min-w-0 flex-1 break-all text-right text-foreground/90"}>{value}</span></div>;
+function Metric({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5 text-[10px] leading-relaxed">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd
+        className={cn(
+          "m-0 min-w-0 max-w-[70%] break-words text-right text-text-secondary",
+          mono && "font-mono tabular-nums",
+        )}
+      >
+        {value}
+      </dd>
+    </div>
+  );
 }

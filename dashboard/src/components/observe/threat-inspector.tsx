@@ -31,12 +31,12 @@ export function ThreatInspector({
   const weighted = weightedThreatScore(threat.score, threat.confidence, threat.weighted_score);
 
   return (
-    <aside className="hidden h-full w-[326px] flex-shrink-0 flex-col border-l border-border-subtle bg-background xl:flex">
+    <aside aria-label="Threat inspector" className="hidden h-full w-[320px] flex-shrink-0 flex-col border-l border-border-subtle bg-background xl:flex">
       <div className="flex items-start gap-2 border-b border-border-subtle px-4 py-4">
         <span className={cn("mt-1 h-2 w-2 rounded-full", threat.severity === "critical" ? "bg-danger" : "bg-warn")} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-sm font-semibold">{threat.threat_type}</h2>
+            <h2 className="truncate text-base font-medium">{threat.threat_type}</h2>
             <Badge variant={threat.severity === "critical" ? "destructive" : "warning"} className="px-1.5 py-0 text-[9px]">{threat.severity}</Badge>
           </div>
           <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
@@ -47,7 +47,7 @@ export function ThreatInspector({
         <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close details"><X className="h-3.5 w-3.5" /></Button>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5">
         <ConnectedFindingExplanation key={threat.id} finding={threat} />
         <InspectorCard title="Outcome">
           <MetricRow label="Action"><Badge variant={threat.action_taken === "block" ? "destructive" : "outline"} className="px-1.5 py-0 text-[9px]">{threat.action_taken}</Badge></MetricRow>
@@ -100,7 +100,7 @@ export function ThreatInspector({
 
 function InspectorCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-border-subtle bg-surface-1 p-3">
+    <section className="border-b border-border-subtle py-5">
       <h3 className="mb-2 text-[10px] font-medium text-muted-foreground">{title}</h3>
       <div className="space-y-1.5">{children}</div>
     </section>

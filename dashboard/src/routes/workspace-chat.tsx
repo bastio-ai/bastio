@@ -14,12 +14,11 @@
 import { ChatTab } from "@/components/workspace/chat-tab";
 
 export function WorkspaceChatPage() {
-  // h-screen + overflow-hidden so the chat-tab's internal flex column
-  // (sidebar + composer) takes the full viewport. The dashboard's
-  // <Layout> wraps this route, but the layout's sidebar collapses
-  // visually because we don't render any nested admin chrome.
+  // Match the full-height workbench viewport budget inside <Layout>
+  // without nested padding so ChatTab's sidebar and composer sit flush
+  // inside a crisp hairline frame.
   return (
-    <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-col overflow-hidden p-3">
+    <div className="flex h-[calc(100vh-6.5rem)] min-h-0 flex-col overflow-hidden border border-border-subtle bg-background">
       <ChatTab manageUrl={false} />
     </div>
   );

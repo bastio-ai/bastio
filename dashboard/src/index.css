@@ -18,7 +18,7 @@
 @source "./**/*.{ts,tsx}";
 
 /*
- * Bastio design tokens — source of truth: .work/DESIGN.md
+ * Bastio console tokens — warm charcoal, soft foregrounds and thin dividers.
  *
  * Theme strategy: :root = light defaults, .dark = dark overrides.
  * useTheme adds/removes `.dark` on <html>. Default boot = dark (dark is the brand).
@@ -27,16 +27,16 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Light mode — cool porcelain, not browser-white. */
-  --background:      #F6F7F9;
+  /* Warm, quiet console surfaces. Light mode remains an explicit preference. */
+  --background:      #F8F7F4;
   --surface-1:       #FFFFFF;
-  --surface-2:       #F0F2F5;
+  --surface-2:       #EFEDE8;
   --surface-3:       #FFFFFF;
-  --foreground:      #15171B;
-  --text-primary:    #15171B;
-  --text-secondary:  #4D535D;
-  --text-muted:      #6B7280;
-  --text-disabled:   #9CA3AF;
+  --foreground:      #292925;
+  --text-primary:    #292925;
+  --text-secondary:  #595950;
+  --text-muted:      #707067;
+  --text-disabled:   #A4A499;
 
   --border:          rgba(20, 24, 31, 0.10);
   --border-subtle:   rgba(20, 24, 31, 0.08);
@@ -63,14 +63,14 @@
   --secondary:               var(--surface-2);
   --secondary-foreground:    var(--foreground);
   --muted:                   var(--surface-2);
-  --muted-foreground:        var(--text-secondary);
+  --muted-foreground:        var(--text-muted);
   --accent:                  var(--surface-2);
   --accent-foreground:       var(--foreground);
   --destructive:             var(--danger);
   --destructive-foreground:  var(--foreground);
   --warning:                 var(--warn);
   --input:                   var(--border-default);
-  --ring:                    rgba(171, 106, 35, 0.48);
+  --ring:                    #74746B;
 
   --radius:     0.3125rem;
   --radius-sm:  0.1875rem;
@@ -98,35 +98,38 @@
 }
 
 .dark {
-  /* Dark mode — layered graphite with readable separation. */
-  --background:      #0C0E12;
-  --surface-1:       #12151A;
-  --surface-2:       #181C22;
-  --surface-3:       #20252C;
-  --foreground:      #F5F6F7;
-  --text-primary:    #F5F6F7;
-  --text-secondary:  #C1C6CE;
-  --text-muted:      #9299A3;
-  --text-disabled:   #5E6671;
+  /* Approved console direction: flat charcoal, soft text and neutral hairlines. */
+  --background:      #1A1A19;
+  --surface-1:       #212120;
+  --surface-2:       #292928;
+  --surface-3:       #30302E;
+  --foreground:      #D9D8D4;
+  --text-primary:    #D9D8D4;
+  --text-secondary:  #B2B1AB;
+  --text-muted:      #96968E;
+  --text-disabled:   #6E6E67;
 
-  --border:          rgba(255, 255, 255, 0.10);
-  --border-subtle:   rgba(255, 255, 255, 0.075);
-  --border-default:  rgba(255, 255, 255, 0.12);
-  --border-strong:   rgba(255, 255, 255, 0.19);
 
-  --danger:          #F87171;
-  --danger-bg:       rgba(248, 113, 113, 0.10);
-  --danger-border:   rgba(248, 113, 113, 0.25);
-  --warn:            #FBBF24;
-  --warn-bg:         rgba(251, 191, 36, 0.10);
-  --warn-border:     rgba(251, 191, 36, 0.25);
-  --success:         #4ADE80;
-  --success-bg:      rgba(74, 222, 128, 0.10);
-  --success-border:  rgba(74, 222, 128, 0.25);
+  --danger:          #D78E85;
+  --danger-bg:       rgba(215, 142, 133, 0.08);
+  --danger-border:   rgba(215, 142, 133, 0.22);
+  --warn:            #D9AE55;
+  --warn-bg:         rgba(217, 174, 85, 0.08);
+  --warn-border:     rgba(217, 174, 85, 0.22);
+  --success:         #95AC98;
+  --success-bg:      rgba(149, 172, 152, 0.08);
+  --success-border:  rgba(149, 172, 152, 0.22);
 
-  --primary:              #FAFAFA;
+  --sidebar:              #212120;
+  --sidebar-accent:       #343432;
+  --sidebar-border:       #30302E;
+  --border:               #30302E;
+  --border-subtle:        #30302E;
+  --border-default:       #383835;
+  --border-strong:        #454540;
+  --primary:              #D9D8D4;
   --primary-foreground:   #09090B;
-  --ring:                 rgba(229, 169, 92, 0.52);
+  --ring:                 #989891;
 
   --chart-1: #FAFAFA;
   --chart-2: #B4B4BC;
@@ -237,7 +240,8 @@
     outline-offset: 2px;
   }
   ::selection {
-    background: rgba(198, 126, 50, 0.24);
+    background: var(--border-strong);
+    color: var(--foreground);
   }
 }
 
@@ -250,14 +254,7 @@
     background-color: var(--surface-1);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.03),
-      0 1px 2px rgba(0, 0, 0, 0.16);
-  }
-  :root:not(.dark) .surface-card {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.8),
-      0 1px 2px rgba(0, 0, 0, 0.04);
+    box-shadow: none;
   }
 
   .surface-elevated {
@@ -350,13 +347,13 @@
    brand and read AAA contrast against bg-muted in light mode.
 */
 :root:not(.dark) .hljs {
-  background: hsl(var(--muted) / 0.5) !important;
-  color: hsl(var(--foreground)) !important;
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
 }
 :root:not(.dark) .hljs-comment,
 :root:not(.dark) .hljs-quote,
 :root:not(.dark) .hljs-meta {
-  color: hsl(var(--muted-foreground)) !important;
+  color: var(--muted-foreground) !important;
   font-style: italic;
 }
 :root:not(.dark) .hljs-keyword,
@@ -413,3 +410,16 @@
     opacity: 0.6;
   }
 }
+
+/* The console keeps focus on the current workspace without adding app chrome. */
+.console-skip-link {
+  position: fixed;
+  top: -80px;
+  left: 12px;
+  z-index: 100;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--foreground);
+  color: var(--background);
+}
+.console-skip-link:focus { top: 10px; }

@@ -7,6 +7,7 @@ import { api, type UserAnalytics } from "@/api/client";
 import { EmptyState } from "@/components/card";
 import { dashboardRangeLabel, useDashboardControls, type DashboardRange } from "@/components/dashboard-controls-context";
 import { DataPanel } from "@/components/data/data-panel";
+import { WorkspacePageHeader } from "@/components/observe/workspace-page-header";
 import { WorkspaceSummaryStrip } from "@/components/observe/workspace-summary-strip";
 import { Skeleton } from "@/components/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -45,6 +46,7 @@ export function AnalyticsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
+      <WorkspacePageHeader title="Analytics" description="Understand traffic, provider spend, and recorded security outcomes." actions={<div className="lg:hidden"><RangeSelect value={range} onChange={setRange} /></div>} />
       <WorkspaceSummaryStrip metrics={[
         { value: formatNumber(d.total_requests), label: "requests", sub: rangeLabels[range] },
         { value: formatNumber(d.total_threats), label: "threats", sub: `${formatNumber(d.total_blocked)} blocked`, tone: d.total_threats ? "danger" : "success" },
@@ -52,15 +54,14 @@ export function AnalyticsPage() {
         { value: formatDuration(d.avg_duration_ms), label: "avg latency", sub: "Across all providers" },
       ]} />
 
-      <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border-subtle px-4">
-        <div>
-          <h1 className="text-[13px] font-semibold text-foreground">{view === "traffic" ? "Traffic & cost" : view === "security" ? "Security analytics" : "End-user usage"}</h1>
-          <p className="text-[9px] text-muted-foreground">{rangeLabels[range]} · live gateway data</p>
-        </div>
-        <RangeSelect value={range} onChange={setRange} />
+      <div className="flex min-h-11 flex-shrink-0 gap-5 overflow-x-auto border-b border-border-subtle px-5" role="tablist" aria-label="Analytics views">
+        {([{ value: "traffic", label: "Traffic & cost" }, { value: "security", label: "Security analytics" }, { value: "users", label: "End-user usage" }] as const).map((item, index, items) => <button key={item.value} id={`analytics-${item.value}`} role="tab" aria-selected={view === item.value} aria-controls="analytics-content" tabIndex={view === item.value ? 0 : -1} onClick={() => setView(item.value)} onKeyDown={(event) => {
+          const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+          if (offset) { event.preventDefault(); const next = items[(index + offset + items.length) % items.length]!; setView(next.value); document.getElementById(`analytics-${next.value}`)?.focus(); }
+        }} className={`whitespace-nowrap border-b-2 py-3 text-[11px] ${view === item.value ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{item.label}</button>)}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div id="analytics-content" role="tabpanel" aria-labelledby={`analytics-${view}`} className="min-h-0 flex-1 overflow-auto px-5 py-6">
         {isLoading ? <AnalyticsSkeleton /> : view === "traffic" ? <TrafficView data={d} /> : view === "security" ? <SecurityView data={d} /> : <TopUsersSection />}
       </div>
     </div>
@@ -123,7 +124,7 @@ function TopUsersSection() {
   const [sort, setSort] = useState<UserSort>("cost");
   const { data: users = [], isLoading } = useQuery({ queryKey: ["analytics", "users", { sort }], meta: { dashboardLive: true }, refetchOnWindowFocus: false, queryFn: () => api.analytics.users({ limit: 20, order_by: sort }) });
   return <DataPanel title="Top end-users" sub="Cost, performance, and security attribution" action={<Select value={sort} onValueChange={(value) => setSort(value as UserSort)}><SelectTrigger className="h-7 w-36 text-[10px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cost">Sort by cost</SelectItem><SelectItem value="requests">Sort by requests</SelectItem><SelectItem value="threats">Sort by threats</SelectItem><SelectItem value="latency">Sort by latency</SelectItem></SelectContent></Select>}>
-    {isLoading ? <div className="p-4"><Skeleton className="h-56" /></div> : users.length === 0 ? <EmptyState icon={<Users className="h-5 w-5" />} title="No end-user activity" description="Pass X-End-User-Id on gateway requests to populate attribution." /> : <div className="overflow-auto"><div className="min-w-[720px]"><div className="grid grid-cols-[1.5rem_1fr_6rem_6rem_6rem_6rem] gap-3 border-b border-border-subtle px-3 py-2 text-[9px] uppercase tracking-wider text-muted-foreground"><span>#</span><span>End user</span><span className="text-right">Requests</span><span className="text-right">Cost</span><span className="text-right">Latency</span><span className="text-right">Threats</span></div>{users.map((user: UserAnalytics, index) => <div key={user.end_user_id} className="grid grid-cols-[1.5rem_1fr_6rem_6rem_6rem_6rem] items-center gap-3 border-b border-border-subtle px-3 py-2.5 font-mono text-[10px] hover:bg-surface-2"><span className="text-muted-foreground">{index + 1}</span><span className="truncate text-foreground">{user.end_user_id}</span><span className="text-right">{formatNumber(user.total_requests)}</span><span className="text-right">{formatCost(user.total_cost_cents)}</span><span className="text-right">{formatDuration(user.avg_duration_ms)}</span><span className={user.total_threats ? "text-right text-danger" : "text-right text-muted-foreground"}>{user.total_threats || "—"}</span></div>)}</div></div>}
+    {isLoading ? <div className="p-4"><Skeleton className="h-56" /></div> : users.length === 0 ? <EmptyState icon={<Users className="h-5 w-5" />} title="No end-user activity" description="Pass X-End-User-Id on gateway requests to populate attribution." /> : <div className="overflow-auto"><div className="min-w-[720px]"><div className="grid grid-cols-[1.5rem_1fr_6rem_6rem_6rem_6rem] gap-3 border-b border-border-subtle px-3 py-2 text-[10px] text-muted-foreground"><span>#</span><span>End user</span><span className="text-right">Requests</span><span className="text-right">Cost</span><span className="text-right">Latency</span><span className="text-right">Threats</span></div>{users.map((user: UserAnalytics, index) => <div key={user.end_user_id} className="grid grid-cols-[1.5rem_1fr_6rem_6rem_6rem_6rem] items-center gap-3 border-b border-border-subtle px-3 py-2.5 font-mono text-[10px] hover:bg-surface-2"><span className="text-muted-foreground">{index + 1}</span><span className="truncate text-foreground">{user.end_user_id}</span><span className="text-right">{formatNumber(user.total_requests)}</span><span className="text-right">{formatCost(user.total_cost_cents)}</span><span className="text-right">{formatDuration(user.avg_duration_ms)}</span><span className={user.total_threats ? "text-right text-danger" : "text-right text-muted-foreground"}>{user.total_threats || "—"}</span></div>)}</div></div>}
   </DataPanel>;
 }
 

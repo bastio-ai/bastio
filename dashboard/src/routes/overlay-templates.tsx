@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 
 import {
@@ -9,11 +9,12 @@ import {
   type OverlaySnapshot,
   type Template,
 } from "@/api/overlay";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/card";
-import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
+import {
+  AdminPageHeader,
+  AdminSummaryStrip,
+} from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
 
 export function OverlayTemplatesPage() {
@@ -24,102 +25,176 @@ export function OverlayTemplatesPage() {
     queryKey: overlayKeys.templates(),
     queryFn: overlayApi.templates,
   });
-  const summary = useMemo(() => templates.reduce((acc, template) => {
-    acc.patterns += template.snapshot.additional_patterns?.length ?? 0;
-    acc.accessRules += template.snapshot.additional_access_rules?.length ?? 0;
-    acc.overrides += Object.values(template.snapshot.detector_overrides ?? {}).filter(Boolean).length;
-    return acc;
-  }, { patterns: 0, accessRules: 0, overrides: 0 }), [templates]);
+
+  const summary = useMemo(
+    () =>
+      templates.reduce(
+        (acc, template) => {
+          acc.patterns += template.snapshot.additional_patterns?.length ?? 0;
+          acc.accessRules +=
+            template.snapshot.additional_access_rules?.length ?? 0;
+          acc.overrides += Object.values(
+            template.snapshot.detector_overrides ?? {},
+          ).filter(Boolean).length;
+          return acc;
+        },
+        { patterns: 0, accessRules: 0, overrides: 0 },
+      ),
+    [templates],
+  );
 
   return (
-    <>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-        <button
-          className="inline-flex items-center hover:text-foreground"
-          onClick={() => navigate({ to: "/overlays" })}
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+      <nav
+        aria-label="Breadcrumb"
+        className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground"
+      >
+        <Link
+          to="/overlays"
+          className="inline-flex items-center gap-1 hover:text-foreground"
         >
-          <ArrowLeft className="h-3 w-3" /> Custom Policies
-        </button>
-        <ChevronRight className="h-3 w-3" />
-        <span>Templates</span>
-      </div>
+          <ArrowLeft className="size-3" aria-hidden="true" />
+          Custom policies
+        </Link>
+        <ChevronRight className="size-3" aria-hidden="true" />
+        <span className="text-foreground">Templates</span>
+      </nav>
 
       <AdminPageHeader
         eyebrow="Policy library"
         title="Policy templates"
         description="Start from a reviewed industry baseline, inspect every included rule, and create an editable draft. Templates never activate automatically."
-        badge={<Badge variant="outline" className="font-mono text-[10px]">read-only baselines</Badge>}
+        bordered={false}
+        className="mb-4"
+        badge={
+          <span className="font-mono text-[11px] text-muted-foreground">
+            read-only baselines
+          </span>
+        }
       />
 
-      <AdminSummaryStrip items={[
-        { label: "Templates", value: templates.length, detail: "Available baselines" },
-        { label: "Pattern rules", value: summary.patterns, detail: "Across the library" },
-        { label: "Access rules", value: summary.accessRules, detail: "Network and identity constraints" },
-        { label: "Detector overrides", value: summary.overrides, detail: "Threshold and action changes" },
-      ]} />
+      <AdminSummaryStrip
+        items={[
+          {
+            label: "Templates",
+            value: templates.length,
+            detail: "Available baselines",
+          },
+          {
+            label: "Pattern rules",
+            value: summary.patterns,
+            detail: "Across the library",
+          },
+          {
+            label: "Access rules",
+            value: summary.accessRules,
+            detail: "Network and identity constraints",
+          },
+          {
+            label: "Detector overrides",
+            value: summary.overrides,
+            detail: "Threshold and action changes",
+          },
+        ]}
+      />
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="border-y border-border-subtle">
         {isLoading ? (
-          <SkeletonRows count={4} />
+          <div className="py-4">
+            <SkeletonRows count={4} />
+          </div>
         ) : !templates.length ? (
           <EmptyState
-            icon={<Sparkles className="h-6 w-6" />}
+            icon={<Sparkles className="size-5" />}
             title="No templates available"
-            description="Built-in templates are seeded by migration 011. Check the DB if this looks wrong."
+            description="Built-in policy baselines have not been loaded for this workspace."
           />
         ) : (
-          templates.map((t) => {
-            const expanded = expandedSlug === t.slug;
-            return (
-              <Card key={t.id} className="border-border/60 transition-colors hover:border-border">
-                <CardContent className="space-y-3 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-mono text-sm font-bold tracking-tight">{t.slug}</h3>
+          <div className="divide-y divide-border-subtle">
+            {templates.map((t) => {
+              const expanded = expandedSlug === t.slug;
+              return (
+                <article
+                  key={t.id}
+                  className="py-4 transition-colors"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-[13px] font-medium text-foreground">
+                          {t.name}
+                        </h2>
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {t.slug}
+                        </span>
                         {t.is_builtin ? (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          <span className="rounded border border-border-subtle bg-surface-1 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                             builtin
-                          </Badge>
+                          </span>
                         ) : null}
                       </div>
-                      <p className="text-[11px] text-muted-foreground">{t.name}</p>
+                      <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+                        {t.description}
+                      </p>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-4">
+                        <TemplateSummary snapshot={t.snapshot} />
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          onClick={() =>
+                            setExpandedSlug(expanded ? null : t.slug)
+                          }
+                          className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {expanded ? (
+                            <ChevronDown
+                              className="size-3"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <ChevronRight
+                              className="size-3"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {expanded ? "Hide rules" : "Preview rules"}
+                        </button>
+                      </div>
                     </div>
-                    <Button
-                      size="sm"
-                      className="h-8 text-xs shrink-0"
-                      onClick={() =>
-                        navigate({
-                          to: "/overlays/new",
-                          search: { template: t.slug, from_threat: undefined },
-                        })
-                      }
-                    >
-                      Use template
-                    </Button>
+
+                    <div className="shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs"
+                        onClick={() =>
+                          navigate({
+                            to: "/overlays/new",
+                            search: {
+                              template: t.slug,
+                              from_threat: undefined,
+                            },
+                          })
+                        }
+                      >
+                        Use template
+                      </Button>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">{t.description}</p>
-                  <TemplateSummary snapshot={t.snapshot} />
-                  <button
-                    type="button"
-                    onClick={() => setExpandedSlug(expanded ? null : t.slug)}
-                    className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                  >
-                    {expanded ? (
-                      <ChevronDown className="h-3 w-3" />
-                    ) : (
-                      <ChevronRight className="h-3 w-3" />
-                    )}
-                    {expanded ? "Hide rules" : "Preview rules"}
-                  </button>
-                  {expanded ? <TemplateRules snapshot={t.snapshot} /> : null}
-                </CardContent>
-              </Card>
-            );
-          })
+
+                  {expanded ? (
+                    <div className="mt-3">
+                      <TemplateRules snapshot={t.snapshot} />
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -130,30 +205,18 @@ function TemplateSummary({ snapshot }: { snapshot: Template["snapshot"] }) {
     Boolean,
   ).length;
   return (
-    <div className="flex flex-wrap gap-1">
-      {patternCount > 0 ? (
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-          +{patternCount} patterns
-        </Badge>
-      ) : null}
-      {accessCount > 0 ? (
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-          +{accessCount} access rules
-        </Badge>
-      ) : null}
+    <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+      {patternCount > 0 ? <span>+{patternCount} patterns</span> : null}
+      {accessCount > 0 ? <span>+{accessCount} access rules</span> : null}
       {overrideCount > 0 ? (
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+        <span>
           {overrideCount} override{overrideCount === 1 ? "" : "s"}
-        </Badge>
+        </span>
       ) : null}
     </div>
   );
 }
 
-// TemplateRules renders the snapshot content as a readable list:
-// patterns, access rules, and detector overrides in plain English
-// (no raw JSON). Editors use the full JSON textarea on the new-policy
-// page.
 function TemplateRules({ snapshot }: { snapshot: OverlaySnapshot }) {
   const patterns = snapshot.additional_patterns ?? [];
   const access = snapshot.additional_access_rules ?? [];
@@ -163,53 +226,55 @@ function TemplateRules({ snapshot }: { snapshot: OverlaySnapshot }) {
   );
 
   return (
-    <div className="rounded border border-border/40 bg-muted/20 p-2 space-y-2 text-[11px]">
+    <div className="space-y-3 border-l-2 border-border-subtle bg-surface-1/50 px-3.5 py-3 text-xs">
       {patterns.length > 0 ? (
         <div>
-          <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px] mb-1">
+          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
             Additional patterns
           </p>
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             {patterns.map((p, i) => (
-              <li key={i} className="font-mono break-all">
-                <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">
+              <li key={i} className="font-mono text-[11px] break-all">
+                <span className="mr-1.5 rounded border border-border-subtle bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   {p.pattern_type}
-                </Badge>
+                </span>
                 <span className="text-foreground">{p.name}</span>
                 <span className="text-muted-foreground"> → {p.action}</span>{" "}
                 <span className="text-muted-foreground/70">({p.severity})</span>
-                <div className="pl-4 text-muted-foreground/80">{p.pattern}</div>
+                <div className="mt-0.5 pl-4 text-muted-foreground">
+                  {p.pattern}
+                </div>
               </li>
             ))}
           </ul>
         </div>
       ) : null}
+
       {access.length > 0 ? (
         <div>
-          <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px] mb-1">
+          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
             Additional access rules{" "}
-            <span className="normal-case font-normal tracking-normal text-destructive/80">
-              (not yet enforced)
-            </span>
+            <span className="text-destructive/80">(not yet enforced)</span>
           </p>
-          <ul className="space-y-1 font-mono">
+          <ul className="space-y-1 font-mono text-[11px]">
             {access.map((r, i) => (
               <li key={i}>
-                <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">
+                <span className="mr-1.5 rounded border border-border-subtle bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   {r.rule_type}
-                </Badge>
-                {r.value}
+                </span>
+                <span>{r.value}</span>
               </li>
             ))}
           </ul>
         </div>
       ) : null}
+
       {overrideEntries.length > 0 ? (
         <div>
-          <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px] mb-1">
+          <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
             Detector overrides
           </p>
-          <ul className="space-y-1 font-mono">
+          <ul className="space-y-1 font-mono text-[11px]">
             {overrideEntries.map(([detector, v]) => {
               const tuple = v as Record<string, unknown>;
               const parts: string[] = [];
@@ -225,15 +290,23 @@ function TemplateRules({ snapshot }: { snapshot: OverlaySnapshot }) {
               return (
                 <li key={detector}>
                   <span className="text-foreground">{detector}</span>
-                  <span className="text-muted-foreground"> → {parts.join(", ") || "—"}</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    → {parts.join(", ") || "—"}
+                  </span>
                 </li>
               );
             })}
           </ul>
         </div>
       ) : null}
-      {patterns.length === 0 && access.length === 0 && overrideEntries.length === 0 ? (
-        <p className="text-muted-foreground">(Empty snapshot — template has no rules yet.)</p>
+
+      {patterns.length === 0 &&
+      access.length === 0 &&
+      overrideEntries.length === 0 ? (
+        <p className="text-muted-foreground">
+          Empty snapshot — template has no rules yet.
+        </p>
       ) : null}
     </div>
   );

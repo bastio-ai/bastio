@@ -1,54 +1,52 @@
 import { useMemo, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ChevronRight,
   Eye,
   GitCompare,
-  History,
+  Layers3,
   Plus,
-  ShieldQuestion,
   Trash2,
   Undo2,
-  Zap,
 } from "lucide-react";
 
 import {
   overlayApi,
   overlayKeys,
-  stateTone,
   type OverlayVersion,
   type OverlayWarning,
   type PreviewResult,
   type ShadowEvent,
   type AuditEntry,
 } from "@/api/overlay";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/card";
 import { SkeletonRows } from "@/components/skeleton";
-import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
+import {
+  AdminPageHeader,
+  AdminSummaryStrip,
+  AdminUnderlineNav,
+} from "@/components/admin/admin-primitives";
+import { cn } from "@/lib/utils";
 
-type Tab = "versions" | "audit" | "shadow-events";
+type Tab = "versions" | "shadow-events" | "audit";
 
 export function OverlayDetailPage() {
   const { id } = useParams({ from: "/overlays/$id" });
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("versions");
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const overlayQuery = useQuery({
     queryKey: overlayKeys.detail(id),
@@ -70,20 +68,23 @@ export function OverlayDetailPage() {
   const remove = useMutation({
     mutationFn: () => overlayApi.remove(id),
     onSuccess: () => {
+      setConfirmDeleteOpen(false);
       qc.invalidateQueries({ queryKey: overlayKeys.list() });
       navigate({ to: "/overlays" });
     },
   });
 
   const promoteShadow = useMutation({
-    mutationFn: (n: number) => overlayApi.promoteShadow(id, n, "promote from dashboard"),
+    mutationFn: (n: number) =>
+      overlayApi.promoteShadow(id, n, "promote from dashboard"),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: overlayKeys.versions(id) });
     },
   });
 
   const activate = useMutation({
-    mutationFn: (n: number) => overlayApi.activate(id, n, "activate from dashboard"),
+    mutationFn: (n: number) =>
+      overlayApi.activate(id, n, "activate from dashboard"),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: overlayKeys.detail(id) });
       qc.invalidateQueries({ queryKey: overlayKeys.versions(id) });
@@ -94,106 +95,170 @@ export function OverlayDetailPage() {
   const activeVersion = overlayQuery.data?.active_version;
   const activeWarnings = overlayQuery.data?.active_warnings ?? [];
 
-  if (overlayQuery.isLoading) return <SkeletonRows count={5} />;
+  if (overlayQuery.isLoading) {
+    return (
+      <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+        <SkeletonRows count={5} />
+      </div>
+    );
+  }
+
   if (overlayQuery.isError || !overlay) {
     return (
-      <Card className="border-border/50 mt-4">
-        <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          Overlay not found.{" "}
-          <button
-            className="underline"
-            onClick={() => navigate({ to: "/overlays" })}
-          >
-            Back to Custom Policies
-          </button>
-        </CardContent>
-      </Card>
+      <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+        <div className="border-y border-border-subtle">
+          <EmptyState
+            icon={<Layers3 className="size-5" aria-hidden="true" />}
+            title="Policy not found"
+            description="This custom policy may have been deleted or belongs to another workspace."
+            action={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => navigate({ to: "/overlays" })}
+              >
+                Back to custom policies
+              </Button>
+            }
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-        <button
-          className="inline-flex items-center hover:text-foreground"
-          onClick={() => navigate({ to: "/overlays" })}
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+      <nav
+        aria-label="Breadcrumb"
+        className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground"
+      >
+        <Link
+          to="/overlays"
+          className="inline-flex items-center gap-1 hover:text-foreground"
         >
-          <ArrowLeft className="h-3 w-3" /> Custom Policies
-        </button>
-        <ChevronRight className="h-3 w-3" />
-        <span className="font-mono">{overlay.name}</span>
-      </div>
+          <ArrowLeft className="size-3" aria-hidden="true" />
+          Custom policies
+        </Link>
+        <ChevronRight className="size-3" aria-hidden="true" />
+        <span className="font-mono text-foreground">{overlay.name}</span>
+      </nav>
 
       <AdminPageHeader
         eyebrow="Custom policy"
         title={<span className="font-mono">{overlay.name}</span>}
-        description={overlay.description || "No policy description has been provided."}
-        badge={activeVersion ? <Badge variant="default" className="px-1.5 py-0 text-[10px]">active v{activeVersion.version}</Badge> : <Badge variant="outline" className="px-1.5 py-0 text-[10px]">no active version</Badge>}
-        actions={<>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs"
-            disabled={rollback.isPending}
-            onClick={() => rollback.mutate()}
-          >
-            <Undo2 className="h-3 w-3" /> Rollback
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs text-destructive"
-            disabled={remove.isPending}
-            onClick={() => {
-              const isActive = !!overlay.active_version_id;
-              const msg = isActive
-                ? `Delete "${overlay.name}"?\n\nThis policy is currently ACTIVE — its rules and overrides are applying to traffic right now. Deleting it will immediately revert this tenant to the core security profile.\n\nAll versions, shadow events, and audit history will be permanently removed.\n\nThis cannot be undone.`
-                : `Delete "${overlay.name}"?\n\nAll versions, shadow events, and audit history will be permanently removed. This cannot be undone.`;
-              if (confirm(msg)) {
-                remove.mutate();
+        description={
+          overlay.description || "No policy description has been provided."
+        }
+        bordered={false}
+        className="mb-4"
+        badge={
+          <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 rounded-full",
+                activeVersion ? "bg-success" : "bg-muted-foreground/50",
+              )}
+            />
+            {activeVersion
+              ? `active v${activeVersion.version}`
+              : "no active version"}
+          </span>
+        }
+        actions={
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={rollback.isPending}
+              onClick={() => rollback.mutate()}
+            >
+              <Undo2 className="size-3.5" aria-hidden="true" />
+              Rollback
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs text-destructive"
+              disabled={remove.isPending}
+              onClick={() => setConfirmDeleteOpen(true)}
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+              Delete
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() =>
+                navigate({
+                  to: "/overlays/$id/versions/new",
+                  params: { id },
+                  search: { from_threat: undefined },
+                })
               }
-            }}
-          >
-            <Trash2 className="h-3 w-3" /> Delete
-          </Button>
-          <Button
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() =>
-              navigate({
-                to: "/overlays/$id/versions/new",
-                params: { id },
-                search: { from_threat: undefined },
-              })
-            }
-          >
-            <Plus className="h-3 w-3" /> New version
-          </Button>
-        </>}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              New version
+            </Button>
+          </>
+        }
       />
 
-      <AdminSummaryStrip items={[
-        { label: "Versions", value: versionsQuery.data?.length ?? 0, detail: "Immutable history" },
-        { label: "Active version", value: activeVersion ? `v${activeVersion.version}` : "None", detail: activeVersion?.commit_message || "Core profile only", tone: activeVersion ? "success" : "warning" },
-        { label: "Draft versions", value: (versionsQuery.data ?? []).filter((version) => version.state === "draft").length, detail: "Not applied to traffic" },
-        { label: "Security warnings", value: activeWarnings.length, detail: activeWarnings.length ? "Active version loosens defaults" : "No weakened defaults", tone: activeWarnings.length ? "danger" : "success" },
-      ]} />
+      <AdminSummaryStrip
+        items={[
+          {
+            label: "Versions",
+            value: versionsQuery.data?.length ?? 0,
+            detail: "Immutable history",
+          },
+          {
+            label: "Active version",
+            value: activeVersion ? `v${activeVersion.version}` : "None",
+            detail: activeVersion?.commit_message || "Core profile only",
+            tone: activeVersion ? "success" : "warning",
+          },
+          {
+            label: "Draft versions",
+            value: (versionsQuery.data ?? []).filter(
+              (version) => version.state === "draft",
+            ).length,
+            detail: "Not applied to traffic",
+          },
+          {
+            label: "Security warnings",
+            value: activeWarnings.length,
+            detail: activeWarnings.length
+              ? "Active version loosens defaults"
+              : "No weakened defaults",
+            tone: activeWarnings.length ? "danger" : "success",
+          },
+        ]}
+      />
 
       {activeWarnings.length > 0 ? (
         <WarningBanner warnings={activeWarnings} />
       ) : null}
 
-      <div className="flex gap-1 border-b border-border/50 mb-3 text-xs">
-        <TabButton active={tab === "versions"} onClick={() => setTab("versions")}>
-          <History className="h-3 w-3 mr-1" /> Versions
-        </TabButton>
-        <TabButton active={tab === "shadow-events"} onClick={() => setTab("shadow-events")}>
-          <ShieldQuestion className="h-3 w-3 mr-1" /> Shadow events
-        </TabButton>
-        <TabButton active={tab === "audit"} onClick={() => setTab("audit")}>
-          <Zap className="h-3 w-3 mr-1" /> Audit
-        </TabButton>
-      </div>
+      <AdminUnderlineNav
+        ariaLabel="Custom policy sections"
+        value={tab}
+        onChange={setTab}
+        items={[
+          {
+            id: "versions",
+            label: "Versions",
+            count: versionsQuery.data?.length ?? 0,
+          },
+          { id: "shadow-events", label: "Shadow events" },
+          { id: "audit", label: "Audit" },
+        ]}
+      />
 
       {tab === "versions" ? (
         <VersionsTable
@@ -208,63 +273,66 @@ export function OverlayDetailPage() {
       ) : (
         <AuditTable id={id} />
       )}
-    </>
+
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete policy “{overlay.name}”?</DialogTitle>
+            <DialogDescription>
+              {overlay.active_version_id
+                ? "This policy is currently enforcing on live traffic. Deleting it immediately reverts this scope to the core security profile and permanently removes all versions, shadow events, and audit history."
+                : "All versions, shadow events, and audit history for this policy will be permanently removed. This cannot be undone."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setConfirmDeleteOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={remove.isPending}
+              onClick={() => remove.mutate()}
+            >
+              {remove.isPending ? "Deleting…" : "Delete policy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
-// WarningBanner flags any override on the active version that weakens
-// security relative to the shipped defaults. Visible by default on the
-// detail page; invisible when the server returns no warnings.
 function WarningBanner({ warnings }: { warnings: OverlayWarning[] }) {
   return (
-    <Card className="border-destructive/40 bg-destructive/5 mb-4">
-      <CardContent className="p-3 space-y-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-destructive">
-          Active version loosens security
-        </p>
-        <ul className="space-y-0.5 text-xs">
-          {warnings.map((w, i) => (
-            <li key={i} className="flex items-start gap-2">
-              <span className="mt-0.5">•</span>
-              <span>
-                <span className="font-mono">{w.detector}.{w.field}</span>:{" "}
-                <span className="text-muted-foreground">{w.from}</span>
-                {" → "}
-                <span className="font-semibold">{w.to}</span>
-                <span className="text-muted-foreground"> — {w.message}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p className="text-[11px] text-muted-foreground pt-1">
-          These overrides are permitted, but they make detection less strict than the shipped defaults. Rolling back to a prior version reverts them instantly.
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center px-3 py-1.5 border-b-2 -mb-px transition-colors ${
-        active
-          ? "border-foreground text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
+    <div className="mb-6 space-y-1.5 border-l-2 border-destructive pl-3.5 text-xs">
+      <p className="font-medium text-destructive">
+        Active version loosens security defaults
+      </p>
+      <ul className="space-y-1 text-muted-foreground">
+        {warnings.map((w, i) => (
+          <li key={i}>
+            <span className="font-mono text-foreground">
+              {w.detector}.{w.field}
+            </span>
+            : <span>{w.from}</span> →{" "}
+            <span className="font-medium text-foreground">{w.to}</span> —{" "}
+            {w.message}
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-muted-foreground">
+        Rolling back to a prior version reverts these overrides immediately.
+      </p>
+    </div>
   );
 }
 
@@ -284,81 +352,124 @@ function VersionsTable({
   const [previewVersion, setPreviewVersion] = useState<number | null>(null);
   const [diffVersion, setDiffVersion] = useState<OverlayVersion | null>(null);
   const activeVersion = versions.find((v) => v.state === "active") ?? null;
-  if (loading) return <SkeletonRows count={3} />;
-  if (!versions.length) {
+
+  if (loading) {
     return (
-      <Card className="border-border/50">
-        <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          No versions yet. Create one from the button above.
-        </CardContent>
-      </Card>
+      <div className="border-y border-border-subtle py-4">
+        <SkeletonRows count={3} />
+      </div>
     );
   }
+
+  if (!versions.length) {
+    return (
+      <div className="border-y border-border-subtle py-8 text-center text-xs text-muted-foreground">
+        No versions yet. Create one from the button above.
+      </div>
+    );
+  }
+
   return (
-    <Card className="border-border/50 overflow-hidden">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-border/50">
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+    <div className="border-y border-border-subtle">
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Policy versions"
+      >
+        <table className="w-full min-w-[720px] text-left text-xs">
+          <thead className="border-b border-border-subtle text-[11px] text-muted-foreground">
+            <tr>
+              <th scope="col" className="py-2.5 pr-4 font-normal">
                 Version
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 State
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 Commit
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 Author
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 Created
-              </TableHead>
-              <TableHead className="h-10 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="py-2.5 pl-4 text-right font-normal">
                 Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
             {versions.map((v) => (
-              <TableRow key={v.id} className="border-border/30">
-                <TableCell className="font-mono text-xs">v{v.version}</TableCell>
-                <TableCell>
-                  <Badge variant={stateTone(v.state)} className="text-[10px] px-1.5 py-0">
-                    {v.state}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-xs">{v.commit_message || "—"}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
+              <tr
+                key={v.id}
+                className="transition-colors hover:bg-surface-1/60"
+              >
+                <td className="py-3 pr-4 font-mono text-xs text-foreground">
+                  v{v.version}
+                </td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex items-center gap-2 font-mono text-[11px]">
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        v.state === "active"
+                          ? "bg-success"
+                          : v.state === "shadow"
+                            ? "bg-warn"
+                            : "bg-muted-foreground/50",
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        v.state === "active"
+                          ? "text-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {v.state}
+                    </span>
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-xs text-foreground">
+                  {v.commit_message || "—"}
+                </td>
+                <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
                   {v.created_by || "—"}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
+                </td>
+                <td className="px-4 py-3 font-mono text-[11px] tabular-nums text-muted-foreground">
                   {new Date(v.created_at).toLocaleString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
+                </td>
+                <td className="py-3 pl-4 text-right">
+                  <div className="flex justify-end gap-1.5">
                     {activeVersion && activeVersion.id !== v.id ? (
                       <Button
+                        type="button"
                         size="sm"
                         variant="ghost"
                         className="h-7 text-[11px]"
                         onClick={() => setDiffVersion(v)}
                       >
-                        <GitCompare className="h-3 w-3" /> Diff
+                        <GitCompare className="size-3" aria-hidden="true" />
+                        Diff
                       </Button>
                     ) : null}
                     <Button
+                      type="button"
                       size="sm"
                       variant="ghost"
                       className="h-7 text-[11px]"
                       onClick={() => setPreviewVersion(v.version)}
                     >
-                      <Eye className="h-3 w-3" /> Preview
+                      <Eye className="size-3" aria-hidden="true" />
+                      Preview
                     </Button>
                     {v.state === "draft" ? (
                       <>
                         <Button
+                          type="button"
                           size="sm"
                           variant="outline"
                           className="h-7 text-[11px]"
@@ -367,6 +478,7 @@ function VersionsTable({
                           Shadow
                         </Button>
                         <Button
+                          type="button"
                           size="sm"
                           className="h-7 text-[11px]"
                           onClick={() => onActivate(v.version)}
@@ -376,6 +488,7 @@ function VersionsTable({
                       </>
                     ) : v.state === "shadow" ? (
                       <Button
+                        type="button"
                         size="sm"
                         className="h-7 text-[11px]"
                         onClick={() => onActivate(v.version)}
@@ -384,12 +497,13 @@ function VersionsTable({
                       </Button>
                     ) : null}
                   </div>
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             ))}
-          </TableBody>
-        </Table>
-      </CardContent>
+          </tbody>
+        </table>
+      </div>
+
       {previewVersion !== null ? (
         <PreviewDialog
           id={id}
@@ -404,15 +518,10 @@ function VersionsTable({
           onClose={() => setDiffVersion(null)}
         />
       ) : null}
-    </Card>
+    </div>
   );
 }
 
-// DiffDialog shows a line-level diff between the currently-active
-// version's snapshot and a selected candidate version. JSON is
-// pretty-printed with stable key order, then each side is marked
-// with + / - / = via a short LCS pass. Good enough for overlays
-// where snapshots stay small; no external diff dep required.
 function DiffDialog({
   active,
   candidate,
@@ -422,7 +531,10 @@ function DiffDialog({
   candidate: OverlayVersion;
   onClose: () => void;
 }) {
-  const activeText = useMemo(() => stableStringify(active.snapshot), [active.snapshot]);
+  const activeText = useMemo(
+    () => stableStringify(active.snapshot),
+    [active.snapshot],
+  );
   const candidateText = useMemo(
     () => stableStringify(candidate.snapshot),
     [candidate.snapshot],
@@ -433,48 +545,43 @@ function DiffDialog({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <Card className="border-border/50 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">
-              Diff — active (v{active.version}) → candidate (v{candidate.version})
-            </h3>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
-              ✕
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Lines present only in the active version show in red; lines added by v
-            {candidate.version} show in green.
-          </p>
-          <pre className="rounded border border-border/40 bg-muted/10 p-2 font-mono text-[11px] leading-snug overflow-x-auto">
-            {rows.map((r, i) => (
-              <div
-                key={i}
-                className={
-                  r.kind === "add"
-                    ? "bg-green-500/10 text-green-400"
-                    : r.kind === "del"
-                      ? "bg-red-500/10 text-red-400"
-                      : "text-muted-foreground"
-                }
-              >
-                <span className="select-none pr-2">
-                  {r.kind === "add" ? "+" : r.kind === "del" ? "-" : " "}
-                </span>
-                {r.text}
-              </div>
-            ))}
-          </pre>
-        </CardContent>
-      </Card>
-    </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="font-mono text-sm">
+            Diff — active (v{active.version}) → candidate (v{candidate.version})
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            Lines present only in the active version show with{" "}
+            <code className="font-mono">-</code>; lines added by v
+            {candidate.version} show with <code className="font-mono">+</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <pre className="overflow-x-auto rounded-md border border-border-subtle bg-surface-1 p-3 font-mono text-[11px] leading-snug">
+          {rows.map((r, i) => (
+            <div
+              key={i}
+              className={
+                r.kind === "add"
+                  ? "bg-success/10 text-success"
+                  : r.kind === "del"
+                    ? "bg-destructive/10 text-destructive"
+                    : "text-muted-foreground"
+              }
+            >
+              <span className="select-none pr-2">
+                {r.kind === "add" ? "+" : r.kind === "del" ? "-" : " "}
+              </span>
+              {r.text}
+            </div>
+          ))}
+        </pre>
+        <DialogFooter showCloseButton />
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// stableStringify serialises a JSON value with keys sorted so the
-// diff highlights real changes rather than key-ordering noise.
 function stableStringify(value: unknown, indent = 2): string {
   return JSON.stringify(sortKeys(value), null, indent);
 }
@@ -491,18 +598,14 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
-// diffLines is a minimal LCS-based line diff. Good enough for the
-// small snapshots we're comparing (typically <200 lines). Returns
-// rows tagged as "same", "add", or "del" in display order.
 type DiffRow = { kind: "same" | "add" | "del"; text: string };
 
 function diffLines(oldLines: string[], newLines: string[]): DiffRow[] {
   const m = oldLines.length;
   const n = newLines.length;
-  // LCS DP table. Array access is bounded by the loop conditions
-  // below, so the non-null assertions are safe — strict-index access
-  // just can't infer that.
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array(n + 1).fill(0),
+  );
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
       dp[i]![j] =
@@ -532,10 +635,6 @@ function diffLines(oldLines: string[], newLines: string[]): DiffRow[] {
   return rows;
 }
 
-// PreviewDialog lets the operator paste sample content strings and
-// see how the candidate version's effective profile would verdict
-// each one compared to the current active. Answers "would this
-// change what gets blocked?" without flipping to shadow mode.
 function PreviewDialog({
   id,
   version,
@@ -564,94 +663,113 @@ function PreviewDialog({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <Card className="border-border/50 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Preview impact — v{version}</h3>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
-              ✕
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Paste one sample per line. Each line is scanned through both the current active effective profile and v{version}'s effective profile; divergences are flagged.
-          </p>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-mono text-sm">
+            Preview impact — v{version}
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            Paste one sample per line. Each line is scanned through both the
+            current active profile and v{version}&apos;s effective profile;
+            divergences are highlighted.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label htmlFor="preview-samples-textarea" className="sr-only">
+            Sample inputs (one per line)
+          </label>
           <textarea
-            placeholder="user might say: ignore all previous instructions..."
+            id="preview-samples-textarea"
+            placeholder="ignore all previous instructions..."
             value={samplesText}
             onChange={(e) => setSamplesText(e.target.value)}
             rows={6}
             spellCheck={false}
-            className="w-full rounded border border-border/50 bg-muted/20 p-2 font-mono text-[11px] leading-relaxed focus:outline-none"
+            className="w-full rounded-md border border-border-subtle bg-surface-1 p-3 font-mono text-[11px] leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>
-              Close
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => preview.mutate()}
-              disabled={preview.isPending || !samplesText.trim()}
-            >
-              Run preview
-            </Button>
-          </div>
           {preview.isError ? (
             <p className="text-xs text-destructive">
-              {(preview.error as Error | undefined)?.message ?? "Preview failed"}
+              {(preview.error as Error | undefined)?.message ??
+                "Preview failed"}
             </p>
           ) : null}
           {result ? <PreviewResultsView result={result} /> : null}
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={onClose}
+          >
+            Close
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => preview.mutate()}
+            disabled={preview.isPending || !samplesText.trim()}
+          >
+            {preview.isPending ? "Running…" : "Run preview"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function PreviewResultsView({ result }: { result: PreviewResult }) {
   const s = result.summary;
   return (
-    <div className="space-y-2 pt-2 border-t border-border/30">
-      <div className="flex flex-wrap gap-2 text-[11px]">
-        <Badge variant="outline">Total {s.total}</Badge>
-        <Badge variant="outline">Matching {s.matching}</Badge>
+    <div className="space-y-2.5 border-t border-border-subtle pt-3">
+      <div className="flex flex-wrap gap-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span>Total: {s.total}</span>
+        <span>Matching: {s.matching}</span>
         {s.would_block > 0 ? (
-          <Badge variant="secondary">Would block {s.would_block}</Badge>
+          <span className="text-foreground">Would block: {s.would_block}</span>
         ) : null}
         {s.would_allow > 0 ? (
-          <Badge variant="destructive">Would allow {s.would_allow}</Badge>
+          <span className="text-destructive">Would allow: {s.would_allow}</span>
         ) : null}
         {s.threshold_diff > 0 ? (
-          <Badge variant="outline">Different action {s.threshold_diff}</Badge>
+          <span>Different action: {s.threshold_diff}</span>
         ) : null}
       </div>
-      <div className="rounded border border-border/40 bg-muted/10 divide-y divide-border/20">
+      <div className="divide-y divide-border-subtle border-y border-border-subtle">
         {result.results.map((r, i) => (
-          <div key={i} className="p-2 text-[11px] space-y-1">
-            <div className="font-mono break-all">{r.content}</div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <span>active: <span className="font-mono">{r.active_action}</span></span>
+          <div key={i} className="space-y-1 py-2.5 text-[11px]">
+            <div className="font-mono break-all text-foreground">
+              {r.content}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+              <span>
+                active:{" "}
+                <span className="font-mono text-foreground">
+                  {r.active_action}
+                </span>
+              </span>
               <span>→</span>
-              <span>candidate: <span className="font-mono">{r.candidate_action}</span></span>
-              {r.divergence ? (
-                <Badge
-                  variant={
-                    r.divergence === "would_allow"
-                      ? "destructive"
-                      : r.divergence === "would_block"
-                        ? "secondary"
-                        : "outline"
-                  }
-                  className="text-[10px] px-1.5 py-0"
-                >
-                  {r.divergence.replace(/_/g, " ")}
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                  matching
-                </Badge>
-              )}
+              <span>
+                candidate:{" "}
+                <span className="font-mono text-foreground">
+                  {r.candidate_action}
+                </span>
+              </span>
+              <span
+                className={cn(
+                  "font-mono",
+                  r.divergence === "would_allow"
+                    ? "text-destructive"
+                    : r.divergence
+                      ? "text-warn"
+                      : "text-muted-foreground",
+                )}
+              >
+                ({r.divergence ? r.divergence.replace(/_/g, " ") : "matching"})
+              </span>
             </div>
           </div>
         ))}
@@ -666,66 +784,82 @@ function ShadowEventsTable({ id }: { id: string }) {
     queryFn: () => overlayApi.shadowEvents(id),
   });
 
-  if (isLoading) return <SkeletonRows count={3} />;
+  if (isLoading) {
+    return (
+      <div className="border-y border-border-subtle py-4">
+        <SkeletonRows count={3} />
+      </div>
+    );
+  }
+
   if (!events.length) {
     return (
-      <Card className="border-border/50">
-        <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          No shadow events recorded. Promote a draft to shadow, then send traffic to
-          see what would diverge under the candidate overlay.
-        </CardContent>
-      </Card>
+      <div className="border-y border-border-subtle py-8 text-center text-xs text-muted-foreground">
+        No shadow events recorded. Promote a draft to shadow, then send traffic
+        to inspect divergences under the candidate policy.
+      </div>
     );
   }
 
   return (
-    <Card className="border-border/50 overflow-hidden">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-border/50">
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+    <div className="border-y border-border-subtle">
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Shadow divergence events"
+      >
+        <table className="w-full min-w-[600px] text-left text-xs">
+          <thead className="border-b border-border-subtle text-[11px] text-muted-foreground">
+            <tr>
+              <th scope="col" className="py-2.5 pr-4 font-normal">
                 Divergence
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 Active
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 Shadow
-              </TableHead>
-              <TableHead className="h-10 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="py-2.5 pl-4 text-right font-normal">
                 When
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
             {events.map((e: ShadowEvent) => (
-              <TableRow key={e.id} className="border-border/30">
-                <TableCell>
-                  <Badge
-                    variant={
+              <tr
+                key={e.id}
+                className="transition-colors hover:bg-surface-1/60"
+              >
+                <td className="py-3 pr-4 font-mono text-[11px]">
+                  <span
+                    className={cn(
                       e.divergence === "would_allow"
-                        ? "destructive"
+                        ? "text-destructive"
                         : e.divergence === "would_block"
-                          ? "secondary"
-                          : "outline"
-                    }
-                    className="text-[10px] px-1.5 py-0"
+                          ? "text-warn"
+                          : "text-foreground",
+                    )}
                   >
                     {e.divergence.replace(/_/g, " ")}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-mono text-xs">{e.active_action}</TableCell>
-                <TableCell className="font-mono text-xs">{e.shadow_action}</TableCell>
-                <TableCell className="text-right text-xs text-muted-foreground">
+                  </span>
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-foreground">
+                  {e.active_action}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-foreground">
+                  {e.shadow_action}
+                </td>
+                <td className="py-3 pl-4 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
                   {new Date(e.created_at).toLocaleString()}
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -735,57 +869,70 @@ function AuditTable({ id }: { id: string }) {
     queryFn: () => overlayApi.audit(id),
   });
 
-  if (isLoading) return <SkeletonRows count={3} />;
+  if (isLoading) {
+    return (
+      <div className="border-y border-border-subtle py-4">
+        <SkeletonRows count={3} />
+      </div>
+    );
+  }
+
   if (!entries.length) {
     return (
-      <Card className="border-border/50">
-        <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          No audit entries.
-        </CardContent>
-      </Card>
+      <div className="border-y border-border-subtle py-8 text-center text-xs text-muted-foreground">
+        No audit entries recorded for this policy.
+      </div>
     );
   }
 
   return (
-    <Card className="border-border/50 overflow-hidden">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-border/50">
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+    <div className="border-y border-border-subtle">
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Policy audit history"
+      >
+        <table className="w-full min-w-[600px] text-left text-xs">
+          <thead className="border-b border-border-subtle text-[11px] text-muted-foreground">
+            <tr>
+              <th scope="col" className="py-2.5 pr-4 font-normal">
                 Event
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 Actor
-              </TableHead>
-              <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="px-4 py-2.5 font-normal">
                 Reason
-              </TableHead>
-              <TableHead className="h-10 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              </th>
+              <th scope="col" className="py-2.5 pl-4 text-right font-normal">
                 When
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
             {entries.map((a: AuditEntry) => (
-              <TableRow key={a.id} className="border-border/30">
-                <TableCell>
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                    {a.event}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-xs">{a.actor || "—"}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
+              <tr
+                key={a.id}
+                className="transition-colors hover:bg-surface-1/60"
+              >
+                <td className="py-3 pr-4 font-mono text-[11px] text-foreground">
+                  {a.event}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-foreground">
+                  {a.actor || "—"}
+                </td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">
                   {a.reason || "—"}
-                </TableCell>
-                <TableCell className="text-right text-xs text-muted-foreground">
+                </td>
+                <td className="py-3 pl-4 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
                   {new Date(a.created_at).toLocaleString()}
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

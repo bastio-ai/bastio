@@ -112,6 +112,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
   const baseCommands = useMemo<Command[]>(
     () => [
       { id: "nav-overview",   group: "Navigation", label: "Go to Overview",          shortcut: "G O", onSelect: () => navigate({ to: "/" }) },
+      { id: "nav-connect", group: "Getting started", label: "Connect an app · Setup guides", hint: "Claude Code, Codex, Antigravity, MCP", onSelect: () => navigate({ to: "/connect", search: {} }) },
       { id: "nav-traces",     group: "Navigation", label: "Go to Traces",            shortcut: "G T", onSelect: () => navigate({ to: "/traces" }) },
       { id: "nav-sessions",   group: "Navigation", label: "Go to Sessions",          shortcut: "G S", onSelect: () => navigate({ to: "/sessions" }) },
       { id: "nav-users",      group: "Navigation", label: "Go to Users",             shortcut: "G U", onSelect: () => navigate({ to: "/users" }) },

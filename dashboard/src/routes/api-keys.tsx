@@ -2,24 +2,20 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  Ban,
   Gauge,
-  Globe2,
   KeyRound,
   Plus,
   Search,
-  Server,
-  Settings2,
   ShieldCheck,
-  Waypoints,
 } from "lucide-react";
 import {
+  AdminPageHeader,
   AdminSummaryStrip,
   FieldLabel,
   MonoValue,
   SecurityNotice,
 } from "@/components/admin/admin-primitives";
-import { EmptyState, PageHeader } from "@/components/card";
+import { EmptyState } from "@/components/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -178,35 +174,29 @@ export function ApiKeysPage() {
     (!Number.isInteger(Number(editRateLimit)) || Number(editRateLimit) < 1);
 
   return (
-    <>
-      <PageHeader
-        className="flex-col sm:flex-row"
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+      <AdminPageHeader
+        eyebrow="Developer API"
         title="Bastio API Keys"
         description="Give each application its own key to access Bastio. Set its gateway, environment, and request limit."
-        action={
-          <Button className="cursor-pointer" onClick={openCreate}>
-            <Plus data-icon="inline-start" /> Create API key
-          </Button>
+        bordered={false}
+        className="mb-4"
+        actions={
+          <>
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              render={<Link to="/proxies" search={{ tab: "providers" }} />}
+            >
+              Provider keys
+            </Button>
+            <Button size="sm" className="cursor-pointer" onClick={openCreate}>
+              <Plus data-icon="inline-start" /> Create API key
+            </Button>
+          </>
         }
       />
-
-      <SecurityNotice
-        title="These are the keys your applications use"
-        className="mb-5"
-        action={
-          <Button
-            nativeButton={false}
-            variant="outline"
-            render={<Link to="/proxies" search={{ tab: "providers" }} />}
-          >
-            Provider keys
-          </Button>
-        }
-      >
-        A Bastio API key authenticates your application to Bastio. Store keys
-        from OpenAI, Claude, or other providers under LLM Gateways → Provider
-        keys.
-      </SecurityNotice>
 
       <AdminSummaryStrip
         items={[
@@ -235,66 +225,103 @@ export function ApiKeysPage() {
         ]}
       />
 
-      <SecurityNotice
-        title="Least privilege is the safest default"
-        tone={globalCount > 0 ? "warning" : activeCount ? "success" : "info"}
-        className="mb-5"
+      <p
+        className={cn(
+          "mb-6 border-l-2 pl-3 text-[12px] leading-relaxed text-muted-foreground",
+          globalCount > 0 ? "border-warn/50" : "border-border-default",
+        )}
       >
+        <span className="font-medium text-foreground">
+          {globalCount > 0
+            ? `${globalCount} active ${globalCount === 1 ? "credential has" : "credentials have"} global access.`
+            : "Least-privilege application keys."}
+        </span>{" "}
         {activeCount === 0
-          ? "Create a key for each application. Restrict gateway applications to a single gateway."
+          ? "Create a key for each application and restrict gateway workloads to a single gateway."
           : globalCount > 0
-            ? `${globalCount} active ${globalCount === 1 ? "credential has" : "credentials have"} global access. Bind production keys to a single gateway whenever possible and set an explicit request limit.`
-            : "All active credentials are restricted to a specific gateway. Each credential also carries its environment boundary automatically."}
-      </SecurityNotice>
+            ? "Bind production keys to a single gateway whenever possible and set an explicit request limit."
+            : "All active credentials are restricted to a specific gateway and carry their environment boundary automatically."}{" "}
+        Store upstream OpenAI or Anthropic credentials under{" "}
+        <Link
+          to="/proxies"
+          search={{ tab: "providers" }}
+          className="text-foreground underline underline-offset-4 hover:text-foreground/80"
+        >
+          Provider keys
+        </Link>
+        .
+      </p>
 
-      <section className="overflow-hidden rounded-xl border border-border/70 bg-card">
-        <div className="flex flex-col gap-3 border-b border-border/60 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-1 rounded-lg border border-border/70 bg-muted/30 p-0.5">
-            {(["active", "revoked", "all"] as KeyFilter[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setFilter(item)}
-                className={cn(
-                  "cursor-pointer rounded-md px-2.5 py-1.5 text-[11px] font-medium capitalize text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  filter === item &&
-                    "bg-background text-foreground shadow-sm ring-1 ring-border/70",
-                )}
-                aria-pressed={filter === item}
-              >
-                {item}{" "}
-                <span className="ml-1 font-mono text-[10px] opacity-70">
-                  {item === "active"
-                    ? activeCount
-                    : item === "revoked"
-                      ? revokedCount
-                      : (keys?.length ?? 0)}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="relative w-full sm:w-64">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <section aria-label="Credentials">
+        <div className="mb-4 flex flex-col gap-3 border-b border-border-subtle sm:flex-row sm:items-end sm:justify-between">
+          <nav
+            aria-label="Credential status filter"
+            className="-mb-px flex gap-5 overflow-x-auto"
+          >
+            {(
+              [
+                ["active", "Active", activeCount],
+                ["revoked", "Revoked", revokedCount],
+                ["all", "All", keys?.length ?? 0],
+              ] as const
+            ).map(([item, label, count]) => {
+              const active = filter === item;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setFilter(item)}
+                  className={cn(
+                    "inline-flex shrink-0 cursor-pointer items-center gap-1.5 border-b-2 px-0.5 pb-3 text-[12px] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active
+                      ? "border-foreground/70 text-foreground"
+                      : "border-transparent text-muted-foreground",
+                  )}
+                >
+                  <span>{label}</span>
+                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <search className="relative w-full pb-2.5 sm:w-64">
+            <label htmlFor="api-keys-search" className="sr-only">
+              Search Bastio API keys
+            </label>
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2.5 top-[calc(50%-5px)] size-3.5 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
-              aria-label="Search Bastio API keys"
+              id="api-keys-search"
+              type="search"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search keys…"
               className="h-8 pl-8 text-xs"
             />
-          </div>
+          </search>
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-xs text-muted-foreground">
+          <div className="flex items-center justify-center border-b border-border-subtle py-16 text-xs text-muted-foreground">
             Loading credentials…
           </div>
         ) : keysError ? (
-          <div className="p-5">
+          <div className="py-4">
             <SecurityNotice title="API keys could not be loaded" tone="warning">
               <p role="alert">{keysError.message}</p>
               <Button
+                type="button"
                 variant="outline"
+                size="sm"
                 className="mt-3"
                 onClick={() => reloadKeys()}
               >
@@ -303,152 +330,193 @@ export function ApiKeysPage() {
             </SecurityNotice>
           </div>
         ) : !keys?.length ? (
-          <EmptyState
-            icon={<KeyRound className="size-5" />}
-            title="No API keys created"
-            description="Create a scoped credential for a workload, then store the secret in your secrets manager."
-            action={
-              <Button size="sm" onClick={openCreate}>
-                Create first key
-              </Button>
-            }
-          />
+          <div className="border-b border-border-subtle">
+            <EmptyState
+              icon={<KeyRound className="size-5" />}
+              title="No API keys created"
+              description="Create a scoped credential for a workload, then store the secret in your secrets manager."
+              action={
+                <Button type="button" size="sm" onClick={openCreate}>
+                  Create first key
+                </Button>
+              }
+            />
+          </div>
         ) : !visibleKeys.length ? (
-          <EmptyState
-            icon={<Search className="size-5" />}
-            title="No matching credentials"
-            description="Change the status filter or search term."
-          />
+          <div className="border-b border-border-subtle">
+            <EmptyState
+              icon={<Search className="size-5" />}
+              title="No matching credentials"
+              description="Change the status filter or search term."
+            />
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left">
-              <thead className="border-b border-border/60 bg-muted/20 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+          <div
+            className="overflow-x-auto border-b border-border-subtle"
+            tabIndex={0}
+            role="region"
+            aria-label="Bastio API keys"
+          >
+            <table className="w-full min-w-[860px] text-left">
+              <thead className="border-b border-border-subtle text-[11px] text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">Credential</th>
-                  <th className="px-4 py-2.5 font-medium">Environment</th>
-                  <th className="px-4 py-2.5 font-medium">Access scope</th>
-                  <th className="px-4 py-2.5 font-medium">Rate limit</th>
-                  <th className="px-4 py-2.5 font-medium">Last used</th>
-                  <th className="px-4 py-2.5 font-medium">Created</th>
-                  <th className="px-4 py-2.5 text-right font-medium">
-                    Controls
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background py-2.5 pr-4 font-normal"
+                  >
+                    Credential
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+                  >
+                    Environment
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+                  >
+                    Access scope
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+                  >
+                    Rate limit
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+                  >
+                    Last used
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+                  >
+                    Created
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background py-2.5 pl-4 text-right font-normal"
+                  >
+                    Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/50">
+              <tbody className="divide-y divide-border-subtle">
                 {visibleKeys.map((key: APIKey) => {
                   const scope = getScopeDetails(key, proxies);
+                  const displayName = key.name || "Unnamed key";
                   return (
                     <tr
                       key={key.id}
-                      className="group transition-colors hover:bg-muted/20"
+                      className="transition-colors hover:bg-surface-1/60"
                     >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div
+                      <td className="py-3.5 pr-4">
+                        <div className="flex items-start gap-2.5">
+                          <span
+                            aria-hidden="true"
                             className={cn(
-                              "flex size-8 items-center justify-center rounded-lg border",
+                              "mt-1.5 size-1.5 shrink-0 rounded-full",
                               key.is_active
-                                ? "border-success-border bg-success-bg text-success"
-                                : "border-border bg-muted/40 text-muted-foreground",
+                                ? "bg-success"
+                                : "bg-muted-foreground/40",
                             )}
-                          >
-                            <KeyRound className="size-3.5" />
-                          </div>
+                          />
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="max-w-52 truncate text-[12px] font-medium text-foreground">
-                                {key.name || "Unnamed key"}
+                              <span className="max-w-52 truncate text-[13px] font-medium text-foreground">
+                                {displayName}
                               </span>
-                              <Badge
-                                variant={
-                                  key.is_active ? "success" : "secondary"
-                                }
-                                className="h-4 px-1.5 text-[9px]"
-                              >
-                                {key.is_active ? "active" : "revoked"}
-                              </Badge>
+                              {!key.is_active ? (
+                                <span className="text-[11px] text-muted-foreground">
+                                  Revoked
+                                </span>
+                              ) : null}
                             </div>
-                            <code className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
+                            <code className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
                               {key.key_prefix}••••••••
                             </code>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 text-[11px]">
-                          <Waypoints className="size-3.5 text-muted-foreground" />
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-2 text-[12px]">
                           <span className="font-mono text-foreground">
                             {key.environment || "Unassigned"}
                           </span>
                           {key.allow_environment_override ? (
                             <Badge
-                              variant="warning"
-                              className="h-4 px-1.5 text-[8px]"
+                              variant="outline"
+                              className="h-4 px-1.5 text-[10px] font-normal text-muted-foreground"
                             >
                               override
                             </Badge>
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 text-[11px] text-foreground">
-                          {scope.isGlobal ? (
-                            <Globe2 className="size-3.5 text-warn" />
-                          ) : (
-                            <Server className="size-3.5 text-muted-foreground" />
-                          )}
-                          {scope.proxyId ? (
-                            <Link
-                              to="/proxies"
-                              search={{ gateway: scope.proxyId }}
-                              className="max-w-52 truncate underline underline-offset-4 hover:text-foreground"
-                            >
-                              {scope.label}
-                            </Link>
-                          ) : (
-                            <span className="max-w-52 truncate">
+                      <td className="px-4 py-3.5 text-[12px]">
+                        {scope.proxyId ? (
+                          <Link
+                            to="/proxies"
+                            search={{ gateway: scope.proxyId }}
+                            className="inline-block max-w-52 truncate text-foreground underline decoration-border-default underline-offset-4 hover:decoration-foreground"
+                          >
+                            {scope.label}
+                          </Link>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                            <span
+                              aria-hidden="true"
+                              className="size-1.5 rounded-full bg-warn"
+                            />
+                            <span className="max-w-52 truncate text-foreground">
                               {scope.label}
                             </span>
-                          )}
-                        </div>
+                          </span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
+                      <td className="px-4 py-3.5 font-mono text-[12px] tabular-nums text-muted-foreground">
                         {key.rate_limit_rpm
                           ? `${key.rate_limit_rpm} rpm`
                           : "Unbounded"}
                       </td>
-                      <td className="px-4 py-3 text-[11px] text-muted-foreground">
+                      <td className="px-4 py-3.5 text-[12px] tabular-nums text-muted-foreground">
                         {formatDate(key.last_used_at)}
                       </td>
-                      <td className="px-4 py-3 text-[11px] text-muted-foreground">
+                      <td className="px-4 py-3.5 text-[12px] tabular-nums text-muted-foreground">
                         {formatDate(key.created_at)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="py-3.5 pl-4">
                         {key.is_active ? (
                           <div className="flex justify-end gap-1">
                             <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
+                              aria-label={`Edit access for ${displayName}`}
                               onClick={() => openEditor(key)}
                             >
-                              <Settings2 /> Edit access
+                              Edit access
                             </Button>
                             <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
+                              aria-label={`Revoke ${displayName}`}
                               className="text-muted-foreground hover:text-destructive"
                               onClick={() => {
                                 revokeMutation.reset();
                                 setRevokeTarget(key);
                               }}
                             >
-                              <Ban /> Revoke
+                              Revoke
                             </Button>
                           </div>
                         ) : (
-                          <div className="text-right text-[10px] text-muted-foreground">
-                            No active access
+                          <div className="text-right text-[11px] text-muted-foreground">
+                            Revoked
                           </div>
                         )}
                       </td>
@@ -511,7 +579,8 @@ export function ApiKeysPage() {
                 id="bastio-key-gateway"
                 value={selectedProxyId}
                 onChange={(e) => setSelectedProxyId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                aria-describedby="bastio-key-gateway-hint"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="global">
                   Global — all developer APIs and gateways
@@ -522,7 +591,10 @@ export function ApiKeysPage() {
                   </option>
                 ))}
               </select>
-              <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
+              <p
+                id="bastio-key-gateway-hint"
+                className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground"
+              >
                 {selectedProxyId === "global"
                   ? "Broad access. Use only for trusted platform automation."
                   : "Recommended. The credential can call one gateway only."}
@@ -533,7 +605,10 @@ export function ApiKeysPage() {
                 Requests per minute
               </FieldLabel>
               <div className="relative">
-                <Gauge className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Gauge
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                />
                 <Input
                   id="bastio-key-rate"
                   type="number"
@@ -576,8 +651,8 @@ export function ApiKeysPage() {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <div className="mb-1 flex size-9 items-center justify-center rounded-lg border border-success-border bg-success-bg text-success">
-              <ShieldCheck className="size-4" />
+            <div className="mb-1 flex size-8 items-center justify-center rounded-md border border-success-border bg-success-bg text-success">
+              <ShieldCheck aria-hidden="true" className="size-4" />
             </div>
             <DialogTitle>Store this secret now</DialogTitle>
             <DialogDescription>
@@ -585,7 +660,7 @@ export function ApiKeysPage() {
               Put it in a secrets manager before closing.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-2">
+          <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-1/60 p-2">
             <MonoValue className="min-w-0 flex-1 break-all border-0 bg-transparent">
               {revealedSecretKey}
             </MonoValue>
@@ -608,7 +683,10 @@ export function ApiKeysPage() {
             </section>
           ) : null}
           <DialogFooter>
-            <Button onClick={() => setRevealedSecretKey(null)}>
+            <Button
+              type="button"
+              onClick={() => setRevealedSecretKey(null)}
+            >
               I stored the key
             </Button>
           </DialogFooter>
@@ -639,7 +717,7 @@ export function ApiKeysPage() {
                 id="edit-key-gateway"
                 value={editProxyId}
                 onChange={(e) => setEditProxyId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="global">
                   Global — all developer APIs and gateways
@@ -664,12 +742,24 @@ export function ApiKeysPage() {
                 onChange={(e) => setEditRateLimit(e.target.value)}
                 placeholder="Keep current limit"
                 aria-invalid={invalidEditRate}
+                aria-describedby={
+                  invalidEditRate
+                    ? "edit-key-rate-hint edit-key-rate-error"
+                    : "edit-key-rate-hint"
+                }
               />
-              <p className="mt-1.5 text-xs text-muted-foreground">
+              <p
+                id="edit-key-rate-hint"
+                className="mt-1.5 text-xs text-muted-foreground"
+              >
                 Enter a new limit. Leaving this empty keeps the current limit.
               </p>
               {invalidEditRate ? (
-                <p role="alert" className="mt-1 text-xs text-destructive">
+                <p
+                  id="edit-key-rate-error"
+                  role="alert"
+                  className="mt-1 text-xs text-destructive"
+                >
                   Use a whole number of at least 1.
                 </p>
               ) : null}
@@ -686,10 +776,15 @@ export function ApiKeysPage() {
             ) : null}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingKey(null)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingKey(null)}
+            >
               Cancel
             </Button>
             <Button
+              type="button"
               disabled={
                 updateMutation.isPending || !editEnvironment || invalidEditRate
               }
@@ -730,10 +825,15 @@ export function ApiKeysPage() {
             </p>
           ) : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRevokeTarget(null)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRevokeTarget(null)}
+            >
               Cancel
             </Button>
             <Button
+              type="button"
               variant="destructive"
               disabled={revokeMutation.isPending}
               onClick={() =>
@@ -745,7 +845,7 @@ export function ApiKeysPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
 
@@ -761,9 +861,9 @@ function EnvironmentBoundaryFields({
   onAllowOverrideChange: (value: boolean) => void;
 }) {
   return (
-    <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
+    <div className="space-y-3 border-y border-border-subtle py-3.5">
       <EnvironmentPicker value={value} onChange={onChange} />
-      <label className="flex items-start gap-2.5 text-[10px] leading-relaxed text-muted-foreground">
+      <label className="flex items-start gap-2.5 text-[11px] leading-relaxed text-muted-foreground">
         <input
           type="checkbox"
           checked={allowOverride}
@@ -775,8 +875,9 @@ function EnvironmentBoundaryFields({
             Allow registered environment override
           </strong>
           <br />
-          For shared ingress only. `X-Bastio-Environment` may select another
-          environment already registered in this workspace.
+          For shared ingress only.{" "}
+          <code className="font-mono text-foreground">X-Bastio-Environment</code>{" "}
+          may select another environment already registered in this workspace.
         </span>
       </label>
     </div>

@@ -1,18 +1,10 @@
 import { WorkspaceSetupGuide } from "./setup-guide";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowRight,
-  Bot,
-  BookOpen,
-  CheckCircle2,
-  MessageSquarePlus,
-  Settings2,
-  ShieldCheck,
-} from "lucide-react";
+import { ArrowRight, MessageSquarePlus } from "lucide-react";
 
 import {
+  AdminPanel,
   AdminSummaryStrip,
-  SecurityNotice,
 } from "@/components/admin/admin-primitives";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/skeleton";
@@ -69,6 +61,7 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
       }>;
     },
   });
+
   const assistantCount = assistants.data?.assistants.length ?? 0;
   const readySources =
     knowledge.data?.sources.filter((item) => item.status === "ready").length ??
@@ -76,8 +69,8 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
   const allowedModelCount = settings.data?.allowed_models?.length ?? 0;
   const hasPersona = Boolean(
     settings.data?.ai_persona_name ||
-    settings.data?.ai_persona_personality ||
-    settings.data?.ai_persona_tone,
+      settings.data?.ai_persona_personality ||
+      settings.data?.ai_persona_tone,
   );
 
   return (
@@ -121,52 +114,50 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
         ]}
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.7fr)]">
-        <section className="overflow-hidden rounded-xl border border-border/70 bg-card">
-          <div className="flex items-center justify-between gap-4 border-b border-border/60 px-4 py-3.5">
-            <div>
-              <h2 className="text-[13px] font-semibold text-foreground">
-                Recent conversations
-              </h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Your latest conversations. Open the employee workspace to
-                continue chatting.
-              </p>
-            </div>
-            <Button size="sm" onClick={() => onOpenChat()}>
-              <MessageSquarePlus data-icon="inline-start" />
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,0.8fr)]">
+        <AdminPanel
+          title="Recent conversations"
+          description="Your latest conversations. Open the employee workspace to continue chatting."
+          action={
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => onOpenChat()}
+            >
+              <MessageSquarePlus className="size-3.5" aria-hidden="true" />
               New chat
             </Button>
-          </div>
-
+          }
+          contentClassName="py-0"
+        >
           {recent.isLoading ? (
-            <div className="p-4">
+            <div className="border-b border-border-subtle py-4">
               <SkeletonRows count={5} />
             </div>
-          ) : recent.data?.conversations.length === 0 ? (
-            <div className="flex min-h-64 flex-col items-center justify-center px-6 py-12 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
-                <MessageSquarePlus className="h-4 w-4" />
-              </div>
-              <h3 className="mt-4 text-[13px] font-medium text-foreground">
+          ) : !recent.data || recent.data.conversations.length === 0 ? (
+            <div className="border-b border-border-subtle py-10 text-center">
+              <h3 className="text-[13px] font-medium text-foreground">
                 No conversations yet
               </h3>
-              <p className="mt-1 max-w-sm text-[11px] leading-relaxed text-muted-foreground">
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                 Open the portal to test the employee experience and create the
                 first governed conversation.
               </p>
               <Button
-                className="mt-4"
+                type="button"
+                className="mt-4 h-8 text-xs"
                 size="sm"
                 variant="outline"
                 onClick={() => onOpenChat()}
               >
-                Open portal <ArrowRight data-icon="inline-end" />
+                Open portal
+                <ArrowRight className="size-3.5" aria-hidden="true" />
               </Button>
             </div>
           ) : (
-            <div className="divide-y divide-border/50">
-              {recent.data?.conversations.map((item) => (
+            <div className="divide-y divide-border-subtle border-b border-border-subtle">
+              {recent.data.conversations.map((item) => (
                 <RecentConversationRow
                   key={item.id}
                   item={item}
@@ -175,24 +166,16 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
               ))}
             </div>
           )}
-        </section>
+        </AdminPanel>
 
-        <div className="space-y-5">
-          <section className="overflow-hidden rounded-xl border border-border/70 bg-card">
-            <div className="border-b border-border/60 px-4 py-3.5">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-[13px] font-semibold text-foreground">
-                  Workspace configuration
-                </h2>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Configuration that shapes every employee conversation.
-              </p>
-            </div>
-            <div className="divide-y divide-border/50">
+        <div className="space-y-6">
+          <AdminPanel
+            title="Workspace configuration"
+            description="Configuration that shapes every employee conversation."
+            contentClassName="py-0"
+          >
+            <div className="divide-y divide-border-subtle border-b border-border-subtle">
               <ReadinessRow
-                icon={Bot}
                 label="Assistants"
                 value={
                   assistants.isLoading
@@ -205,7 +188,6 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
                 onClick={() => onOpenTab?.("assistants")}
               />
               <ReadinessRow
-                icon={BookOpen}
                 label="Knowledge"
                 value={
                   knowledge.isLoading
@@ -218,7 +200,6 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
                 onClick={() => onOpenTab?.("knowledge")}
               />
               <ReadinessRow
-                icon={Settings2}
                 label="Model access"
                 value={
                   settings.isLoading
@@ -232,7 +213,6 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
                 onClick={() => onOpenTab?.("settings", "models")}
               />
               <ReadinessRow
-                icon={ShieldCheck}
                 label="AI identity"
                 value={
                   settings.isLoading
@@ -246,24 +226,23 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
                 onClick={() => onOpenTab?.("settings", "general")}
               />
             </div>
-          </section>
+          </AdminPanel>
 
-          <SecurityNotice
-            title="Gateway policies remain authoritative"
-            tone="success"
-          >
+          <div className="border-l-2 border-success/60 pl-3.5 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Gateway policies remain authoritative.
+            </span>{" "}
             Portal requests pass through Bastio security controls. Assistant
             prompts and knowledge access do not bypass threat inspection, policy
             enforcement, or trace logging.
-          </SecurityNotice>
+          </div>
 
           {ext.quickActions ? (
-            <section className="rounded-xl border border-border/70 bg-card p-4">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Organization actions
-              </p>
-              <div className="flex flex-col gap-2">{ext.quickActions}</div>
-            </section>
+            <AdminPanel title="Organization actions">
+              <div className="flex flex-col gap-2 border-b border-border-subtle pb-4">
+                {ext.quickActions}
+              </div>
+            </AdminPanel>
           ) : null}
         </div>
       </div>
@@ -272,14 +251,12 @@ export function DashboardTab({ onOpenChat, onOpenTab }: Props) {
 }
 
 function ReadinessRow({
-  icon: Icon,
   label,
   value,
   ready,
   neutral = false,
   onClick,
 }: {
-  icon: typeof Bot;
   label: string;
   value: string;
   ready: boolean;
@@ -290,24 +267,30 @@ function ReadinessRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="group flex w-full cursor-pointer items-center justify-between gap-3 py-3 text-left transition-colors hover:bg-surface-1/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-      </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium text-foreground">{label}</p>
-        <p className="truncate text-[10px] text-muted-foreground">{value}</p>
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              ready
+                ? "bg-success"
+                : neutral
+                  ? "bg-muted-foreground/50"
+                  : "bg-muted-foreground/30",
+            )}
+          />
+          <span className="text-xs font-medium text-foreground">{label}</span>
+        </div>
+        <p className="mt-0.5 truncate pl-3.5 text-[11px] text-muted-foreground">
+          {value}
+        </p>
       </div>
-      <CheckCircle2
-        className={cn(
-          "h-3.5 w-3.5 shrink-0",
-          ready
-            ? "text-success"
-            : neutral
-              ? "text-muted-foreground/50"
-              : "text-muted-foreground/30",
-        )}
+      <ArrowRight
+        className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+        aria-hidden="true"
       />
     </button>
   );
@@ -324,24 +307,25 @@ function RecentConversationRow({
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="group flex w-full cursor-pointer items-center gap-4 py-3 text-left transition-colors hover:bg-surface-1/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[12px] font-medium text-foreground">
+        <p className="truncate text-xs font-medium text-foreground">
           {item.title}
         </p>
-        <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {item.last_message_peek
             ? `${item.last_message_role === "assistant" ? "AI" : "User"}: ${item.last_message_peek}`
             : "No message preview"}
         </p>
       </div>
-      <div className="hidden shrink-0 items-center gap-4 text-[10px] text-muted-foreground sm:flex">
-        <span className="font-mono tabular-nums">
-          {item.message_count} msgs
-        </span>
+      <div className="hidden shrink-0 items-center gap-4 font-mono text-[11px] tabular-nums text-muted-foreground sm:flex">
+        <span>{item.message_count} msgs</span>
         <span>{relativeTime(item.last_message_at)}</span>
-        <ArrowRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+        <ArrowRight
+          className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100"
+          aria-hidden="true"
+        />
       </div>
     </button>
   );

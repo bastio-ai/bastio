@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, KeyRound, Plus, Search, Server } from "lucide-react";
+import { KeyRound, Plus, Search, Server } from "lucide-react";
 import {
+  AdminPageHeader,
+  AdminUnderlineNav,
   FieldLabel,
-  SecurityNotice,
 } from "@/components/admin/admin-primitives";
-import { EmptyState, PageHeader } from "@/components/card";
+import { EmptyState } from "@/components/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/api/client";
@@ -20,7 +21,6 @@ import { useGatewayActions } from "@/components/gateways/use-gateway-actions";
 import {
   QueryError,
   ProviderKeyList,
-  navigationClass,
   controlClass,
 } from "@/components/gateways/primitives";
 import { cn } from "@/lib/utils";
@@ -56,23 +56,34 @@ export function ProxiesPage() {
     setFilter("");
     void selectGateway(id);
   });
+
+  const activeTab = search.tab === "providers" ? "providers" : "gateways";
+
   return (
-    <>
-      <PageHeader
-        className="flex-col xl:flex-row"
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+      <AdminPageHeader
+        eyebrow="Developer API"
         title="LLM Gateways"
         description="Connect your application to an AI provider through Bastio’s security controls."
-        action={
+        bordered={false}
+        className="mb-4"
+        actions={
           <div className="flex flex-wrap gap-2">
             <Button
               nativeButton={false}
+              size="sm"
               variant="outline"
               className="cursor-pointer"
               render={<Link to="/api-keys" />}
             >
-              <KeyRound /> Manage Bastio API keys
+              <KeyRound /> Bastio API keys
             </Button>
-            <Button className="cursor-pointer" onClick={actions.openCreate}>
+            <Button
+              type="button"
+              size="sm"
+              className="cursor-pointer"
+              onClick={actions.openCreate}
+            >
               <Plus /> Create gateway
             </Button>
           </div>
@@ -81,78 +92,71 @@ export function ProxiesPage() {
 
       {extension.accountNotice}
 
-      <nav
-        aria-label="Gateway management"
-        className="mb-5 flex gap-1 border-b border-border pb-2"
-      >
-        <button
-          type="button"
-          aria-current={!search.tab ? "page" : undefined}
-          className={cn(
-            navigationClass,
-            !search.tab && "bg-muted text-foreground",
-          )}
-          onClick={() =>
-            navigate({ to: "/proxies", search: { gateway: selected?.id } })
-          }
-        >
-          Gateways{" "}
-          <span className="ml-1 text-muted-foreground">
-            {proxies.data?.length ?? "—"}
-          </span>
-        </button>
-        <button
-          type="button"
-          aria-current={search.tab === "providers" ? "page" : undefined}
-          className={cn(
-            navigationClass,
-            search.tab === "providers" && "bg-muted text-foreground",
-          )}
-          onClick={() =>
-            navigate({
-              to: "/proxies",
-              search: { gateway: selected?.id, tab: "providers" },
-            })
-          }
-        >
-          Provider keys{" "}
-          <span className="ml-1 text-muted-foreground">
-            {providerKeys.data?.length ?? "—"}
-          </span>
-        </button>
-      </nav>
+      <AdminUnderlineNav
+        ariaLabel="Gateway management"
+        value={activeTab}
+        onChange={(next) =>
+          void navigate({
+            to: "/proxies",
+            search:
+              next === "providers"
+                ? { gateway: selected?.id, tab: "providers" }
+                : { gateway: selected?.id },
+          })
+        }
+        items={[
+          {
+            id: "gateways",
+            label: "Gateways",
+            count: proxies.data?.length ?? "—",
+          },
+          {
+            id: "providers",
+            label: "Provider keys",
+            count: providerKeys.data?.length ?? "—",
+          },
+        ]}
+      />
 
-      {search.tab === "providers" ? (
-        <section className="rounded-xl border border-border bg-card p-5 sm:p-6">
-          <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+      {activeTab === "providers" ? (
+        <section aria-label="Provider keys" className="space-y-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold tracking-tight">
+              <h2 className="text-[15px] font-medium tracking-tight text-foreground">
                 Keys from your AI providers
               </h2>
-              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
                 Bastio uses these secrets to call OpenAI, Claude, OpenRouter,
                 and other providers. Your applications use a separate Bastio API
                 key.
               </p>
             </div>
             <Button
+              type="button"
+              size="sm"
               className="cursor-pointer"
-              onClick={() => actions.openProviderDialog("openai", {
-                thenCreateGateway: proxies.data?.length === 0,
-              })}
+              onClick={() =>
+                actions.openProviderDialog("openai", {
+                  thenCreateGateway: proxies.data?.length === 0,
+                })
+              }
               disabled={extension.providerKeyManagement !== "allowed"}
             >
               <Plus /> Add provider key
             </Button>
           </div>
-          <SecurityNotice title="Shared within your workspace" className="mb-5">
-            New provider keys are saved as shared defaults. The newest key is
-            used unless a gateway has its own provider key. Gateways for the
-            same provider and workspace AI using your own keys can use them.
-            Adding a key does not remove an existing one.
-          </SecurityNotice>
+
+          <p className="border-l-2 border-border-default pl-3 text-[12px] leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Shared within your workspace.
+            </span>{" "}
+            New provider keys are saved as shared defaults; the newest key is
+            used unless a gateway has its own provider key. Adding a key does
+            not remove an existing one.
+          </p>
+
           {providerKeys.isPending ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="py-8 text-xs text-muted-foreground">
               Loading provider keys…
             </p>
           ) : providerKeys.isError ? (
@@ -162,21 +166,27 @@ export function ProxiesPage() {
               retry={() => providerKeys.refetch()}
             />
           ) : !providerKeys.data.length ? (
-            <EmptyState
-              icon={<KeyRound />}
-              title="No provider keys yet"
-              description="Add the secret from your provider’s account to connect Bastio to its models."
-              action={
-                <Button
-                  disabled={extension.providerKeyManagement !== "allowed"}
-                  onClick={() => actions.openProviderDialog("openai", {
-                thenCreateGateway: proxies.data?.length === 0,
-              })}
-                >
-                  Add first provider key
-                </Button>
-              }
-            />
+            <div className="border-y border-border-subtle">
+              <EmptyState
+                icon={<KeyRound className="size-5" />}
+                title="No provider keys yet"
+                description="Add the secret from your provider’s account to connect Bastio to its models."
+                action={
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={extension.providerKeyManagement !== "allowed"}
+                    onClick={() =>
+                      actions.openProviderDialog("openai", {
+                        thenCreateGateway: proxies.data?.length === 0,
+                      })
+                    }
+                  >
+                    Add first provider key
+                  </Button>
+                }
+              />
+            </div>
           ) : (
             <ProviderKeyList
               keys={providerKeys.data}
@@ -186,33 +196,41 @@ export function ProxiesPage() {
         </section>
       ) : (
         <>
-          <ol
-            className="mb-6 grid gap-4 rounded-xl border border-border bg-card p-5 sm:grid-cols-3"
-            aria-label="Gateway setup steps"
-          >
-            {[
-              ["Choose a provider", "Create a gateway for your application."],
-              [
-                "Add the provider key",
-                "Bastio uses it to call the AI provider.",
-              ],
-              ["Connect your app", "Use a Bastio API key and the gateway URL."],
-            ].map(([title, description], i) => (
-              <li key={title} className="flex gap-3">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-xs">
-                  {i + 1}
-                </span>
-                <div>
-                  <p className="text-sm font-medium">{title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {description}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
+          {!proxies.data?.length ? (
+            <ol
+              className="mb-6 grid divide-y divide-border-subtle border-y border-border-subtle sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+              aria-label="Gateway setup steps"
+            >
+              {[
+                ["Choose a provider", "Create a gateway for your application."],
+                [
+                  "Add the provider key",
+                  "Bastio uses it to call the AI provider.",
+                ],
+                [
+                  "Connect your app",
+                  "Use a Bastio API key and the gateway URL.",
+                ],
+              ].map(([title, description], i) => (
+                <li key={title} className="flex gap-3 py-4 sm:px-4 first:sm:pl-0">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border-default font-mono text-[11px] text-muted-foreground">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <p className="text-[13px] font-medium text-foreground">
+                      {title}
+                    </p>
+                    <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                      {description}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+
           {proxies.isPending ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
+            <p className="py-12 text-center text-xs text-muted-foreground">
               Loading gateways…
             </p>
           ) : proxies.isError ? (
@@ -222,20 +240,20 @@ export function ProxiesPage() {
               retry={() => proxies.refetch()}
             />
           ) : !proxies.data.length ? (
-            <div className="rounded-xl border border-border bg-card">
+            <div className="border-y border-border-subtle">
               <EmptyState
-                icon={<Server />}
+                icon={<Server className="size-5" />}
                 title="Connect your first application"
                 description="Create a gateway, add your provider key, and copy the connection details into your app."
                 action={
-                  <Button onClick={actions.openCreate}>
+                  <Button type="button" size="sm" onClick={actions.openCreate}>
                     <Plus /> Create your first gateway
                   </Button>
                 }
               />
             </div>
           ) : (
-            <div className="grid items-start gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
               <div className="lg:hidden">
                 <FieldLabel htmlFor="selected-gateway">Your gateway</FieldLabel>
                 <select
@@ -253,63 +271,75 @@ export function ProxiesPage() {
                   ))}
                 </select>
               </div>
+
               <section
-                className="hidden min-w-0 overflow-hidden rounded-xl border border-border bg-card lg:block"
+                className="hidden min-w-0 lg:block lg:border-r lg:border-border-subtle lg:pr-5"
                 aria-label="Your gateways"
               >
-                <div className="border-b border-border p-4">
-                  <h2 className="text-sm font-bold tracking-tight">
-                    Your gateways
-                  </h2>
-                  <div className="relative mt-3">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <search className="mb-3 block">
+                  <label htmlFor="gateway-search-input" className="sr-only">
+                    Search gateways
+                  </label>
+                  <div className="relative">
+                    <Search
+                      aria-hidden="true"
+                      className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                    />
                     <Input
-                      aria-label="Search gateways"
+                      id="gateway-search-input"
+                      type="search"
                       value={filter}
                       onChange={(e) => setFilter(e.target.value)}
                       placeholder="Search gateways…"
-                      className="h-10 pl-9"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      className="h-8 pl-8 text-xs"
                     />
                   </div>
-                </div>
-                <div className="max-h-96 overflow-y-auto p-2 lg:max-h-[640px]">
+                </search>
+
+                <div className="max-h-[640px] space-y-0.5 overflow-y-auto">
                   {visibleProxies.length ? (
                     visibleProxies.map((p) => {
                       const status = gatewaySetupStatus(
                         p,
                         providerKeys.data,
                         appKeys.data,
+                        extension.managedProviders,
                       );
+                      const isSelected = selected?.id === p.id;
+                      const isReady = status === "Setup complete";
                       return (
                         <button
                           type="button"
                           key={p.id}
-                          aria-current={
-                            selected?.id === p.id ? "page" : undefined
-                          }
+                          aria-current={isSelected ? "page" : undefined}
                           onClick={() => selectGateway(p.id)}
                           className={cn(
-                            "mb-1 flex w-full cursor-pointer items-start gap-3 rounded-lg border border-transparent p-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                            selected?.id === p.id && "border-border bg-muted",
+                            "flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-2.5 text-left transition-colors hover:bg-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                            isSelected && "bg-surface-2 text-foreground",
                           )}
                         >
-                          <Server className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "mt-1.5 size-1.5 shrink-0 rounded-full",
+                              !p.is_active
+                                ? "bg-muted-foreground/40"
+                                : isReady
+                                  ? "bg-success"
+                                  : "bg-warn",
+                            )}
+                          />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">
+                            <span className="block truncate text-[13px] font-medium text-foreground">
                               {p.name}
                             </span>
-                            <span className="mt-1 block text-xs text-muted-foreground">
+                            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                               {providerLabels[p.target_provider] ??
-                                p.target_provider}
-                            </span>
-                            <span
-                              className={cn(
-                                "mt-2 block text-xs",
-                                status === "Setup complete"
-                                  ? "text-success"
-                                  : "text-muted-foreground",
-                              )}
-                            >
+                                p.target_provider}{" "}
+                              ·{" "}
                               {providerKeys.isError || appKeys.isError
                                 ? "Setup unavailable"
                                 : status === "Add provider key" &&
@@ -319,17 +349,17 @@ export function ProxiesPage() {
                                   : status}
                             </span>
                           </span>
-                          <ArrowRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                         </button>
                       );
                     })
                   ) : (
-                    <p className="p-3 text-sm text-muted-foreground">
+                    <p className="px-2.5 py-4 text-xs text-muted-foreground">
                       No gateways match your search.
                     </p>
                   )}
                 </div>
               </section>
+
               {selected ? (
                 <GatewayPanel
                   key={selected.id}
@@ -354,6 +384,6 @@ export function ProxiesPage() {
       )}
 
       {actions.dialogs}
-    </>
+    </div>
   );
 }

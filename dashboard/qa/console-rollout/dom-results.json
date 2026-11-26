@@ -1,0 +1,23 @@
+{
+  "results": [
+    "real Traces route renders",
+    "platform navigation stays visible on Traces",
+    "real API/query path renders 20 fixture traces",
+    "operational metrics render",
+    "wide trace inspector renders",
+    "collapsed account menu opens above the footer",
+    "navigation restores after collapse",
+    "existing light preference remains functional",
+    "dark preference restores without replacing page content",
+    "type tab persists filter in URL",
+    "type tab filters rendered data",
+    "page-specific views and filters remain available",
+    "real Sessions route renders new header and data",
+    "analytics view tabs work with persistent navigation",
+    "real Threats route renders header and data",
+    "Overview renders operational panels",
+    "no route error boundary",
+    "no runtime errors (0)"
+  ],
+  "errors": []
+}

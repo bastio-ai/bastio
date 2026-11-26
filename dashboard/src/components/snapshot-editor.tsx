@@ -1,19 +1,9 @@
 import { useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  Code2,
-  FileText,
-  Play,
-  Plus,
-  ShieldAlert,
-  ShieldCheck,
-  Trash2,
-  Zap,
-} from "lucide-react";
+import { AlertTriangle, Play, Plus, Trash2 } from "lucide-react";
 
 import type { OverlaySnapshot, PatternRule } from "@/api/overlay";
 import { detect, type DetectResponse } from "@/api/detect";
-import { Badge } from "@/components/ui/badge";
+import { AdminUnderlineNav } from "@/components/admin/admin-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 export type SnapshotEditorView = "form" | "json" | "sandbox";
 
@@ -43,11 +34,11 @@ type DetectorKey =
   | "output_exfil";
 
 const detectorLabels: Record<DetectorKey, string> = {
-  injection: "Prompt Injection",
-  jailbreak: "Jailbreak Attempts",
-  secrets: "Secret & API Key Leaks",
-  indirect_injection: "Indirect Prompt Injection",
-  output_exfil: "Output Exfiltration",
+  injection: "Prompt injection",
+  jailbreak: "Jailbreak attempts",
+  secrets: "Secret & API key leaks",
+  indirect_injection: "Indirect prompt injection",
+  output_exfil: "Output exfiltration",
 };
 
 const thresholdDetectors: DetectorKey[] = ["injection", "jailbreak"];
@@ -82,83 +73,68 @@ export function SnapshotEditor({
   };
 
   return (
-    <div className="space-y-3">
-      {/* View Switcher Navigation */}
-      <div className="flex items-center justify-between border-b border-border/50 pb-2">
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => onViewChange("form")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              view === "form"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-            }`}
-          >
-            <FileText className="h-3.5 w-3.5" /> Visual Rule Builder
-          </button>
-          <button
-            type="button"
-            onClick={() => onViewChange("json")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              view === "json"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-            }`}
-          >
-            <Code2 className="h-3.5 w-3.5" /> JSON / Code
-          </button>
-          <button
-            type="button"
-            onClick={() => onViewChange("sandbox")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              view === "sandbox"
-                ? "bg-amber-500 text-white font-semibold shadow-sm"
-                : "text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
-            }`}
-          >
-            <Zap className="h-3.5 w-3.5 fill-current" /> Live Prompt Simulator
-          </button>
-        </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <AdminUnderlineNav
+          ariaLabel="Policy authoring mode"
+          value={view}
+          onChange={onViewChange}
+          className="mb-0 flex-1"
+          items={[
+            { id: "form", label: "Visual rule builder" },
+            { id: "json", label: "JSON snapshot" },
+            { id: "sandbox", label: "Live prompt simulator" },
+          ]}
+        />
         {parsed ? (
-          <span className="text-[11px] text-muted-foreground font-mono">
+          <span className="pb-2 font-mono text-[11px] tabular-nums text-muted-foreground">
             {parsed.additional_patterns?.length ?? 0} pattern rules ·{" "}
             {Object.keys(parsed.detector_overrides ?? {}).length} overrides
           </span>
         ) : (
-          <span className="text-[11px] text-destructive font-mono">Invalid JSON syntax</span>
+          <span className="pb-2 font-mono text-[11px] text-destructive">
+            Invalid JSON syntax
+          </span>
         )}
       </div>
 
-      {/* View Content */}
       {view === "json" ? (
-        <textarea
-          value={value}
-          onChange={(e) => {
-            const next = e.target.value;
-            try {
-              JSON.parse(next);
-              onChange(next, null);
-            } catch (err) {
-              onChange(next, (err as Error).message);
-            }
-          }}
-          rows={rows}
-          spellCheck={false}
-          className="w-full rounded-md border border-border/50 bg-muted/20 p-3 font-mono text-[11px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary"
-        />
+        <div>
+          <label htmlFor="snapshot-json-editor" className="sr-only">
+            Policy snapshot JSON
+          </label>
+          <textarea
+            id="snapshot-json-editor"
+            value={value}
+            onChange={(e) => {
+              const next = e.target.value;
+              try {
+                JSON.parse(next);
+                onChange(next, null);
+              } catch (err) {
+                onChange(next, (err as Error).message);
+              }
+            }}
+            rows={rows}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="none"
+            className="w-full rounded-md border border-border-subtle bg-surface-1/60 p-3 font-mono text-[11px] leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
       ) : view === "sandbox" ? (
         <LivePolicySimulator snapshot={parsed} />
       ) : !parsed ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-xs space-y-1">
-          <div className="font-semibold text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> The snapshot JSON contains syntax errors
+        <div className="space-y-1.5 border-l-2 border-destructive pl-3.5 text-xs">
+          <div className="flex items-center gap-1.5 font-medium text-destructive">
+            <AlertTriangle className="size-3.5" aria-hidden="true" />
+            Snapshot JSON contains syntax errors
           </div>
           <p className="text-muted-foreground">
-            Switch to the <strong>JSON / Code</strong> tab to correct syntax errors before editing via the visual form.
+            Switch to <span className="font-medium text-foreground">JSON snapshot</span> to fix syntax errors before editing in the visual rule builder.
           </p>
           {parseError ? (
-            <div className="mt-2 font-mono text-[11px] p-2 bg-destructive/10 rounded text-destructive">
+            <div className="mt-2 rounded border border-destructive/30 bg-destructive/10 p-2 font-mono text-[11px] text-destructive">
               {parseError}
             </div>
           ) : null}
@@ -168,7 +144,8 @@ export function SnapshotEditor({
       )}
 
       <p className="text-[11px] text-muted-foreground">
-        Note: <span className="font-mono">additional_access_rules</span> are stored on the policy and enforced in live gateway passes.
+        Note: <code className="font-mono text-foreground">additional_access_rules</code>{" "}
+        are stored on the policy and enforced in live gateway passes.
       </p>
     </div>
   );
@@ -182,7 +159,7 @@ function FormView({
   onUpdate: (mut: (s: OverlaySnapshot) => OverlaySnapshot) => void;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <DetectorOverridesSection snapshot={snapshot} onUpdate={onUpdate} />
       <PatternsSection snapshot={snapshot} onUpdate={onUpdate} />
     </div>
@@ -207,10 +184,17 @@ function DetectorOverridesSection({
       if (patch === null) {
         delete (next as Record<string, unknown>)[key];
       } else {
-        const prev = (next as Record<string, { threshold?: number; strategy?: string } | undefined>)[key] ?? {};
+        const prev =
+          (
+            next as Record<
+              string,
+              { threshold?: number; strategy?: string } | undefined
+            >
+          )[key] ?? {};
         const merged: { threshold?: number; strategy?: string } = { ...prev };
         if (patch.threshold === null) delete merged.threshold;
-        else if (patch.threshold !== undefined) merged.threshold = patch.threshold;
+        else if (patch.threshold !== undefined)
+          merged.threshold = patch.threshold;
         if (patch.strategy === null) delete merged.strategy;
         else if (patch.strategy !== undefined) merged.strategy = patch.strategy;
         (next as Record<string, typeof merged>)[key] = merged;
@@ -234,67 +218,98 @@ function DetectorOverridesSection({
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Core Detector Overrides
-        </p>
-        <span className="text-[10px] text-muted-foreground">
-          Customize detector sensitivity & actions for this policy
+    <section className="space-y-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-medium text-foreground">
+          Core detector overrides
+        </h3>
+        <span className="text-[11px] text-muted-foreground">
+          Customize detector sensitivity and actions for this policy
         </span>
       </div>
-      <div className="rounded-lg border border-border/50 divide-y divide-border/30 bg-card overflow-hidden">
+
+      <div className="divide-y divide-border-subtle border-y border-border-subtle">
         {(Object.keys(detectorLabels) as DetectorKey[]).map((key) => {
-          const cur = (overrides as Record<string, { threshold?: number; strategy?: string } | undefined>)[key];
+          const cur = (
+            overrides as Record<
+              string,
+              { threshold?: number; strategy?: string } | undefined
+            >
+          )[key];
           const enabled = !!cur;
-          const opts = key === "secrets" ? secretsStrategyOptions : strategyOptions;
+          const opts =
+            key === "secrets" ? secretsStrategyOptions : strategyOptions;
+          const checkboxId = `override-detector-${key}`;
+          const thresholdId = `override-threshold-${key}`;
           return (
-            <div key={key} className="p-3 space-y-2 hover:bg-muted/20 transition-colors">
-              <label className="flex items-center justify-between cursor-pointer">
-                <div className="flex items-center gap-2 text-xs">
+            <div key={key} className="space-y-2.5 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <label
+                  htmlFor={checkboxId}
+                  className="flex cursor-pointer items-center gap-2.5 text-xs"
+                >
                   <input
+                    id={checkboxId}
                     type="checkbox"
                     checked={enabled}
-                    onChange={(e) => setDetector(key, e.target.checked ? {} : null)}
-                    className="h-3.5 w-3.5 rounded border-border/50 text-primary focus:ring-0"
+                    onChange={(e) =>
+                      setDetector(key, e.target.checked ? {} : null)
+                    }
+                    className="size-3.5 rounded border-border text-primary"
                   />
-                  <span className="font-medium text-foreground">{detectorLabels[key]}</span>
-                  {!enabled && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                      inheriting core profile defaults
-                    </Badge>
-                  )}
-                </div>
-              </label>
-              {enabled && (
-                <div className="grid grid-cols-2 gap-3 pl-6 pt-1">
-                  {thresholdDetectors.includes(key) && (
+                  <span className="font-medium text-foreground">
+                    {detectorLabels[key]}
+                  </span>
+                </label>
+                {!enabled ? (
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    inheriting core profile
+                  </span>
+                ) : null}
+              </div>
+
+              {enabled ? (
+                <div className="grid gap-3 pl-6 pt-1 sm:grid-cols-2">
+                  {thresholdDetectors.includes(key) ? (
                     <div className="space-y-1">
-                      <p className="text-[10px] text-muted-foreground font-medium">
-                        Score Threshold (0.0 – 1.0)
-                      </p>
+                      <label
+                        htmlFor={thresholdId}
+                        className="block text-[11px] text-muted-foreground"
+                      >
+                        Score threshold (0.0 – 1.0)
+                      </label>
                       <Input
+                        id={thresholdId}
                         type="number"
                         min={0}
                         max={1}
                         step={0.05}
                         value={cur?.threshold ?? ""}
-                        placeholder="e.g. 0.85"
+                        placeholder="0.85"
                         onChange={(e) => {
                           const v = e.target.value;
-                          setDetector(key, { threshold: v === "" ? null : parseFloat(v) });
+                          setDetector(key, {
+                            threshold: v === "" ? null : parseFloat(v),
+                          });
                         }}
-                        className="h-8 text-xs font-mono"
+                        className="h-8 font-mono text-xs"
                       />
                     </div>
-                  )}
+                  ) : null}
                   <div className="space-y-1">
-                    <p className="text-[10px] text-muted-foreground font-medium">Action Strategy</p>
+                    <span className="block text-[11px] text-muted-foreground">
+                      Action strategy
+                    </span>
                     <Select
                       value={cur?.strategy ?? ""}
-                      onValueChange={(v) => setDetector(key, { strategy: v || null })}
+                      onValueChange={(v) =>
+                        setDetector(key, { strategy: v || null })
+                      }
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger
+                        aria-label={`${detectorLabels[key]} action strategy`}
+                        className="h-8 text-xs"
+                      >
                         <SelectValue placeholder="Select strategy" />
                       </SelectTrigger>
                       <SelectContent>
@@ -307,38 +322,51 @@ function DetectorOverridesSection({
                     </Select>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           );
         })}
 
-        {/* PII Overrides */}
-        <div className="p-3 space-y-2 hover:bg-muted/20 transition-colors">
-          <label className="flex items-center justify-between cursor-pointer">
-            <div className="flex items-center gap-2 text-xs">
+        <div className="space-y-2.5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <label
+              htmlFor="override-detector-pii"
+              className="flex cursor-pointer items-center gap-2.5 text-xs"
+            >
               <input
+                id="override-detector-pii"
                 type="checkbox"
                 checked={!!overrides.pii}
-                onChange={(e) => setPIIAction(e.target.checked ? "mask" : null)}
-                className="h-3.5 w-3.5 rounded border-border/50 text-primary focus:ring-0"
+                onChange={(e) =>
+                  setPIIAction(e.target.checked ? "mask" : null)
+                }
+                className="size-3.5 rounded border-border text-primary"
               />
-              <span className="font-medium text-foreground">PII & Secret Masking</span>
-              {!overrides.pii && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                  inheriting core profile defaults
-                </Badge>
-              )}
-            </div>
-          </label>
-          {overrides.pii && (
+              <span className="font-medium text-foreground">
+                PII & secret masking
+              </span>
+            </label>
+            {!overrides.pii ? (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                inheriting core profile
+              </span>
+            ) : null}
+          </div>
+
+          {overrides.pii ? (
             <div className="pl-6 pt-1">
-              <div className="space-y-1 max-w-[240px]">
-                <p className="text-[10px] text-muted-foreground font-medium">PII Handling Action</p>
+              <div className="max-w-[240px] space-y-1">
+                <span className="block text-[11px] text-muted-foreground">
+                  PII handling action
+                </span>
                 <Select
                   value={overrides.pii.action ?? ""}
                   onValueChange={(v) => setPIIAction(v || null)}
                 >
-                  <SelectTrigger className="h-8 text-xs">
+                  <SelectTrigger
+                    aria-label="PII handling action"
+                    className="h-8 text-xs"
+                  >
                     <SelectValue placeholder="Select PII action" />
                   </SelectTrigger>
                   <SelectContent>
@@ -351,10 +379,10 @@ function DetectorOverridesSection({
                 </Select>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -401,47 +429,82 @@ function PatternsSection({
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Custom Pattern Rules ({patterns.length})
-        </p>
-        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addRow}>
-          <Plus className="h-3 w-3" /> Add Pattern Rule
+    <section className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-[13px] font-medium text-foreground">
+          Custom pattern rules{" "}
+          <span className="font-mono text-[11px] font-normal tabular-nums text-muted-foreground">
+            ({patterns.length})
+          </span>
+        </h3>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1 text-xs"
+          onClick={addRow}
+        >
+          <Plus className="size-3" aria-hidden="true" />
+          Add pattern rule
         </Button>
       </div>
 
       {patterns.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border/60 p-4 text-center">
-          <p className="text-xs text-muted-foreground">No custom pattern rules added yet.</p>
-          <Button size="sm" variant="ghost" className="h-7 text-xs mt-2" onClick={addRow}>
-            <Plus className="h-3 w-3 mr-1" /> Add first pattern rule
+        <div className="border-y border-border-subtle py-6 text-center">
+          <p className="text-xs text-muted-foreground">
+            No custom pattern rules added yet.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="mt-2 h-7 text-xs"
+            onClick={addRow}
+          >
+            <Plus className="mr-1 size-3" aria-hidden="true" />
+            Add first pattern rule
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/50 divide-y divide-border/30 bg-card overflow-hidden">
+        <div className="divide-y divide-border-subtle border-y border-border-subtle">
           {patterns.map((p, i) => (
-            <div key={i} className="p-3 space-y-2 hover:bg-muted/20 transition-colors">
+            <div key={i} className="space-y-2.5 py-3.5">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <label htmlFor={`pattern-name-${i}`} className="sr-only">
+                    Rule {i + 1} identifier
+                  </label>
                   <Input
-                    placeholder="Rule Identifier (e.g. drop_table_guard)"
+                    id={`pattern-name-${i}`}
+                    placeholder="drop_table_guard"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     value={p.name}
                     onChange={(e) => updateRow(i, { name: e.target.value })}
-                    className="h-8 text-xs font-mono flex-1"
+                    className="h-8 flex-1 font-mono text-xs"
                   />
                   <Select
                     value={p.pattern_type}
                     onValueChange={(v) =>
-                      updateRow(i, { pattern_type: v as PatternRule["pattern_type"] })
+                      updateRow(i, {
+                        pattern_type: v as PatternRule["pattern_type"],
+                      })
                     }
                   >
-                    <SelectTrigger className="h-8 text-xs w-[120px]">
+                    <SelectTrigger
+                      aria-label={`Rule ${i + 1} match type`}
+                      className="h-8 w-[120px] font-mono text-xs"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {patternTypes.map((t) => (
-                        <SelectItem key={t} value={t} className="text-xs uppercase font-mono">
+                        <SelectItem
+                          key={t}
+                          value={t}
+                          className="font-mono text-xs"
+                        >
                           {t}
                         </SelectItem>
                       ))}
@@ -449,32 +512,48 @@ function PatternsSection({
                   </Select>
                 </div>
                 <Button
+                  type="button"
                   variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+                  size="icon-sm"
+                  aria-label={`Remove rule ${p.name || i + 1}`}
+                  className="shrink-0 text-muted-foreground hover:text-destructive"
                   onClick={() => removeRow(i)}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="size-3.5" aria-hidden="true" />
                 </Button>
               </div>
 
-              <Input
-                placeholder="Pattern string (e.g. (?i)(drop\\s+table|rm\\s+-rf))"
-                value={p.pattern}
-                onChange={(e) => updateRow(i, { pattern: e.target.value })}
-                className="h-8 text-xs font-mono bg-muted/20"
-              />
+              <div>
+                <label htmlFor={`pattern-expr-${i}`} className="sr-only">
+                  Rule {i + 1} pattern expression
+                </label>
+                <Input
+                  id={`pattern-expr-${i}`}
+                  placeholder="(?i)(drop\s+table|rm\s+-rf)"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  value={p.pattern}
+                  onChange={(e) => updateRow(i, { pattern: e.target.value })}
+                  className="h-8 bg-surface-1/60 font-mono text-xs"
+                />
+              </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <span className="text-[10px] text-muted-foreground">Action</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Action
+                  </span>
                   <Select
                     value={p.action ?? "block"}
                     onValueChange={(v) =>
                       updateRow(i, { action: v as PatternRule["action"] })
                     }
                   >
-                    <SelectTrigger className="h-7 text-xs">
+                    <SelectTrigger
+                      aria-label={`Rule ${i + 1} action`}
+                      className="h-8 text-xs"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -488,19 +567,28 @@ function PatternsSection({
                 </div>
 
                 <div className="space-y-1">
-                  <span className="text-[10px] text-muted-foreground">Severity</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Severity
+                  </span>
                   <Select
                     value={p.severity ?? "high"}
                     onValueChange={(v) =>
                       updateRow(i, { severity: v as PatternRule["severity"] })
                     }
                   >
-                    <SelectTrigger className="h-7 text-xs">
+                    <SelectTrigger
+                      aria-label={`Rule ${i + 1} severity`}
+                      className="h-8 text-xs"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {severityLevels.map((s) => (
-                        <SelectItem key={s} value={s} className="text-xs capitalize">
+                        <SelectItem
+                          key={s}
+                          value={s}
+                          className="text-xs capitalize"
+                        >
                           {s}
                         </SelectItem>
                       ))}
@@ -512,11 +600,10 @@ function PatternsSection({
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-// Live Policy Simulator Panel
 function LivePolicySimulator({
   snapshot,
 }: {
@@ -536,12 +623,14 @@ function LivePolicySimulator({
       const steps = [
         {
           detector: "injection",
-          strategy: (snapshot?.detector_overrides?.injection?.strategy ?? "block") as any,
+          strategy: (snapshot?.detector_overrides?.injection?.strategy ??
+            "block") as any,
           threshold: snapshot?.detector_overrides?.injection?.threshold ?? 0.8,
         },
         {
           detector: "jailbreak",
-          strategy: (snapshot?.detector_overrides?.jailbreak?.strategy ?? "block") as any,
+          strategy: (snapshot?.detector_overrides?.jailbreak?.strategy ??
+            "block") as any,
           threshold: snapshot?.detector_overrides?.jailbreak?.threshold ?? 0.8,
         },
       ];
@@ -561,97 +650,113 @@ function LivePolicySimulator({
   };
 
   return (
-    <div className="space-y-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Zap className="h-4 w-4 text-amber-500" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-            Live Prompt Simulator
+    <div className="space-y-4 border-y border-border-subtle py-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h3 className="text-[13px] font-medium text-foreground">
+            Live prompt simulator
           </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Evaluate candidate policy rules in real time against Bastio&apos;s
+            security engine before saving or activating.
+          </p>
         </div>
-        <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-500/30">
-          Sandbox Evaluation
-        </Badge>
+        <span className="font-mono text-[11px] text-muted-foreground">
+          sandbox evaluation
+        </span>
       </div>
 
-      <div className="space-y-2">
-        <p className="text-xs text-muted-foreground">
-          Type a test prompt below to evaluate candidate policy rules in real time against Bastio's security engine before saving or activating.
-        </p>
+      <div className="space-y-2.5">
+        <label htmlFor="simulator-test-prompt" className="sr-only">
+          Sample prompt to simulate
+        </label>
         <textarea
+          id="simulator-test-prompt"
           value={testPrompt}
-          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTestPrompt(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+            setTestPrompt(e.target.value)
+          }
           rows={3}
-          placeholder="Enter prompt text to simulate..."
-          className="w-full rounded-md border border-border/50 bg-card p-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+          placeholder="Enter prompt text to simulate…"
+          className="w-full rounded-md border border-border-subtle bg-surface-1/60 p-3 font-mono text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <div className="flex justify-end">
           <Button
+            type="button"
             size="sm"
-            className="h-8 text-xs bg-amber-500 hover:bg-amber-600 text-white font-medium gap-1.5"
+            className="h-8 gap-1.5 text-xs"
             onClick={runSimulation}
             disabled={running || !testPrompt.trim()}
           >
-            <Play className="h-3.5 w-3.5 fill-current" />
-            {running ? "Evaluating..." : "Run Simulator Test"}
+            <Play className="size-3.5" aria-hidden="true" />
+            {running ? "Evaluating…" : "Run simulator test"}
           </Button>
         </div>
       </div>
 
-      {error && (
-        <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-          Simulation Error: {error}
+      {error ? (
+        <div className="border-l-2 border-destructive pl-3 text-xs text-destructive">
+          Simulation error: {error}
         </div>
-      )}
+      ) : null}
 
-      {result && (
-        <div className="space-y-3 pt-2 border-t border-amber-500/20">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium">Evaluation Outcome:</span>
-            {result.should_block ? (
-              <Badge variant="destructive" className="text-xs gap-1">
-                <ShieldAlert className="h-3.5 w-3.5" /> BLOCKED (Action: {result.action})
-              </Badge>
-            ) : (
-              <Badge variant="default" className="bg-emerald-500 text-white text-xs gap-1">
-                <ShieldCheck className="h-3.5 w-3.5" /> PASSED (Allowed)
-              </Badge>
-            )}
+      {result ? (
+        <div className="space-y-3 border-t border-border-subtle pt-4">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Evaluation outcome</span>
+            <span className="inline-flex items-center gap-2 font-mono font-medium">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "size-1.5 rounded-full",
+                  result.should_block ? "bg-destructive" : "bg-success",
+                )}
+              />
+              <span
+                className={
+                  result.should_block ? "text-destructive" : "text-success"
+                }
+              >
+                {result.should_block
+                  ? `Blocked (${result.action})`
+                  : "Passed (allowed)"}
+              </span>
+            </span>
           </div>
 
-          {result.messages[0]?.steps && (
-            <div className="space-y-1.5">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Step-by-Step Security Decisions
-              </span>
-              <div className="rounded border border-border/40 bg-card divide-y divide-border/30">
-                {result.messages[0].steps.map((s, idx) => (
-                  <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-medium">{s.detector}</span>
-                      <span className="text-[11px] text-muted-foreground">({s.strategy})</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-muted-foreground">
-                        Score: {(s.score * 100).toFixed(1)}%
-                      </span>
-                      {s.fired ? (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                          Triggered
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                          Passed
-                        </Badge>
-                      )}
-                    </div>
+          {result.messages[0]?.steps ? (
+            <div className="divide-y divide-border-subtle border-y border-border-subtle">
+              {result.messages[0].steps.map((s, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between py-2.5 text-xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-medium text-foreground">
+                      {s.detector}
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      ({s.strategy})
+                    </span>
                   </div>
-                ))}
-              </div>
+                  <div className="flex items-center gap-3 font-mono text-[11px] tabular-nums">
+                    <span className="text-muted-foreground">
+                      {(s.score * 100).toFixed(1)}%
+                    </span>
+                    <span
+                      className={
+                        s.fired ? "text-destructive" : "text-muted-foreground"
+                      }
+                    >
+                      {s.fired ? "triggered" : "passed"}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

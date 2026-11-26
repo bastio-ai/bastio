@@ -1,33 +1,24 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ChevronRight,
   FileCode2,
-  HeartPulse,
   Layers3,
   Plus,
   Search,
-  ShieldCheck,
   Sparkles,
-  Terminal,
 } from "lucide-react";
 
 import { overlayApi, overlayKeys, type Overlay } from "@/api/overlay";
-import { AdminSummaryStrip, SecurityNotice } from "@/components/admin/admin-primitives";
-import { EmptyState, PageHeader, SectionHeader } from "@/components/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  AdminPageHeader,
+  AdminSummaryStrip,
+  AdminUnderlineNav,
+} from "@/components/admin/admin-primitives";
+import { EmptyState } from "@/components/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -37,20 +28,20 @@ const FEATURED_TEMPLATES = [
   {
     slug: "healthcare",
     name: "Healthcare PHI Shield",
-    description: "PII tokenization and indirect-injection controls for protected health data.",
-    icon: HeartPulse,
+    description:
+      "PII tokenization and indirect-injection controls for protected health data.",
   },
   {
     slug: "fintech",
     name: "Financial Services Guardrail",
-    description: "Account identifiers, payment data, secrets, and high-risk access patterns.",
-    icon: ShieldCheck,
+    description:
+      "Account identifiers, payment data, secrets, and high-risk access patterns.",
   },
   {
     slug: "code_assistant",
     name: "Code Execution Guard",
-    description: "Destructive shell commands, path traversal, and code-injection controls.",
-    icon: Terminal,
+    description:
+      "Destructive shell commands, path traversal, and code-injection controls.",
   },
 ] as const;
 
@@ -91,189 +82,321 @@ export function OverlaysPage() {
     });
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Custom Policies"
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+      <AdminPageHeader
+        eyebrow="Security & guardrails"
+        title="Custom policies"
         description="Add domain-specific controls on top of the gateway's managed security profile, then promote them deliberately into production."
-        action={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate({ to: "/overlay-templates" })}>
-              <Sparkles className="size-3.5" aria-hidden />
+        bordered={false}
+        className="mb-4"
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => navigate({ to: "/overlay-templates" })}
+            >
+              <Sparkles className="size-3.5" aria-hidden="true" />
               Templates
             </Button>
-            <Button size="sm" onClick={() => createPolicy()}>
-              <Plus className="size-3.5" aria-hidden />
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => createPolicy()}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
               New policy
             </Button>
-          </div>
+          </>
         }
       />
 
       <AdminSummaryStrip
         items={[
-          { label: "Policies", value: policies.length, detail: "Configured in this workspace" },
-          { label: "Enforcing", value: activeCount, detail: "Active production versions", tone: "success" },
-          { label: "Not enforcing", value: inactiveCount, detail: "Draft or inactive policies", tone: inactiveCount ? "warning" : "default" },
-          { label: "Proxy scoped", value: scopedCount, detail: "Bound to a specific gateway" },
+          {
+            label: "Policies",
+            value: policies.length,
+            detail: "Configured in this workspace",
+          },
+          {
+            label: "Enforcing",
+            value: activeCount,
+            detail: "Active production versions",
+            tone: "success",
+          },
+          {
+            label: "Not enforcing",
+            value: inactiveCount,
+            detail: "Draft or inactive policies",
+            tone: inactiveCount ? "warning" : "default",
+          },
+          {
+            label: "Proxy scoped",
+            value: scopedCount,
+            detail: "Bound to a specific gateway",
+          },
         ]}
       />
 
-      <SecurityNotice title="Safe rollout is versioned by design" tone="success">
-        Editing a policy does not silently change production enforcement. Create a version, preview it against test content, and activate it only after review.
-      </SecurityNotice>
+      <div className="mb-6 border-l-2 border-success/60 pl-3.5 text-xs leading-relaxed text-muted-foreground">
+        <span className="font-medium text-foreground">
+          Safe rollout is versioned by design.
+        </span>{" "}
+        Editing a policy does not silently change production enforcement. Create a
+        version, preview it against sample content, and activate it only after
+        review.
+      </div>
 
-      <section>
-        <SectionHeader
-          title="Recommended baselines"
-          description="Start with a maintained industry profile and adjust only the controls your application requires."
-          action={
-            <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/overlay-templates" })}>
-              View all templates
-              <ChevronRight className="size-3.5" aria-hidden />
-            </Button>
-          }
-        />
-        <div className="grid gap-3 lg:grid-cols-3">
-          {FEATURED_TEMPLATES.map((template) => {
-            const Icon = template.icon;
-            return (
-              <button
-                key={template.slug}
-                type="button"
-                onClick={() => createPolicy(template.slug)}
-                className="group flex min-h-28 items-start gap-3 rounded-xl border border-border/70 bg-card p-4 text-left transition-colors hover:border-foreground/20 hover:bg-muted/20"
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/35 text-muted-foreground group-hover:text-foreground">
-                  <Icon className="size-4" aria-hidden />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center justify-between gap-3 text-[13px] font-medium text-foreground">
+      <section className="mb-8">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+          <div>
+            <h2 className="text-[13px] font-medium text-foreground">
+              Recommended baselines
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Start with a maintained industry profile and adjust only the
+              controls your application requires.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => navigate({ to: "/overlay-templates" })}
+          >
+            View all templates
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+
+        <div className="divide-y divide-border-subtle border-y border-border-subtle lg:grid lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+          {FEATURED_TEMPLATES.map((template) => (
+            <button
+              key={template.slug}
+              type="button"
+              onClick={() => createPolicy(template.slug)}
+              className="group flex w-full flex-col justify-between px-4 py-4 text-left transition-colors hover:bg-surface-1/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[13px] font-medium text-foreground">
                     {template.name}
-                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   </span>
-                  <span className="mt-1.5 block text-[11px] leading-relaxed text-muted-foreground">
-                    {template.description}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
+                  <ChevronRight
+                    className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+                    aria-hidden="true"
+                  />
+                </div>
+                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                  {template.description}
+                </p>
+              </div>
+              <span className="mt-3 font-mono text-[11px] text-muted-foreground">
+                template:{template.slug}
+              </span>
+            </button>
+          ))}
         </div>
       </section>
 
       <section>
-        <SectionHeader
-          title="Policy inventory"
-          description="Review deployment state, scope, and the last policy change."
-        />
-        <Card className="overflow-hidden border-border/70">
-          <div className="flex flex-col gap-3 border-b border-border/60 p-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/20 p-1">
-              {(["all", "active", "inactive"] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setView(item)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-[11px] font-medium capitalize transition-colors",
-                    view === item ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-            <div className="relative w-full sm:w-72">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <div className="mb-3">
+          <h2 className="text-[13px] font-medium text-foreground">
+            Policy inventory
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Review deployment state, scope, and the last policy change.
+          </p>
+        </div>
+
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <AdminUnderlineNav
+            ariaLabel="Filter custom policies by state"
+            value={view}
+            onChange={setView}
+            className="mb-0 flex-1"
+            items={[
+              { id: "all", label: "All", count: policies.length },
+              { id: "active", label: "Enforcing", count: activeCount },
+              { id: "inactive", label: "Not enforcing", count: inactiveCount },
+            ]}
+          />
+          <search className="w-full sm:w-72">
+            <label htmlFor="custom-policies-search" className="sr-only">
+              Search policies
+            </label>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
               <Input
+                id="custom-policies-search"
+                type="search"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search policies"
+                placeholder="Search policies…"
                 className="h-8 pl-8 text-xs"
               />
             </div>
-          </div>
-          <CardContent className="p-0">
-            {overlays.isLoading ? (
+          </search>
+        </div>
+
+        <div className="border-y border-border-subtle">
+          {overlays.isLoading ? (
+            <div className="py-4">
               <SkeletonRows count={5} />
-            ) : overlays.isError ? (
-              <EmptyState
-                icon={<Layers3 className="size-5" />}
-                title="Policies could not be loaded"
-                description="Refresh the page or verify that the gateway API is reachable."
-              />
-            ) : filteredPolicies.length === 0 ? (
-              <EmptyState
-                icon={<FileCode2 className="size-5" />}
-                title={policies.length === 0 ? "No custom policies yet" : "No policies match this view"}
-                description={
-                  policies.length === 0
-                    ? "Start from a maintained template or create a policy from a real threat event."
-                    : "Change the status filter or search term to widen the result set."
-                }
-                action={policies.length === 0 ? <Button size="sm" onClick={() => createPolicy()}>Create first policy</Button> : undefined}
-              />
-            ) : (
-              <PolicyTable
-                policies={filteredPolicies}
-                onOpen={(policy) => navigate({ to: "/overlays/$id", params: { id: policy.id } })}
-              />
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          ) : overlays.isError ? (
+            <EmptyState
+              icon={<Layers3 className="size-5" />}
+              title="Policies could not be loaded"
+              description="Refresh the page or verify that the gateway API is reachable."
+            />
+          ) : filteredPolicies.length === 0 ? (
+            <EmptyState
+              icon={<FileCode2 className="size-5" />}
+              title={
+                policies.length === 0
+                  ? "No custom policies yet"
+                  : "No policies match this view"
+              }
+              description={
+                policies.length === 0
+                  ? "Start from a maintained template or create a policy from a flagged threat event."
+                  : "Change the status filter or search term to widen the result set."
+              }
+              action={
+                policies.length === 0 ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => createPolicy()}
+                  >
+                    Create first policy
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <PolicyTable policies={filteredPolicies} />
+          )}
+        </div>
       </section>
     </div>
   );
 }
 
-function PolicyTable({ policies, onOpen }: { policies: Overlay[]; onOpen: (policy: Overlay) => void }) {
+function PolicyTable({ policies }: { policies: Overlay[] }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead>Policy</TableHead>
-          <TableHead>Scope</TableHead>
-          <TableHead>State</TableHead>
-          <TableHead>Updated</TableHead>
-          <TableHead className="w-12" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {policies.map((policy) => (
-          <TableRow key={policy.id} className="group cursor-pointer" onClick={() => onOpen(policy)}>
-            <TableCell>
-              <div className="max-w-xl">
-                <p className="text-[12px] font-medium text-foreground">{policy.name}</p>
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                  {policy.description || "No policy description"}
-                </p>
-              </div>
-            </TableCell>
-            <TableCell className="font-mono text-[11px] text-muted-foreground">
-              {policy.proxy_id ? "Single proxy" : "Workspace default"}
-            </TableCell>
-            <TableCell>
-              {policy.active_version_id ? (
-                <Badge variant="outline" className="border-success-border bg-success-bg text-success">Enforcing</Badge>
-              ) : (
-                <Badge variant="outline">Not enforcing</Badge>
-              )}
-            </TableCell>
-            <TableCell className="font-mono text-[11px] text-muted-foreground">
-              {formatUpdatedAt(policy.updated_at)}
-            </TableCell>
-            <TableCell>
-              <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <div
+      className="overflow-x-auto"
+      tabIndex={0}
+      role="region"
+      aria-label="Custom policies"
+    >
+      <table className="w-full min-w-[680px] text-left text-xs">
+        <thead className="border-b border-border-subtle text-[11px] text-muted-foreground">
+          <tr>
+            <th
+              scope="col"
+              className="sticky top-0 bg-background py-2.5 pr-4 font-normal"
+            >
+              Policy
+            </th>
+            <th
+              scope="col"
+              className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+            >
+              Scope
+            </th>
+            <th
+              scope="col"
+              className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+            >
+              State
+            </th>
+            <th
+              scope="col"
+              className="sticky top-0 bg-background py-2.5 pl-4 text-right font-normal"
+            >
+              Updated
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border-subtle">
+          {policies.map((policy) => {
+            const enforcing = Boolean(policy.active_version_id);
+            return (
+              <tr
+                key={policy.id}
+                className="group transition-colors hover:bg-surface-1/60"
+              >
+                <td className="py-3 pr-4">
+                  <Link
+                    to="/overlays/$id"
+                    params={{ id: policy.id }}
+                    className="inline-flex max-w-xl flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="inline-flex items-center gap-1.5 font-mono text-xs font-medium text-foreground group-hover:underline">
+                      {policy.name}
+                      <ChevronRight
+                        className="size-3 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {policy.description || "No policy description"}
+                    </span>
+                  </Link>
+                </td>
+                <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
+                  {policy.proxy_id ? "Single proxy" : "Workspace default"}
+                </td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex items-center gap-2 text-xs">
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        enforcing ? "bg-success" : "bg-muted-foreground/50",
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        enforcing ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      {enforcing ? "Enforcing" : "Not enforcing"}
+                    </span>
+                  </span>
+                </td>
+                <td className="py-3 pl-4 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {formatUpdatedAt(policy.updated_at)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 function formatUpdatedAt(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }

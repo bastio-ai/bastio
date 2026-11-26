@@ -9,17 +9,17 @@ import { formatCost, formatDuration, formatNumber } from "@/lib/utils";
 export function SessionInspector({ session, onClose }: { session: Session; onClose: () => void }) {
   const environment = (session as Session & { environment?: string }).environment;
   return (
-    <aside className="hidden h-full w-[326px] flex-shrink-0 flex-col border-l border-border-subtle bg-background xl:flex">
+    <aside aria-label="Session inspector" className="hidden h-full w-[320px] flex-shrink-0 flex-col border-l border-border-subtle bg-background xl:flex">
       <div className="flex items-start gap-2 border-b border-border-subtle px-4 py-4">
         <span className={session.threat_count ? "mt-1 h-2 w-2 rounded-full bg-danger" : "mt-1 h-2 w-2 rounded-full bg-success"} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">Session</h2><Badge variant={session.threat_count ? "destructive" : "success"} className="px-1.5 py-0 text-[9px]">{session.threat_count ? "review" : "clean"}</Badge></div>
+          <div className="flex items-center gap-2"><h2 className="truncate text-base font-medium">Session</h2><Badge variant={session.threat_count ? "destructive" : "success"} className="px-1.5 py-0 text-[9px]">{session.threat_count ? "review" : "no signals"}</Badge></div>
           <p className="mt-1 break-all font-mono text-[10px] leading-4 text-muted-foreground">{session.id}</p>
         </div>
         <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close session details"><X className="h-3.5 w-3.5" /></Button>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5">
         <InspectorCard title="Activity">
           <Metric label="Traces" value={formatNumber(session.trace_count ?? 0)} mono />
           <Metric label="Last activity" value={new Date(session.last_completed_at).toLocaleString()} mono />
@@ -33,7 +33,7 @@ export function SessionInspector({ session, onClose }: { session: Session; onClo
         </InspectorCard>
         <InspectorCard title="Security">
           <Metric label="Threats" value={formatNumber(session.threat_count ?? 0)} mono />
-          <Metric label="Verdict" value={session.threat_count ? "Needs review" : "Clean"} />
+          <Metric label="Verdict" value={session.threat_count ? "Signals recorded" : "No signals recorded"} />
         </InspectorCard>
         <InspectorCard title="Context">
           <Metric label="End user" value={session.end_user_id || "—"} mono />
@@ -49,7 +49,7 @@ export function SessionInspector({ session, onClose }: { session: Session; onClo
 }
 
 function InspectorCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="rounded-md border border-border-subtle bg-surface-1 p-3"><h3 className="mb-2 text-[10px] font-medium text-muted-foreground">{title}</h3><div className="space-y-1.5">{children}</div></section>;
+  return <section className="border-b border-border-subtle py-5"><h3 className="mb-2 text-[10px] font-medium text-muted-foreground">{title}</h3><div className="space-y-1.5">{children}</div></section>;
 }
 
 function Metric({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {

@@ -1,0 +1,209 @@
+{
+  "results": [
+    "app and feature guides render in the real Cloud route",
+    "app sign-in cannot accidentally select provider API routing",
+    "partial failure preserves the gateway and blocks continuation without credentials",
+    "created app key is restricted to the gateway and chosen environment",
+    "retrying app-key creation does not create a duplicate gateway",
+    "Claude configuration uses the real one-time credential and a unique test marker",
+    "app secret never enters persisted progress",
+    "creating resources does not complete connection verification",
+    "unrelated session traffic cannot verify the connection",
+    "provider failure stays actionable and does not finish setup",
+    "completion records verified evidence and time",
+    "Codex local MCP configuration uses TOML and the selected executable",
+    "MCP enrollment token never enters persisted progress",
+    "guide resumes at the waiting step without inventing successful traffic",
+    "tool discovery cannot stand in for a real MCP tool call",
+    "another MCP server cannot complete verification",
+    "MCP verification records the matching server event",
+    "feature tour keeps instructions open beside the feature",
+    "feature-tour completion is explicitly reviewed progress, not enabled protection",
+    "Antigravity offers documented MCP coverage without unsupported model routing",
+    "MCP enrollment errors leave the guide retryable and incomplete",
+    "Antigravity receives its own serverUrl configuration shape",
+    "reopening configuration never recovers a plaintext secret from storage",
+    "a user-saved credential can regenerate the configuration",
+    "a new user can create a gateway before knowing a model ID",
+    "API provider choice controls the gateway created",
+    "an unknown model cannot become a copyable or verifiable placeholder configuration",
+    "model selection produces an Anthropic Messages request with the one-time key",
+    "setup content survives a theme change",
+    "header Connect opens the guided hub instead of legacy sample snippets",
+    "built setup flow has no runtime errors"
+  ],
+  "errors": [],
+  "requests": [
+    {
+      "path": "/auth/me",
+      "method": "GET"
+    },
+    {
+      "path": "/billing/subscription",
+      "method": "GET"
+    },
+    {
+      "path": "/billing/subscription",
+      "method": "GET"
+    },
+    {
+      "path": "/auth/memberships",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/proxies",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "GET"
+    },
+    {
+      "path": "/health",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/traces/facets",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/environments",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/api-keys",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/provider-keys",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/proxies",
+      "method": "POST"
+    },
+    {
+      "path": "/v1/proxies",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/environments",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/api-keys",
+      "method": "POST",
+      "scopes": [
+        "proxy:1bfea1e2-4f49-4c0c-9a84-4597f7499e36"
+      ],
+      "environment": "production",
+      "allow_environment_override": false
+    },
+    {
+      "path": "/v1/api-keys",
+      "method": "POST",
+      "scopes": [
+        "proxy:1bfea1e2-4f49-4c0c-9a84-4597f7499e36"
+      ],
+      "environment": "production",
+      "allow_environment_override": false
+    },
+    {
+      "path": "/v1/api-keys",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/proxies/1bfea1e2-4f49-4c0c-9a84-4597f7499e36/models",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/traces",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/traces",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/traces",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/traces",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "POST"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/events",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/events",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/events",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/events",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "POST"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "POST"
+    },
+    {
+      "path": "/v1/mcp/servers",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/proxies",
+      "method": "POST"
+    },
+    {
+      "path": "/v1/proxies",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/api-keys",
+      "method": "POST",
+      "scopes": [
+        "proxy:5dd65747-8407-481b-b23d-c6910e4e09ac"
+      ],
+      "environment": "production",
+      "allow_environment_override": false
+    },
+    {
+      "path": "/v1/api-keys",
+      "method": "GET"
+    },
+    {
+      "path": "/v1/proxies/5dd65747-8407-481b-b23d-c6910e4e09ac/models",
+      "method": "GET"
+    }
+  ]
+}

@@ -33,6 +33,8 @@ import { ChatsPage } from "./chats";
 import { CompliancePage } from "./compliance";
 import { WorkspacesPage } from "./workspaces";
 import { McpPage } from "./mcp";
+import { ConnectPage } from "./connect";
+import { validateConnectSearch } from "@/components/onboarding/setup-model";
 import { validateWorkspaceSearch } from "@/components/workspace/navigation";
 
 // Workspace admin console — configure assistants, knowledge, settings.
@@ -91,6 +93,13 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: OverviewPage,
+});
+
+const connectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/connect",
+  validateSearch: validateConnectSearch,
+  component: ConnectPage,
 });
 
 const tracesRoute = createRoute({
@@ -365,6 +374,7 @@ export { rootRoute };
 
 export const ossChildRoutes = [
   indexRoute,
+  connectRoute,
   tracesRoute,
   traceDetailRoute,
   sessionsRoute,

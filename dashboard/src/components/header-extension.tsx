@@ -17,6 +17,7 @@ export type HeaderExtension = {
   onRenameWorkspace?: (workspaceID: string, name: string) => Promise<void>;
   statusMode?: "dependencies" | "platform";
   statusPageURL?: string;
+  connectPath?: string;
 };
 
 const HeaderExtensionContext = createContext<HeaderExtension>({});

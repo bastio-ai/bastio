@@ -9,9 +9,9 @@ import { useDashboardControls } from "@/components/dashboard-controls-context";
 import { emptyFilters, type ObserveFilters } from "@/components/observe/filter-bar";
 import { ObserveSidebarFilters } from "@/components/observe/observe-sidebar-filters";
 import { SessionInspector } from "@/components/observe/session-inspector";
+import { WorkspacePageHeader } from "@/components/observe/workspace-page-header";
 import { WorkspaceSummaryStrip } from "@/components/observe/workspace-summary-strip";
 import { SkeletonRows } from "@/components/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useWorkspaceSidebar } from "@/components/workspace-sidebar-context";
@@ -77,28 +77,29 @@ export function SessionsPage() {
   return (
     <div className="flex h-full min-h-0 bg-background">
       <section className="flex min-w-0 flex-1 flex-col">
+        <WorkspacePageHeader title="Sessions" description="Follow related requests, usage, and security signals across a session." />
         <WorkspaceSummaryStrip metrics={[
           { value: formatNumber(visibleSessions.length), label: "sessions", sub: "In current window" },
           { value: visibleSessions.length ? (kpis.traces / visibleSessions.length).toFixed(1) : "0", label: "avg traces", sub: `${formatNumber(kpis.traces)} traces total` },
           { value: formatCost(kpis.cost), label: "cost", sub: visibleSessions.length ? `avg ${formatCost(kpis.cost / visibleSessions.length)} / session` : "No usage" },
-          { value: formatNumber(kpis.threats), label: "threats", sub: kpis.threats ? "Sessions need review" : "No threats detected", tone: kpis.threats ? "danger" : "success" },
+          { value: formatNumber(kpis.threats), label: "Security signals", sub: kpis.threats ? "Review recorded findings" : "No signals recorded", tone: kpis.threats ? "warning" : undefined },
         ]} />
 
-        <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
-          <div className="relative flex-1"><Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" /><Input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search sessions…" className="pl-8 text-xs" /></div>
+        <div className="flex items-center gap-2 border-b border-border-subtle px-5 py-3">
+          <div className="relative flex-1"><Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" /><Input aria-label="Search sessions" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search sessions…" className="pl-8 text-xs" /></div>
           <span className="hidden text-[10px] text-muted-foreground sm:inline">Grouped by <span className="font-mono text-foreground">X-Session-Id</span></span>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto">
           {isLoading ? <SkeletonRows count={12} /> : !visibleSessions.length ? <EmptyState icon={<Activity className="h-6 w-6" />} title={Object.values(filters).some(Boolean) ? "No sessions match these filters" : "No sessions yet"} description={Object.values(filters).some(Boolean) ? "Try loosening or clearing the filters." : "Pass X-Session-Id on gateway requests to group traces into sessions."} /> : (
             <Table className="min-w-[780px] text-[11px]">
-              <TableHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur"><TableRow className="border-border-subtle hover:bg-transparent"><Th>Session</Th><Th>End user</Th><Th className="text-right">Traces</Th><Th>Security</Th><Th className="text-right">Tokens</Th><Th className="text-right">Cost</Th><Th className="text-right">Wall clock</Th><Th className="text-right">Last activity</Th></TableRow></TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-background"><TableRow className="border-border-subtle hover:bg-transparent"><Th>Session</Th><Th>End user</Th><Th className="text-right">Traces</Th><Th>Security</Th><Th className="text-right">Tokens</Th><Th className="text-right">Cost</Th><Th className="text-right">Wall clock</Th><Th className="text-right">Last activity</Th></TableRow></TableHeader>
               <TableBody>{visibleSessions.map((session) => (
-                <TableRow key={session.id} onClick={() => openSession(session)} className={cn("cursor-pointer border-border-subtle hover:bg-surface-2/70", selected?.id === session.id && "bg-surface-2", session.threat_count ? "border-l-2 border-l-danger" : "border-l-2 border-l-transparent")}>
-                  <MonoCell className="max-w-[220px] truncate text-foreground">{session.id}</MonoCell>
+                <TableRow key={session.id} onClick={() => openSession(session)} className={cn("cursor-pointer border-border-subtle hover:bg-surface-2/70", selected?.id === session.id && "bg-sidebar-accent")}>
+                  <MonoCell className="max-w-[220px] truncate text-foreground"><button type="button" onClick={(event) => { event.stopPropagation(); openSession(session); }} className="max-w-full truncate hover:underline" aria-label={`Inspect session ${session.id}`}>{session.id}</button></MonoCell>
                   <TableCell className="text-[10px] text-muted-foreground">{session.end_user_id || "—"}</TableCell>
                   <MonoCell className="text-right">{formatNumber(session.trace_count)}</MonoCell>
-                  <TableCell>{session.threat_count ? <Badge variant="destructive" className="px-1.5 py-0 text-[9px]">{session.threat_count} threats</Badge> : <Badge variant="outline" className="px-1.5 py-0 text-[9px] text-muted-foreground">clean</Badge>}</TableCell>
+                  <TableCell>{session.threat_count ? <span className="text-[10px] text-warn">{session.threat_count} signals</span> : <span className="text-[10px] text-muted-foreground">No signals</span>}</TableCell>
                   <MonoCell className="text-right">{formatNumber(session.total_tokens ?? 0)}</MonoCell><MonoCell className="text-right">{formatCost(session.total_cost_cents ?? 0)}</MonoCell><MonoCell className="text-right">{formatDuration(session.wall_clock_ms ?? 0)}</MonoCell><MonoCell className="text-right">{formatTimestamp(session.last_completed_at)}</MonoCell>
                 </TableRow>
               ))}</TableBody>
@@ -112,8 +113,8 @@ export function SessionsPage() {
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) { return <TableHead className={cn("h-9 px-2 text-[9px] font-medium uppercase tracking-wider text-muted-foreground", className)}>{children}</TableHead>; }
-function MonoCell({ children, className }: { children: React.ReactNode; className?: string }) { return <TableCell className={cn("h-9 px-2 py-1.5 font-mono text-[10px] tabular-nums text-muted-foreground", className)}>{children}</TableCell>; }
+function Th({ children, className }: { children: React.ReactNode; className?: string }) { return <TableHead className={cn("h-9 px-3 text-[10px] font-normal text-muted-foreground first:pl-5 last:pr-5", className)}>{children}</TableHead>; }
+function MonoCell({ children, className }: { children: React.ReactNode; className?: string }) { return <TableCell className={cn("h-[48px] px-3 py-2.5 font-mono text-[10px] tabular-nums text-text-secondary first:pl-5 last:pr-5", className)}>{children}</TableCell>; }
 
 function computeKpis(sessions: Session[]) {
   let traces = 0; let cost = 0; let threats = 0;

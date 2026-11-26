@@ -1,24 +1,19 @@
-import { useMemo, useState, type ComponentType } from "react";
+import { useMemo, type ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
-  Bot,
   CheckCircle2,
   Clock3,
   KeyRound,
   LayoutDashboard,
   Server,
   ShieldAlert,
-  Terminal,
 } from "lucide-react";
 
 import { api, type APIKey, type Proxy, type Session, type ThreatEvent, type Trace, type UserAnalytics } from "@/api/client";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ConnectCliDialog } from "@/components/connect-cli-dialog";
 import { DataCell, DataPanel, DataRow, DataTable } from "@/components/data/data-panel";
 import { useDashboardControls, type DashboardRange } from "@/components/dashboard-controls-context";
 import { LatencyChart } from "@/components/data/latency-chart";
@@ -26,7 +21,7 @@ import { Pill } from "@/components/data/pill";
 import { RequestVolumeChart } from "@/components/data/request-volume-chart";
 import { StatusDot } from "@/components/data/status-dot";
 import { useOverviewExtension } from "@/components/overview-extension";
-import { GetStartedChecklist } from "@/components/getting-started/get-started-checklist";
+import { SetupWelcome } from "./connect";
 import { WorkspaceSummaryStrip } from "@/components/observe/workspace-summary-strip";
 import { Skeleton } from "@/components/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -66,7 +61,6 @@ const EMPTY_ANALYTICS = {
 
 export function OverviewPage() {
   const { range, setRange, environment, timeWindow } = useDashboardControls();
-  const [connectOpen, setConnectOpen] = useState(false);
   const window = useMemo(() => makeWindow(range, timeWindow.to), [range, timeWindow.to]);
   const overviewExtension = useOverviewExtension();
 
@@ -159,6 +153,16 @@ export function OverviewPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
+      <header className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 px-5 pb-1 pt-6">
+        <div>
+          <h1 className="text-[25px] font-medium leading-tight tracking-tight">Production overview</h1>
+          <p className="mt-1.5 text-xs text-muted-foreground">What changed, what needs attention, and where usage is moving.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="lg:hidden"><RangeSelect value={range} onChange={setRange} /></div>
+          {health.data ? <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground"><StatusDot tone={health.data.status === "healthy" ? "success" : "danger"} size={5} />{health.data.status === "healthy" ? "Gateway healthy" : "Gateway issue"}</span> : null}
+        </div>
+      </header>
       <WorkspaceSummaryStrip metrics={[
         {
           value: formatNumber(current.total_requests),
@@ -185,27 +189,11 @@ export function OverviewPage() {
         },
       ]} />
 
-      <div className="flex min-h-14 flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-2.5">
-        <div>
-          <h1 className="text-[15px] font-bold tracking-tight text-foreground">Production overview</h1>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">What changed, what needs attention, and where usage is moving</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <RangeSelect value={range} onChange={setRange} />
-          {health.data ? (
-            <span className="inline-flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-surface-1 px-2.5 font-mono text-[10px] text-muted-foreground">
-              <StatusDot tone={health.data.status === "healthy" ? "success" : "danger"} pulse size={6} />
-              {health.data.status === "healthy" ? "Gateway healthy" : "Gateway issue"}
-            </span>
-          ) : null}
-        </div>
-      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-5 py-6">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
+          <SetupWelcome />
 
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        <div className="flex flex-col gap-3">
-          <GetStartedChecklist />
-
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
             {isLoading ? (
               <Skeleton className="h-[214px] rounded-xl" />
             ) : activitySeries.total.some((value) => value > 0) ? (
@@ -230,17 +218,16 @@ export function OverviewPage() {
             <AttentionCenter items={attention} loading={apiKeys.isPending || proxies.isPending || isLoading} />
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             <SecurityPosture data={current} metrics={securityMetrics} loading={analytics.isPending || threats.isPending} />
             <ReliabilityPanel traceMetrics={traceMetrics} loading={traces.isPending} rangeLabel={rangeLabel} />
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <ModelEconomics models={current.top_models} requests={current.total_requests} cost={current.total_cost_cents} loading={analytics.isPending} />
             <UsageFootprint sessions={sessionData} users={userData} traces={traceData} loading={sessions.isPending || users.isPending || traces.isPending} />
           </div>
 
-          <QuickDeveloperConnectCard onOpenConnect={() => setConnectOpen(true)} />
 
           <RecentInvestigations threats={threatData} traces={traceData} loading={threats.isPending || traces.isPending} />
 
@@ -248,48 +235,6 @@ export function OverviewPage() {
         </div>
       </div>
 
-      <ConnectCliDialog open={connectOpen} onOpenChange={setConnectOpen} />
-    </div>
-  );
-}
-
-function QuickDeveloperConnectCard({ onOpenConnect }: { onOpenConnect: () => void }) {
-  return (
-    <div className="rounded-xl border border-border/80 bg-gradient-to-r from-card to-accent/5 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <span className="flex size-6 items-center justify-center rounded-md bg-accent/10 text-accent">
-            <Terminal className="size-3.5" />
-          </span>
-          <h3 className="text-xs font-semibold text-foreground">
-            Connect Local Terminal CLI, MCP Firewalls &amp; Framework SDKs
-          </h3>
-          <Badge variant="outline" className="text-[10px] text-accent border-accent/30 bg-accent/10">
-            Zero-Dep
-          </Badge>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          Stream traces and threat detections from <code className="text-foreground font-mono">bastio dev</code>, <code className="text-foreground font-mono">bastio scan</code>, or <code className="text-foreground font-mono">bastio mcp-proxy</code> directly into this dashboard.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onOpenConnect}
-          className="h-7 text-xs gap-1.5 border-border-subtle bg-background hover:bg-muted font-medium"
-        >
-          <Terminal className="size-3" />
-          CLI Quickstart
-        </Button>
-        <Link to="/mcp">
-          <Button size="sm" className="h-7 text-xs gap-1.5 font-medium">
-            <Bot className="size-3" />
-            Agent &amp; MCP Hub
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }
@@ -309,7 +254,7 @@ function AttentionCenter({ items, loading }: { items: AttentionItem[]; loading: 
             const Icon = item.icon;
             return (
               <Link key={`${item.to}:${item.title}`} to={item.to} className="group flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-surface-2">
-                <span className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface-1", item.tone === "danger" && "text-danger", item.tone === "warning" && "text-warn", item.tone === "neutral" && "text-muted-foreground")}>
+                <span className={cn("flex h-8 w-6 flex-shrink-0 items-center justify-center", item.tone === "danger" && "text-danger", item.tone === "warning" && "text-warn", item.tone === "neutral" && "text-muted-foreground")}>
                   <Icon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -486,8 +431,8 @@ function RecentInvestigations({ threats, traces, loading }: { threats: ThreatEve
 function PanelMetric({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "success" | "warning" | "danger" }) {
   return (
     <div className="min-w-0 bg-background p-3.5">
-      <p className="text-[9px] font-medium uppercase tracking-widest text-muted-foreground">{label}</p>
-      <p className={cn("mt-1.5 truncate font-mono text-lg font-semibold tabular-nums text-foreground", tone === "success" && "text-success", tone === "warning" && "text-warn", tone === "danger" && "text-danger")}>{value}</p>
+      <p className="text-[10px] font-normal text-muted-foreground">{label}</p>
+      <p className={cn("mt-1.5 truncate font-mono text-xl font-normal tabular-nums text-foreground", tone === "success" && "text-success", tone === "warning" && "text-warn", tone === "danger" && "text-danger")}>{value}</p>
     </div>
   );
 }
@@ -506,7 +451,7 @@ function InlineEmpty({ label }: { label: string }) {
 
 function EmptySurface({ icon: Icon, title, detail, to, action, className }: { icon: ComponentType<{ className?: string }>; title: string; detail: string; to: "/settings"; action: string; className?: string }) {
   return (
-    <section className={cn("surface-card flex min-h-[214px] flex-col items-center justify-center px-6 text-center", className)}>
+    <section className={cn("flex min-h-[214px] border-t border-border-subtle flex-col items-center justify-center px-6 text-center", className)}>
       <Icon className="h-5 w-5 text-muted-foreground" />
       <p className="mt-3 text-[12px] font-semibold text-foreground">{title}</p>
       <p className="mt-1 max-w-sm text-[10px] leading-relaxed text-muted-foreground">{detail}</p>

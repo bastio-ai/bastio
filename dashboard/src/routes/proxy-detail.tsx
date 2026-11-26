@@ -1,30 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Activity } from "lucide-react";
 
-import { gatewayBasePath } from "@/components/gateway-setup";
+import { gatewayBasePath, providerLabels } from "@/components/gateway-setup";
 import { api } from "@/api/client";
 import type { Trace } from "@/api/client";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/card";
 import {
   AdminPageHeader,
   AdminSummaryStrip,
 } from "@/components/admin/admin-primitives";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { formatCost, formatDuration } from "@/lib/utils";
+import { TraceStatus } from "@/components/observe/trace-status";
+import { SkeletonRows } from "@/components/skeleton";
+import { cn, formatCost, formatDuration } from "@/lib/utils";
 
 export function ProxyDetailPage() {
   const { id } = useParams({ from: "/proxies/$id" });
-  const navigate = useNavigate();
 
   const proxy = useQuery({
     queryKey: ["proxy", id],
@@ -37,16 +28,23 @@ export function ProxyDetailPage() {
   });
 
   if (proxy.isLoading) {
-    return <LoadingBlock label="Loading gateway…" />;
+    return (
+      <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+        <SkeletonRows count={5} />
+      </div>
+    );
   }
   if (proxy.error || !proxy.data) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-[1180px] space-y-5 pb-10 pt-2 md:pt-4">
         <BackLink id={id} />
-        <EmptyStateCard
-          title="Gateway not found"
-          description="This id no longer exists, or belongs to another tenant."
-        />
+        <div className="border-y border-border-subtle">
+          <EmptyState
+            icon={<Activity className="size-5" />}
+            title="Gateway not found"
+            description="This gateway no longer exists, or belongs to another workspace."
+          />
+        </div>
       </div>
     );
   }
@@ -56,25 +54,32 @@ export function ProxyDetailPage() {
   const rows = traces.data ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
       <AdminPageHeader
         eyebrow="LLM gateway"
         title={p.name}
+        bordered={false}
+        className="mb-4"
         description={
           <span>
             Requests entering{" "}
-            <span className="font-mono text-foreground">{nativeBasePath}</span>{" "}
-            are routed to {p.target_provider} with the controls configured for
-            this gateway.
+            <code className="font-mono text-foreground">{nativeBasePath}</code>{" "}
+            are routed to{" "}
+            {providerLabels[p.target_provider] ?? p.target_provider} with the
+            controls configured for this gateway.
           </span>
         }
         badge={
-          <Badge
-            variant={p.is_active ? "success" : "secondary"}
-            className="px-1.5 py-0 text-[10px]"
-          >
-            {p.is_active ? "active" : "disabled"}
-          </Badge>
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 rounded-full",
+                p.is_active ? "bg-success" : "bg-muted-foreground/40",
+              )}
+            />
+            {p.is_active ? "Active" : "Disabled"}
+          </span>
         }
         actions={<BackLink id={id} />}
       />
@@ -84,7 +89,7 @@ export function ProxyDetailPage() {
           { label: "SDK base path", value: nativeBasePath, detail: p.slug },
           {
             label: "Provider",
-            value: p.target_provider,
+            value: providerLabels[p.target_provider] ?? p.target_provider,
             detail: "Upstream target",
           },
           {
@@ -101,88 +106,93 @@ export function ProxyDetailPage() {
         ]}
       />
 
-      <Card className="border-border/50">
-        <div className="border-b border-border/50 p-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-          Recent traces ({rows.length})
+      <section aria-label="Recent gateway traces">
+        <div className="mb-3 flex items-baseline justify-between gap-4">
+          <h2 className="text-[13px] font-medium text-foreground">
+            Recent traces
+          </h2>
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {rows.length} shown
+          </span>
         </div>
-        <CardContent className="p-0">
-          {traces.isLoading ? (
-            <LoadingBlock label="Loading traces..." />
-          ) : rows.length === 0 ? (
+
+        {traces.isLoading ? (
+          <SkeletonRows count={4} />
+        ) : rows.length === 0 ? (
+          <div className="border-y border-border-subtle">
             <EmptyState
-              icon={<Activity className="h-6 w-6" />}
+              icon={<Activity className="size-5" />}
               title="No requests through this gateway yet"
               description="Use the connection example in gateway setup, then return here to inspect the result."
             />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent border-border/50">
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10">
+          </div>
+        ) : (
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="Recent gateway traces"
+            className="overflow-x-auto border-y border-border-subtle"
+          >
+            <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-border-subtle text-[11px] text-muted-foreground">
+                  <th scope="col" className="sticky top-0 bg-background py-2.5 pr-4 font-normal">
                     Status
-                  </TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10">
+                  </th>
+                  <th scope="col" className="sticky top-0 bg-background px-3 py-2.5 font-normal">
                     Model
-                  </TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                  </th>
+                  <th scope="col" className="sticky top-0 bg-background px-3 py-2.5 text-right font-normal">
                     Tokens
-                  </TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                  </th>
+                  <th scope="col" className="sticky top-0 bg-background px-3 py-2.5 text-right font-normal">
                     Cost
-                  </TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                  </th>
+                  <th scope="col" className="sticky top-0 bg-background px-3 py-2.5 text-right font-normal">
                     Latency
-                  </TableHead>
-                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 h-10 text-right">
+                  </th>
+                  <th scope="col" className="sticky top-0 bg-background py-2.5 pl-3 text-right font-normal">
                     Time
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
                 {rows.map((t: Trace) => (
-                  <TableRow
+                  <tr
                     key={t.id}
-                    className="border-border/30 hover:bg-muted/30 cursor-pointer"
-                    onClick={() =>
-                      navigate({ to: "/traces/$id", params: { id: t.id } })
-                    }
+                    className="transition-colors hover:bg-surface-2/50"
                   >
-                    <TableCell className="py-3">
-                      <Badge
-                        variant={
-                          t.status === "ok"
-                            ? "success"
-                            : t.status === "blocked"
-                              ? "destructive"
-                              : "warning"
-                        }
-                        className="text-[10px] px-1.5 py-0"
+                    <td className="py-2.5 pr-4">
+                      <TraceStatus status={t.status} />
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-xs">
+                      <Link
+                        to="/traces/$id"
+                        params={{ id: t.id }}
+                        className="text-foreground underline-offset-4 hover:underline"
                       >
-                        {t.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-foreground/80">
-                      {t.model}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono tabular-nums text-right">
+                        {t.model}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
                       {(t.input_tokens + t.output_tokens).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono tabular-nums text-right">
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
                       {formatCost(t.cost_cents)}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono tabular-nums text-right">
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-muted-foreground">
                       {formatDuration(t.duration_ms)}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground tabular-nums text-right">
+                    </td>
+                    <td className="py-2.5 pl-3 text-right font-mono text-xs tabular-nums text-muted-foreground">
                       {new Date(t.started_at).toLocaleTimeString()}
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -192,37 +202,9 @@ function BackLink({ id }: { id?: string }) {
     <Link
       to="/proxies"
       search={{ gateway: id }}
-      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
     >
-      <ArrowLeft className="h-3.5 w-3.5" /> Back to gateway setup
+      <ArrowLeft className="size-3.5" aria-hidden="true" /> Back to gateways
     </Link>
-  );
-}
-
-function LoadingBlock({ label }: { label: string }) {
-  return (
-    <div className="flex items-center justify-center py-16">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function EmptyStateCard({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <Card className="border-border/50">
-      <CardContent className="py-12 text-center">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
   );
 }

@@ -50,9 +50,9 @@ export function RequestVolumeChart({
   const blockedLine = toLine(blockedCoords);
 
   return (
-    <section className={cn("surface-card px-4 py-3", className)}>
+    <section className={cn("border-t border-border-subtle bg-background px-3 py-4", className)}>
       <header className="flex items-baseline gap-3 mb-2">
-        <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-text-muted">
+        <p className="text-[11px] font-normal text-text-muted">
           {label}
         </p>
         <p className="font-mono text-[11px] text-text-muted tabular-nums">{unit}</p>

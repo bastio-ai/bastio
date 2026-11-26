@@ -4,31 +4,25 @@
 // mount and seeds the conversation, so navigating to /c/<id> from
 // here lands the user inside that thread.
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { MessagesSquare, Pin, Search } from "lucide-react";
 
 import { workspaceApi } from "@/components/workspace/types";
 import type { ConversationListItem } from "@/components/workspace/types";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { EmptyState, PageHeader } from "@/components/card";
+  AdminPageHeader,
+  AdminSummaryStrip,
+} from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
 import { formatNumber } from "@/lib/utils";
 
 export function ChatsPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const searchInputId = useId();
 
   const { data, isLoading } = useQuery({
     queryKey: ["workspace", "conversations", "all"],
@@ -51,93 +45,195 @@ export function ChatsPage() {
     });
   }, [conversations, search]);
 
+  const pinnedCount = useMemo(
+    () => conversations.filter((c) => c.pinned).length,
+    [conversations],
+  );
+  const totalMessages = useMemo(
+    () => conversations.reduce((sum, c) => sum + (c.message_count ?? 0), 0),
+    [conversations],
+  );
+
+  const openConversation = (conversationId: string) => {
+    navigate({ to: "/c/$id" as never, params: { id: conversationId } as never });
+  };
+
   return (
-    <>
-      <PageHeader
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+      <AdminPageHeader
+        eyebrow="Workspace"
         title="All chats"
         description={
           conversations.length
             ? `${formatNumber(conversations.length)} conversation${conversations.length === 1 ? "" : "s"} in this workspace.`
             : "Your workspace conversations land here."
         }
+        bordered={false}
+        className="mb-4"
+        badge={
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className={
+                conversations.length
+                  ? "size-1.5 rounded-full bg-success"
+                  : "size-1.5 rounded-full bg-muted-foreground/50"
+              }
+            />
+            {conversations.length ? "Active history" : "Empty"}
+          </span>
+        }
       />
 
-      <div className="mt-4 max-w-md">
+      <AdminSummaryStrip
+        items={[
+          {
+            label: "Conversations",
+            value: formatNumber(conversations.length),
+            detail: "Recent workspace threads",
+          },
+          {
+            label: "Pinned",
+            value: formatNumber(pinnedCount),
+            detail: pinnedCount ? "Saved to sidebar top" : "None pinned",
+          },
+          {
+            label: "Total messages",
+            value: formatNumber(totalMessages),
+            detail: "Across loaded threads",
+          },
+          {
+            label: "Showing",
+            value: formatNumber(filtered.length),
+            detail: search.trim() ? "Filtered matches" : "All conversations",
+          },
+        ]}
+      />
+
+      <search className="mb-4 max-w-md">
+        <label htmlFor={searchInputId} className="sr-only">
+          Search conversations by title or message
+        </label>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
+            id={searchInputId}
+            type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by title or message…"
-            className="pl-9"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            className="h-8 pl-8 text-xs"
           />
         </div>
-      </div>
+      </search>
 
-      <Card className="mt-4">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-4">
-              <SkeletonRows count={6} />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="p-8">
-              <EmptyState
-                icon={<MessagesSquare className="h-6 w-6" />}
-                title={search ? "No matches" : "No conversations yet"}
-                description={
-                  search
-                    ? "Try a different search term, or clear the box to see everything."
-                    : "Start a new chat from the workspace and it'll show up here."
-                }
-              />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead className="hidden lg:table-cell">Last message</TableHead>
-                  <TableHead className="text-right">Messages</TableHead>
-                  <TableHead className="text-right">Last activity</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((c) => (
-                  <TableRow
-                    key={c.id}
-                    className="cursor-pointer"
-                    onClick={() => navigate({ to: "/c/$id" as never, params: { id: c.id } as never })}
+      {isLoading ? (
+        <div className="border-y border-border-subtle">
+          <SkeletonRows count={6} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="border-y border-border-subtle py-12 text-center">
+          <MessagesSquare
+            aria-hidden="true"
+            className="mx-auto mb-2.5 h-5 w-5 text-muted-foreground"
+          />
+          <p className="text-[13px] font-medium text-foreground">
+            {search ? "No matches" : "No conversations yet"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {search
+              ? "Try a different search term, or clear the box to see everything."
+              : "Start a new chat from the workspace and it'll show up here."}
+          </p>
+        </div>
+      ) : (
+        <div
+          className="overflow-x-auto border-y border-border-subtle"
+          tabIndex={0}
+          role="region"
+          aria-label="Workspace conversations"
+        >
+          <table className="w-full min-w-[680px] text-left text-xs">
+            <thead className="border-b border-border-subtle text-[11px] text-muted-foreground">
+              <tr>
+                <th
+                  scope="col"
+                  className="sticky top-0 bg-background py-2.5 pr-4 font-normal"
+                >
+                  Title
+                </th>
+                <th
+                  scope="col"
+                  className="sticky top-0 hidden bg-background px-4 py-2.5 font-normal lg:table-cell"
+                >
+                  Last message
+                </th>
+                <th
+                  scope="col"
+                  className="sticky top-0 bg-background px-4 py-2.5 text-right font-normal"
+                >
+                  Messages
+                </th>
+                <th
+                  scope="col"
+                  className="sticky top-0 bg-background py-2.5 pl-4 text-right font-normal"
+                >
+                  Last activity
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle">
+              {filtered.map((c) => (
+                <tr
+                  key={c.id}
+                  className="cursor-pointer transition-colors hover:bg-surface-1/60"
+                  onClick={() => openConversation(c.id)}
+                >
+                  <td className="py-3 pr-4 text-foreground">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openConversation(c.id);
+                      }}
+                      className="inline-flex max-w-full cursor-pointer items-center gap-2 text-left underline decoration-border-default underline-offset-4 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {c.pinned ? (
+                        <Pin
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        />
+                      ) : null}
+                      <span className="truncate">{c.title || "Untitled"}</span>
+                    </button>
+                  </td>
+                  <td className="hidden px-4 py-3 text-muted-foreground lg:table-cell">
+                    <span className="block max-w-[460px] truncate">
+                      {c.last_message_peek || "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-muted-foreground">
+                    {formatNumber(c.message_count)}
+                  </td>
+                  <td
+                    className="py-3 pl-4 text-right font-mono tabular-nums text-muted-foreground"
+                    title={new Date(c.last_message_at).toLocaleString()}
                   >
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {c.pinned && (
-                          <Pin className="h-3.5 w-3.5 text-muted-foreground/70" aria-hidden />
-                        )}
-                        <span className="truncate">{c.title || "Untitled"}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground lg:table-cell">
-                      <span className="block max-w-[480px] truncate">
-                        {c.last_message_peek || "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <Badge variant="outline" className="font-normal">
-                        {formatNumber(c.message_count)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground tabular-nums">
-                      {formatRelativeTime(c.last_message_at)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </>
+                    {formatRelativeTime(c.last_message_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 

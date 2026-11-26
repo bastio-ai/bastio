@@ -1,3 +1,5 @@
+import { WorkspacePageHeader } from "@/components/observe/workspace-page-header";
+import { WorkspaceSummaryStrip } from "@/components/observe/workspace-summary-strip";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -199,9 +201,10 @@ export function ThreatsPage() {
   return (
     <div className="flex h-full min-h-0 bg-background">
       <section className="flex min-w-0 flex-1 flex-col">
+        <WorkspacePageHeader title="Threats" description="Review detector signals, policy actions, and affected requests." />
         <SummaryStrip kpis={kpis} />
 
-        <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-background px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-background px-5 py-3">
           <button
             type="button"
             onClick={() => navigate({ to: "/threats", search: { ...search, group: groupMode ? undefined : true, page: undefined } })}
@@ -360,16 +363,7 @@ function SummaryStrip({ kpis }: { kpis: Kpis }) {
     { value: kpis.blocked, label: "blocked", sub: `${kpis.total ? Math.round((kpis.blocked / kpis.total) * 100) : 0}% prevented` },
     { value: kpis.uniqueUsers, label: "users affected", sub: "Distinct end_user_id" },
   ];
-  return (
-    <div className="grid flex-shrink-0 grid-cols-2 border-b border-border-subtle bg-surface-1/50 md:grid-cols-4">
-      {items.map((item, index) => (
-        <div key={item.label} className={cn("px-4 py-3", index > 0 && "border-l border-border-subtle")}>
-          <div className="text-[13px] font-semibold tabular-nums"><span className="font-mono">{formatNumber(item.value)}</span> <span className="text-[11px] font-medium text-foreground/85">{item.label}</span></div>
-          <div className="mt-0.5 text-[9px] text-muted-foreground">{item.sub}</div>
-        </div>
-      ))}
-    </div>
-  );
+  return <WorkspaceSummaryStrip metrics={items.map((item) => ({ ...item, value: formatNumber(item.value) }))} />;
 }
 
 function ColumnToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {

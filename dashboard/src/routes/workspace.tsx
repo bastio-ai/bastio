@@ -19,19 +19,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { PageHeader } from "@/components/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
-  useWorkspaceSidebar,
-  useWorkspaceSidebarState,
-} from "@/components/workspace-sidebar-context";
+  AdminPageHeader,
+  AdminUnderlineNav,
+} from "@/components/admin/admin-primitives";
+import { Button } from "@/components/ui/button";
+import { useWorkspaceSidebar } from "@/components/workspace-sidebar-context";
 import { DashboardTab } from "@/components/workspace/dashboard-tab";
 import { AssistantsTab } from "@/components/workspace/assistants-tab";
 import { MCPIntegrations } from "@/components/workspace/mcp-integrations";
 import { KnowledgeTab } from "@/components/workspace/knowledge-tab";
 import { AccessControls } from "@/components/workspace/access-controls";
-import { cn } from "@/lib/utils";
 import type {
   SettingsSection,
   WorkspaceSearch,
@@ -58,9 +56,9 @@ const BASE_TABS: { id: AdminTab; label: string; icon: LucideIcon }[] = [
 
 const TAB_META: Record<AdminTab, { title: string; description: string }> = {
   dashboard: {
-    title: "Workspace overview",
+    title: "Employee workspace",
     description:
-      "Set up your team’s AI workspace, manage access, and follow usage.",
+      "Set up your team’s governed AI workspace, manage access, and track usage.",
   },
   assistants: {
     title: "Assistants",
@@ -101,7 +99,6 @@ const EXTRA_TAB_ICONS: Record<string, LucideIcon> = {
 
 export function WorkspacePage() {
   const pageRef = useRef<HTMLDivElement>(null);
-  const { navigationVisible } = useWorkspaceSidebarState();
   const { extraTabs, openWorkspaceURL, hideUpsell } = useWorkspaceExtension();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as WorkspaceSearch;
@@ -141,6 +138,7 @@ export function WorkspacePage() {
   const tab = allTabs.some((item) => item.id === search.view)
     ? search.view!
     : "dashboard";
+
   useEffect(() => {
     pageRef.current?.scrollIntoView({ block: "start" });
   }, [tab, section]);
@@ -212,13 +210,16 @@ export function WorkspacePage() {
       })),
       filtersLabel: "Workspace",
       filters: (
-        <div className="rounded-lg border border-border-subtle bg-surface-1 px-3 py-2.5">
+        <div className="border-l-2 border-border-subtle pl-3 py-1">
           <div className="flex items-center gap-2 text-[11px] font-medium text-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full bg-success"
+            />
             Employee workspace
           </div>
-          <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-            Manage your workspace here. Open employee workspace to try chat as
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            Manage governance here. Open the employee workspace to test chat as
             your team sees it.
           </p>
         </div>
@@ -231,61 +232,44 @@ export function WorkspacePage() {
   return (
     <div
       ref={pageRef}
-      className="mx-auto w-full max-w-[1560px] px-4 py-4 sm:px-5 lg:px-6 lg:py-5"
+      className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4"
     >
       {showSubscribedToast ? (
         <SubscribedToast onDismiss={() => setShowSubscribedToast(false)} />
       ) : null}
 
-      <PageHeader
-        className="flex-wrap [&>div:first-child]:basis-full sm:flex-nowrap sm:[&>div:first-child]:basis-auto"
+      <AdminPageHeader
+        eyebrow="Workspace & governance"
         title={activeMeta.title}
         description={activeMeta.description}
+        bordered={false}
+        className="mb-4"
         badge={
-          <Badge
-            variant={hideUpsell ? "success" : "outline"}
-            className="font-mono text-[10px]"
-          >
+          <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full bg-success"
+            />
             {hideUpsell ? "managed" : "self-hosted"}
-          </Badge>
+          </span>
         }
-        action={<OpenWorkspaceLink openWorkspaceURL={openWorkspaceURL} />}
+        actions={<OpenWorkspaceLink openWorkspaceURL={openWorkspaceURL} />}
       />
 
-      <div className={cn("mb-5 max-w-sm", navigationVisible && "md:hidden")}>
-        <label htmlFor="workspace-page" className="sr-only">
-          Workspace page
-        </label>
-        <select
-          id="workspace-page"
-          value={tab}
-          onChange={(event) => changeTab(event.target.value)}
-          className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {allTabs.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {tab !== "dashboard" ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mb-4 cursor-pointer px-0"
-          onClick={() => changeTab("dashboard")}
-        >
-          ← Back to workspace setup
-        </Button>
-      ) : null}
+      <AdminUnderlineNav
+        ariaLabel="Workspace sections"
+        value={tab}
+        onChange={(next) => changeTab(next)}
+        items={allTabs.map((item) => ({ id: item.id, label: item.label }))}
+      />
+
       {tab === "dashboard" ? (
         <>
           <DashboardTab
             onOpenChat={() => navigateToChat(openWorkspaceURL)}
             onOpenTab={changeTab}
           />
-          {!hideUpsell ? <CloudUpsellCard /> : null}
+          {!hideUpsell ? <CloudUpsellSection /> : null}
         </>
       ) : null}
       {tab === "assistants" ? <AssistantsTab /> : null}
@@ -313,6 +297,8 @@ function OpenWorkspaceLink({
   if (openWorkspaceURL) {
     return (
       <Button
+        size="sm"
+        className="h-8 text-xs"
         nativeButton={false}
         render={
           <a
@@ -323,15 +309,20 @@ function OpenWorkspaceLink({
         }
       >
         Open employee workspace
-        <ExternalLink data-icon="inline-end" />
+        <ExternalLink className="size-3.5" aria-hidden="true" />
       </Button>
     );
   }
 
   return (
-    <Button nativeButton={false} render={<Link to="/chat" />}>
+    <Button
+      size="sm"
+      className="h-8 text-xs"
+      nativeButton={false}
+      render={<Link to="/chat" />}
+    >
       Open employee workspace
-      <MessageSquare data-icon="inline-end" />
+      <MessageSquare className="size-3.5" aria-hidden="true" />
     </Button>
   );
 }
@@ -344,41 +335,36 @@ function navigateToChat(openWorkspaceURL: string | null) {
   window.location.assign("/chat");
 }
 
-function CloudUpsellCard() {
+function CloudUpsellSection() {
   return (
-    <section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-card">
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="p-5">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Managed controls
-            </p>
-          </div>
-          <h2 className="mt-3 text-[15px] font-semibold tracking-tight text-foreground">
-            Extend the portal with enterprise identity and governance.
-          </h2>
-          <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-muted-foreground">
-            Bastio Cloud adds role-based access, SSO and SCIM, retained audit
-            evidence, managed PII detection, and custom domains.
-          </p>
-        </div>
-        <div className="flex items-center border-t border-border/60 px-5 py-4 lg:border-l lg:border-t-0">
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={
-              <a
-                href="https://bastio.com/cloud"
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            }
-          >
-            Explore managed workspace
-            <ArrowRight data-icon="inline-end" />
-          </Button>
-        </div>
+    <section className="mt-8 flex flex-col justify-between gap-4 border-y border-border-subtle py-5 lg:flex-row lg:items-center">
+      <div>
+        <p className="text-[11px] text-muted-foreground">Managed controls</p>
+        <h2 className="mt-1 text-[13px] font-medium text-foreground">
+          Extend the portal with enterprise identity and governance
+        </h2>
+        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+          Bastio Cloud adds role-based access, SSO and SCIM, retained audit
+          evidence, managed PII detection, and custom domains.
+        </p>
+      </div>
+      <div className="shrink-0">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          nativeButton={false}
+          render={
+            <a
+              href="https://bastio.com/cloud"
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          }
+        >
+          Explore managed workspace
+          <ArrowRight className="size-3.5" aria-hidden="true" />
+        </Button>
       </div>
     </section>
   );
@@ -391,24 +377,28 @@ function SubscribedToast({ onDismiss }: { onDismiss: () => void }) {
   }, [onDismiss]);
 
   return (
-    <div className="mb-5 flex items-start gap-3 rounded-xl border border-success-border bg-success-bg p-4">
-      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+    <div className="mb-6 flex items-start gap-3 border-l-2 border-success pl-3.5 py-1">
+      <CheckCircle2
+        className="mt-0.5 size-4 shrink-0 text-success"
+        aria-hidden="true"
+      />
       <div className="min-w-0 flex-1">
-        <p className="text-[12px] font-medium text-foreground">
+        <p className="text-xs font-medium text-foreground">
           Workspace governance connected
         </p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Configure assistants and access controls here, then open the portal to
           verify the employee experience.
         </p>
       </div>
       <Button
+        type="button"
         variant="ghost"
         size="icon-xs"
         onClick={onDismiss}
         aria-label="Dismiss notification"
       >
-        <X />
+        <X className="size-3.5" aria-hidden="true" />
       </Button>
     </div>
   );

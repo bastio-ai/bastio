@@ -1,11 +1,19 @@
-import { ResourceSharingButton, SharingPicker, sharingLabel, adminOnlySharing, type ResourceSharing } from "./sharing-controls";
-import { useRef, useState } from "react";
+import {
+  ResourceSharingButton,
+  SharingPicker,
+  sharingLabel,
+  adminOnlySharing,
+  type ResourceSharing,
+} from "./sharing-controls";
+import { useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpen, ClipboardPaste, FileText, FileUp, Loader2, Plus, ShieldAlert } from "lucide-react";
+import { Archive, ClipboardPaste, FileUp, Loader2, Plus } from "lucide-react";
 
-import { EmptyState, SectionHeader } from "@/components/card";
-import { FieldLabel, SecurityNotice } from "@/components/admin/admin-primitives";
-import { Badge } from "@/components/ui/badge";
+import {
+  AdminPanel,
+  AdminSummaryStrip,
+  FieldLabel,
+} from "@/components/admin/admin-primitives";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,7 +30,8 @@ import { http, unwrap } from "@/api/typed";
 import { workspaceApi, relativeTime, type KnowledgeSource } from "./types";
 
 function formatBytes(n: number): string {
-  if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (n >= 1024 * 1024 * 1024)
+    return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${n} B`;
@@ -41,16 +50,30 @@ export function KnowledgeTab() {
     queryFn: workspaceApi.listKnowledge,
     refetchInterval: (query) => {
       const data = query.state.data;
-      return data?.sources.some((item) => item.status === "pending" || item.status === "processing") ? 2000 : false;
+      return data?.sources.some(
+        (item) => item.status === "pending" || item.status === "processing",
+      )
+        ? 2000
+        : false;
     },
   });
-  const indexing = useQuery({ queryKey: ["workspace", "knowledge-index-status"], queryFn: () => unwrap(http.GET("/v1/workspace/knowledge/index-status")), refetchInterval: 10000 });
+  const indexing = useQuery({
+    queryKey: ["workspace", "knowledge-index-status"],
+    queryFn: () => unwrap(http.GET("/v1/workspace/knowledge/index-status")),
+    refetchInterval: 10000,
+  });
   const [creating, setCreating] = useState(false);
-  const [archiveTarget, setArchiveTarget] = useState<KnowledgeSource | null>(null);
-  const [releaseTarget, setReleaseTarget] = useState<KnowledgeSource | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<KnowledgeSource | null>(
+    null,
+  );
+  const [releaseTarget, setReleaseTarget] = useState<KnowledgeSource | null>(
+    null,
+  );
   const [dragging, setDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [uploadSharing, setUploadSharing] = useState<ResourceSharing>(adminOnlySharing());
+  const [uploadSharing, setUploadSharing] = useState<ResourceSharing>(
+    adminOnlySharing(),
+  );
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,39 +116,17 @@ export function KnowledgeTab() {
 
   const sources = list.data?.sources ?? [];
   const readyCount = sources.filter((item) => item.status === "ready").length;
-  const processingCount = sources.filter((item) => item.status === "pending" || item.status === "processing").length;
+  const processingCount = sources.filter(
+    (item) => item.status === "pending" || item.status === "processing",
+  ).length;
   const failedCount = sources.filter((item) => item.status === "failed").length;
-  const quarantinedCount = sources.filter((item) => item.status === "quarantined").length;
+  const quarantinedCount = sources.filter(
+    (item) => item.status === "quarantined",
+  ).length;
+  const issueCount = quarantinedCount + failedCount;
 
   return (
     <div>
-      <SectionHeader
-        title="Knowledge inventory"
-        description="Upload governed sources and explicitly assign them to assistants."
-        action={
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
-              <FileUp data-icon="inline-start" /> Upload files
-            </Button>
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus data-icon="inline-start" /> Paste text
-            </Button>
-          </div>
-        }
-      />
-
-      {indexing.data && <p className="mb-4 text-xs text-muted-foreground">{indexing.data.enabled ? `${indexing.data.model.startsWith("bge:") ? "Self-hosted semantic search" : "Semantic search enabled"} · ${indexing.data.pending_sources ? `${indexing.data.pending_sources} sources indexing in the background` : "Index up to date"}` : "Keyword search · embedding service is not configured"}</p>}
-
-      <details className="mb-5 rounded-lg border border-border/60 bg-card p-4 text-[11px] leading-relaxed">
-        <summary className="cursor-pointer font-medium">What happens to uploaded knowledge?</summary>
-        <ol className="mt-3 list-decimal space-y-2 pl-4 text-muted-foreground">
-          <li>The original file is stored privately on the Bastio server. Extracted text is checked against your workspace’s security profile before indexing.</li>
-          <li>Block quarantines matching files. Mask or Tokenize processes the detected values before the searchable text is stored. Warn and Log only allow unchanged text. Original files are retained separately, including any personal data they contain.</li>
-          <li>Cloud uses Bastio’s self-hosted GPU embedding service over a private connection. Other deployments use the embedding service configured by their operator. Processed text is sent to that service to create search vectors. Relevant passages are sent to the selected model when an employee asks a question.</li>
-        </ol>
-        <p className="mt-3 border-t border-border/60 pt-3 text-muted-foreground">The conversation “do not store” setting does not apply to knowledge sources. Changing a security profile does not automatically rewrite previously indexed sources.</p>
-      </details>
-
       <input
         ref={fileInputRef}
         type="file"
@@ -138,159 +139,464 @@ export function KnowledgeTab() {
         }}
       />
 
-      <div className="mb-5 grid overflow-hidden rounded-xl border border-border/70 bg-card sm:grid-cols-5 sm:divide-x sm:divide-border/60">
-        <Metric label="Sources" value={list.isLoading ? "—" : sources.length} detail="Active inventory" />
-        <Metric label="Ready" value={readyCount} detail="Available for retrieval" tone="success" />
-        <Metric label="Processing" value={processingCount} detail="Extraction in progress" />
-        <Metric label="Failed" value={failedCount} detail="Needs operator review" tone={failedCount ? "danger" : "default"} />
-        <Metric label="Quarantined" value={quarantinedCount} detail="Security review required" tone={quarantinedCount ? "danger" : "default"} />
-      </div>
+      <AdminSummaryStrip
+        items={[
+          {
+            label: "Sources",
+            value: list.isLoading ? "—" : sources.length,
+            detail: "Active inventory",
+          },
+          {
+            label: "Ready",
+            value: list.isLoading ? "—" : readyCount,
+            detail: "Available for retrieval",
+            tone: readyCount > 0 ? "success" : "default",
+          },
+          {
+            label: "Processing",
+            value: list.isLoading ? "—" : processingCount,
+            detail: "Extraction in progress",
+            tone: processingCount > 0 ? "warning" : "default",
+          },
+          {
+            label: "Needs review",
+            value: list.isLoading ? "—" : issueCount,
+            detail: `${quarantinedCount} quarantined · ${failedCount} failed`,
+            tone: issueCount > 0 ? "danger" : "default",
+          },
+        ]}
+      />
 
-      <div
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          onFiles(event.dataTransfer.files);
-        }}
-        className={cn(
-          "mb-5 flex min-h-24 items-center justify-between gap-4 rounded-xl border border-dashed px-5 py-4 transition-colors",
-          dragging ? "border-ring bg-muted/50" : "border-border/80 bg-muted/15",
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card text-muted-foreground">
-            {upload.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-          </div>
-          <div className="min-w-0">
-            <p className="text-[12px] font-medium text-foreground">
-              {upload.isPending ? "Uploading and extracting…" : "Drop knowledge files here"}
-            </p>
-            <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
-              PDF, DOCX, TXT, Markdown, CSV, JSON, LOG, and YAML. Review source sensitivity before assigning it to an assistant.
-            </p>
-          </div>
-        </div>
-        <Button className="hidden sm:inline-flex" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
-          Browse
-        </Button>
-      </div>
-
-      {uploadError ? (
-        <SecurityNotice className="mb-5" title="Upload failed" tone="warning">{uploadError}</SecurityNotice>
-      ) : null}
-
-      <section className="overflow-hidden rounded-xl border border-border/70 bg-card">
-        {list.isLoading ? (
-          <div className="p-4"><SkeletonRows count={4} /></div>
-        ) : sources.length === 0 ? (
-          <EmptyState
-            icon={<BookOpen className="h-5 w-5" />}
-            title="No knowledge sources"
-            description="Upload a document or paste authoritative text. A source becomes retrievable only after processing completes and you assign it to an assistant."
-            action={
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><FileUp data-icon="inline-start" /> Upload</Button>
-                <Button size="sm" onClick={() => setCreating(true)}><ClipboardPaste data-icon="inline-start" /> Paste text</Button>
-              </div>
-            }
-          />
-        ) : (
+      <AdminPanel
+        title="Knowledge inventory"
+        description={
           <>
-            <div className="hidden grid-cols-[minmax(240px,1.5fr)_120px_130px_150px_180px] gap-4 border-b border-border/60 px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
-              <span>Source</span><span>Status</span><span>Size</span><span>Last synced</span><span />
-            </div>
-            <div className="divide-y divide-border/50">
-              {sources.map((source) => (
-                <div key={source.id} className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-muted/20 md:grid-cols-[minmax(240px,1.5fr)_120px_130px_150px_180px] md:items-center md:gap-4">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-                      <FileText className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-[12px] font-medium text-foreground">{source.name}</p>
-                      <p className="truncate text-[10px] text-muted-foreground">{source.mime_type || source.type} · {sharingLabel(source.sharing)}</p>
-                      {source.error ? <p className="mt-1 text-[10px] text-destructive">{source.error}</p> : null}
-                      {source.status === "quarantined" ? <ScanSummary source={source} /> : null}
-                    </div>
-                  </div>
-                  <StatusBadge status={source.status} />
-                  <div className="font-mono text-[10px] text-muted-foreground">
-                    {source.size_bytes > 0 ? formatBytes(source.size_bytes) : "Inline"}
-                    {source.character_count ? <span className="block">{formatChars(source.character_count)} chars</span> : null}
-                  </div>
-                  <span className="text-[10px] text-muted-foreground">{source.last_synced_at ? relativeTime(source.last_synced_at) : "Not synced"}</span>
-                  <div className="flex gap-1 md:justify-end">
-                    {source.status === "quarantined" ? (
-                      <Button size="xs" variant="outline" onClick={() => setReleaseTarget(source)}>Review</Button>
-                    ) : null}
-                    <ResourceSharingButton type="knowledge" id={source.id} name={source.name} sharing={source.sharing} />
-                    <Button size="icon-xs" variant="ghost" aria-label={`Archive ${source.name}`} onClick={() => setArchiveTarget(source)}><Archive /></Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            Upload governed sources and explicitly assign them to assistants.
+            {indexing.data ? (
+              <span className="mt-1 block font-mono text-[11px] text-muted-foreground">
+                {indexing.data.enabled
+                  ? `${indexing.data.model.startsWith("bge:") ? "Self-hosted semantic search" : "Semantic search enabled"} · ${indexing.data.pending_sources ? `${indexing.data.pending_sources} sources indexing in the background` : "Index up to date"}`
+                  : "Keyword search · embedding service is not configured"}
+              </span>
+            ) : null}
           </>
+        }
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <FileUp className="size-3.5" aria-hidden="true" />
+              Upload files
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setCreating(true)}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              Paste text
+            </Button>
+          </div>
+        }
+        contentClassName="py-0"
+      >
+        <div
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            onFiles(event.dataTransfer.files);
+          }}
+          className={cn(
+            "flex flex-wrap items-center justify-between gap-4 border-b border-border-subtle px-3 py-3 transition-colors",
+            dragging ? "bg-surface-1" : "bg-surface-1/30",
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-2.5">
+            {upload.isPending ? (
+              <Loader2
+                className="size-4 shrink-0 animate-spin text-muted-foreground"
+                aria-hidden="true"
+              />
+            ) : (
+              <FileUp
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            )}
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground">
+                {upload.isPending
+                  ? "Uploading and extracting…"
+                  : "Drop knowledge files here"}
+              </p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                PDF, DOCX, TXT, Markdown, CSV, JSON, LOG, and YAML. Review
+                source sensitivity before assigning it to an assistant.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            className="hidden sm:inline-flex"
+            size="xs"
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Browse
+          </Button>
+        </div>
+
+        {uploadError ? (
+          <div role="alert" className="border-b border-border-subtle py-3">
+            <div className="border-l-2 border-destructive pl-3.5 text-xs text-destructive">
+              <span className="font-medium text-foreground">
+                Upload failed.
+              </span>{" "}
+              {uploadError}
+            </div>
+          </div>
+        ) : null}
+
+        {list.isLoading ? (
+          <div className="border-b border-border-subtle py-4">
+            <SkeletonRows count={4} />
+          </div>
+        ) : sources.length === 0 ? (
+          <div className="border-b border-border-subtle py-10 text-center">
+            <h3 className="text-[13px] font-medium text-foreground">
+              No knowledge sources
+            </h3>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
+              Upload a document or paste authoritative text. A source becomes
+              retrievable only after processing completes and you assign it to
+              an assistant.
+            </p>
+            <div className="mt-4 inline-flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <FileUp className="size-3.5" aria-hidden="true" />
+                Upload
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => setCreating(true)}
+              >
+                <ClipboardPaste className="size-3.5" aria-hidden="true" />
+                Paste text
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="Knowledge inventory"
+            className="overflow-x-auto border-b border-border-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <table className="w-full min-w-[680px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-border-subtle text-xs text-muted-foreground">
+                  <th scope="col" className="py-2.5 pr-4 font-medium">
+                    Source
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium">
+                    Size
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium">
+                    Last synced
+                  </th>
+                  <th
+                    scope="col"
+                    className="py-2.5 pl-4 text-right font-medium"
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {sources.map((source) => (
+                  <tr
+                    key={source.id}
+                    className="transition-colors hover:bg-surface-1/50"
+                  >
+                    <td className="max-w-[340px] py-3.5 pr-4 align-middle">
+                      <p className="truncate text-[13px] font-medium text-foreground">
+                        {source.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {source.mime_type || source.type} ·{" "}
+                        {sharingLabel(source.sharing)}
+                      </p>
+                      {source.error ? (
+                        <p className="mt-1.5 border-l-2 border-destructive pl-2.5 text-[11px] text-destructive">
+                          {source.error}
+                        </p>
+                      ) : null}
+                      {source.status === "quarantined" ? (
+                        <ScanSummary source={source} />
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3.5 align-middle">
+                      <StatusIndicator status={source.status} />
+                    </td>
+                    <td className="px-4 py-3.5 align-middle font-mono text-[11px] tabular-nums text-muted-foreground">
+                      <span>
+                        {source.size_bytes > 0
+                          ? formatBytes(source.size_bytes)
+                          : "Inline"}
+                      </span>
+                      {source.character_count ? (
+                        <span className="mt-0.5 block">
+                          {formatChars(source.character_count)} chars
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3.5 align-middle font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {source.last_synced_at
+                        ? relativeTime(source.last_synced_at)
+                        : "Not synced"}
+                    </td>
+                    <td className="py-3.5 pl-4 text-right align-middle">
+                      <div className="inline-flex items-center justify-end gap-1">
+                        {source.status === "quarantined" ? (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            onClick={() => setReleaseTarget(source)}
+                          >
+                            Review
+                          </Button>
+                        ) : null}
+                        <ResourceSharingButton
+                          type="knowledge"
+                          id={source.id}
+                          name={source.name}
+                          sharing={source.sharing}
+                        />
+                        <Button
+                          type="button"
+                          size="icon-xs"
+                          variant="ghost"
+                          aria-label={`Archive ${source.name}`}
+                          onClick={() => setArchiveTarget(source)}
+                        >
+                          <Archive aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </section>
+      </AdminPanel>
 
-      <SecurityNotice className="mt-5" title="Retrieval remains permission-bound" tone="success">
-        Uploading a source does not expose it globally. Only assistants with an explicit source assignment can retrieve its content.
-      </SecurityNotice>
+      <div className="mt-6 space-y-5">
+        <div className="border-l-2 border-border-subtle pl-3.5 text-xs leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">
+            Retrieval remains permission-bound.
+          </span>{" "}
+          Uploading a source does not expose it globally. Only assistants with
+          an explicit source assignment can retrieve its content.
+        </div>
 
-      <Dialog open={pendingFiles.length > 0} onOpenChange={(open) => !open && !upload.isPending && setPendingFiles([])}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl"><DialogHeader><DialogTitle>Upload knowledge files</DialogTitle><DialogDescription>Choose recipients before these files are stored or indexed.</DialogDescription></DialogHeader>
-        <ul className="max-h-24 overflow-y-auto text-xs text-muted-foreground">{pendingFiles.map((file, index) => <li key={`${file.name}:${index}`}>{file.name}</li>)}</ul>
-        <SharingPicker value={uploadSharing} onChange={setUploadSharing} disabled={upload.isPending} />
-        {upload.error && <p role="alert" className="text-xs text-destructive">{upload.error.message}</p>}
-        <DialogFooter><Button variant="outline" disabled={upload.isPending} onClick={() => setPendingFiles([])}>Cancel</Button><Button disabled={upload.isPending} onClick={() => upload.mutate()}>{upload.isPending ? "Uploading…" : `Upload ${pendingFiles.length === 1 ? "file" : "files"}`}</Button></DialogFooter>
+        <details className="border-y border-border-subtle py-3 text-xs leading-relaxed">
+          <summary className="cursor-pointer text-[13px] font-medium text-foreground">
+            What happens to uploaded knowledge?
+          </summary>
+          <ol className="mt-3 list-decimal space-y-2 pl-4 text-muted-foreground">
+            <li>
+              The original file is stored privately on the Bastio server.
+              Extracted text is checked against your workspace’s security
+              profile before indexing.
+            </li>
+            <li>
+              Block quarantines matching files. Mask or Tokenize processes the
+              detected values before the searchable text is stored. Warn and Log
+              only allow unchanged text. Original files are retained separately,
+              including any personal data they contain.
+            </li>
+            <li>
+              Cloud uses Bastio’s self-hosted GPU embedding service over a
+              private connection. Other deployments use the embedding service
+              configured by their operator. Processed text is sent to that
+              service to create search vectors. Relevant passages are sent to
+              the selected model when an employee asks a question.
+            </li>
+          </ol>
+          <p className="mt-3 border-t border-border-subtle pt-3 text-muted-foreground">
+            The conversation “do not store” setting does not apply to knowledge
+            sources. Changing a security profile does not automatically rewrite
+            previously indexed sources.
+          </p>
+        </details>
+      </div>
+
+      <Dialog
+        open={pendingFiles.length > 0}
+        onOpenChange={(open) =>
+          !open && !upload.isPending && setPendingFiles([])
+        }
+      >
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Upload knowledge files</DialogTitle>
+            <DialogDescription>
+              Choose recipients before these files are stored or indexed.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-28 divide-y divide-border-subtle overflow-y-auto border-y border-border-subtle font-mono text-xs text-muted-foreground">
+            {pendingFiles.map((file, index) => (
+              <li
+                key={`${file.name}:${index}`}
+                className="flex items-center justify-between gap-3 py-1.5"
+              >
+                <span className="truncate text-foreground">{file.name}</span>
+                <span className="shrink-0 tabular-nums">
+                  {formatBytes(file.size)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <SharingPicker
+            value={uploadSharing}
+            onChange={setUploadSharing}
+            disabled={upload.isPending}
+          />
+          {upload.error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {upload.error.message}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={upload.isPending}
+              onClick={() => setPendingFiles([])}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={upload.isPending}
+              onClick={() => upload.mutate()}
+            >
+              {upload.isPending
+                ? "Uploading…"
+                : `Upload ${pendingFiles.length === 1 ? "file" : "files"}`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <KnowledgeEditor
         open={creating}
         onClose={() => setCreating(false)}
-        onSaved={() => qc.invalidateQueries({ queryKey: ["workspace", "knowledge"] })}
+        onSaved={() =>
+          qc.invalidateQueries({ queryKey: ["workspace", "knowledge"] })
+        }
       />
 
-      <Dialog open={Boolean(archiveTarget)} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+      <Dialog
+        open={Boolean(archiveTarget)}
+        onOpenChange={(open) => !open && setArchiveTarget(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Archive knowledge source?</DialogTitle>
             <DialogDescription>
-              {archiveTarget?.name} will stop being available to assistants. Existing conversation history and citations remain intact.
+              {archiveTarget?.name} will stop being available to assistants.
+              Existing conversation history and citations remain intact.
             </DialogDescription>
           </DialogHeader>
-          {archive.error ? <p className="text-[11px] text-destructive">{(archive.error as Error).message}</p> : null}
+          {archive.error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {(archive.error as Error).message}
+            </p>
+          ) : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setArchiveTarget(null)}>Cancel</Button>
-            <Button variant="destructive" disabled={archive.isPending} onClick={() => archiveTarget && archive.mutate(archiveTarget.id)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setArchiveTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={archive.isPending}
+              onClick={() => archiveTarget && archive.mutate(archiveTarget.id)}
+            >
               {archive.isPending ? "Archiving…" : "Archive source"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(releaseTarget)} onOpenChange={(open) => !open && setReleaseTarget(null)}>
+      <Dialog
+        open={Boolean(releaseTarget)}
+        onOpenChange={(open) => !open && setReleaseTarget(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Review quarantined source</DialogTitle>
             <DialogDescription>
-              {releaseTarget?.name} was blocked during ingest and is not available to any assistant.
+              {releaseTarget?.name} was blocked during ingest and is not
+              available to any assistant.
             </DialogDescription>
           </DialogHeader>
           {releaseTarget ? <QuarantineEvidence source={releaseTarget} /> : null}
-          <SecurityNotice title="Release is an audited security override" tone="warning">
-            Only release content you have reviewed and trust. The source will be scanned again and may be quarantined again if the detector still blocks it.
-          </SecurityNotice>
-          {release.error ? <p className="text-[11px] text-destructive">{(release.error as Error).message}</p> : null}
+          <div className="border-l-2 border-warn pl-3.5 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Release is an audited security override.
+            </span>{" "}
+            Only release content you have reviewed and trust. The source will be
+            scanned again and may be quarantined again if the detector still
+            blocks it.
+          </div>
+          {release.error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {(release.error as Error).message}
+            </p>
+          ) : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReleaseTarget(null)}>Keep quarantined</Button>
-            <Button disabled={release.isPending} onClick={() => releaseTarget && release.mutate(releaseTarget.id)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReleaseTarget(null)}
+            >
+              Keep quarantined
+            </Button>
+            <Button
+              type="button"
+              disabled={release.isPending}
+              onClick={() => releaseTarget && release.mutate(releaseTarget.id)}
+            >
               {release.isPending ? "Releasing…" : "Release and rescan"}
             </Button>
           </DialogFooter>
@@ -300,22 +606,45 @@ export function KnowledgeTab() {
   );
 }
 
-function Metric({ label, value, detail, tone = "default" }: { label: string; value: string | number; detail: string; tone?: "default" | "success" | "danger" }) {
-  return (
-    <div className="px-4 py-3.5">
-      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 font-mono text-[16px] font-medium text-foreground", tone === "success" && "text-success", tone === "danger" && "text-destructive")}>{value}</p>
-      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
+function StatusIndicator({ status }: { status: string }) {
   const processing = status === "pending" || status === "processing";
   return (
-    <Badge variant={status === "ready" ? "success" : status === "failed" || status === "quarantined" ? "destructive" : "outline"} className="capitalize">
-      {processing ? <Loader2 className="animate-spin" /> : null}{status}
-    </Badge>
+    <span className="inline-flex items-center gap-2 text-xs">
+      {processing ? (
+        <Loader2
+          className="size-3 shrink-0 animate-spin text-warn"
+          aria-hidden="true"
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            status === "ready"
+              ? "bg-success"
+              : status === "quarantined"
+                ? "bg-warn"
+                : status === "failed"
+                  ? "bg-destructive"
+                  : "bg-muted-foreground/50",
+          )}
+        />
+      )}
+      <span
+        className={cn(
+          "capitalize",
+          status === "ready"
+            ? "text-foreground"
+            : status === "quarantined"
+              ? "text-warn"
+              : status === "failed"
+                ? "text-destructive"
+                : "text-muted-foreground",
+        )}
+      >
+        {status}
+      </span>
+    </span>
   );
 }
 
@@ -325,14 +654,18 @@ function scanResult(source: KnowledgeSource) {
 
 function scanCategories(source: KnowledgeSource): string[] {
   const categories = scanResult(source).categories;
-  return Array.isArray(categories) ? categories.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(categories)
+    ? categories.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function ScanSummary({ source }: { source: KnowledgeSource }) {
   const categories = scanCategories(source);
   return (
-    <p className="mt-1 flex items-center gap-1 truncate text-[10px] text-destructive">
-      <ShieldAlert className="h-3 w-3 shrink-0" /> {categories.length ? categories.join(", ") : "Blocked by ingest security policy"}
+    <p className="mt-1.5 truncate border-l-2 border-warn pl-2.5 font-mono text-[11px] text-warn">
+      {categories.length
+        ? categories.join(", ")
+        : "Blocked by ingest security policy"}
     </p>
   );
 }
@@ -341,21 +674,60 @@ function QuarantineEvidence({ source }: { source: KnowledgeSource }) {
   const result = scanResult(source);
   const categories = scanCategories(source);
   return (
-    <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/20 text-[11px]">
-      <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-border/50 px-3 py-2.5"><span className="text-muted-foreground">Detector action</span><span className="font-mono text-foreground">{String(result.action ?? "block")}</span></div>
-      <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-border/50 px-3 py-2.5"><span className="text-muted-foreground">Categories</span><span className="font-mono text-foreground">{categories.join(", ") || "Not reported"}</span></div>
-      <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-border/50 px-3 py-2.5"><span className="text-muted-foreground">Threat score</span><span className="font-mono text-foreground">{result.threat_score == null ? "Not reported" : String(result.threat_score)}</span></div>
-      <div className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2.5"><span className="text-muted-foreground">Content hash</span><span className="truncate font-mono text-foreground">{source.content_hash ?? "Inline content"}</span></div>
+    <div className="divide-y divide-border-subtle border-y border-border-subtle text-xs">
+      <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5">
+        <span className="text-muted-foreground">Detector action</span>
+        <span className="font-mono text-foreground">
+          {String(result.action ?? "block")}
+        </span>
+      </div>
+      <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5">
+        <span className="text-muted-foreground">Categories</span>
+        <span className="font-mono text-foreground">
+          {categories.join(", ") || "Not reported"}
+        </span>
+      </div>
+      <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5">
+        <span className="text-muted-foreground">Threat score</span>
+        <span className="font-mono text-foreground">
+          {result.threat_score == null
+            ? "Not reported"
+            : String(result.threat_score)}
+        </span>
+      </div>
+      <div className="grid grid-cols-[120px_1fr] gap-3 py-2.5">
+        <span className="text-muted-foreground">Content hash</span>
+        <span className="truncate font-mono text-foreground">
+          {source.content_hash ?? "Inline content"}
+        </span>
+      </div>
     </div>
   );
 }
 
-function KnowledgeEditor({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
+function KnowledgeEditor({
+  open,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const uid = useId();
+  const nameId = `${uid}-name`;
+  const contentId = `${uid}-content`;
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
   const [sharing, setSharing] = useState<ResourceSharing>(adminOnlySharing());
   const save = useMutation({
-    mutationFn: () => workspaceApi.createKnowledge({ name, type: "text", inline_text: content, sharing }),
+    mutationFn: () =>
+      workspaceApi.createKnowledge({
+        name,
+        type: "text",
+        inline_text: content,
+        sharing,
+      }),
     onSuccess: () => {
       onSaved();
       onClose();
@@ -371,31 +743,57 @@ function KnowledgeEditor({ open, onClose, onSaved }: { open: boolean; onClose: (
         <DialogHeader>
           <DialogTitle>Paste knowledge text</DialogTitle>
           <DialogDescription>
-            Create an inline source for policies, procedures, or other reviewed reference content.
+            Create an inline source for policies, procedures, or other reviewed
+            reference content.
           </DialogDescription>
         </DialogHeader>
         <div>
-          <FieldLabel>Name</FieldLabel>
-          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Incident response policy" autoFocus />
+          <FieldLabel htmlFor={nameId}>Name</FieldLabel>
+          <Input
+            id={nameId}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="e.g. Incident response policy"
+            autoFocus
+          />
         </div>
         <div>
-          <FieldLabel>Content</FieldLabel>
+          <FieldLabel htmlFor={contentId}>Content</FieldLabel>
           <textarea
+            id={contentId}
             value={content}
             onChange={(event) => setContent(event.target.value)}
             rows={10}
             placeholder="Paste reviewed source content…"
-            className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-[12px] leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="w-full resize-y rounded-md border border-input bg-transparent px-2.5 py-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </div>
-        <SharingPicker value={sharing} onChange={setSharing} disabled={save.isPending} />
-        <SecurityNotice title="Treat pasted text as a governed source" tone="info">
-          Avoid credentials and secrets. The content is stored and may be retrieved into an assigned assistant’s prompt context.
-        </SecurityNotice>
-        {save.error ? <p className="text-[11px] text-destructive">{(save.error as Error).message}</p> : null}
+        <SharingPicker
+          value={sharing}
+          onChange={setSharing}
+          disabled={save.isPending}
+        />
+        <div className="border-l-2 border-border-subtle pl-3.5 text-xs leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">
+            Treat pasted text as a governed source.
+          </span>{" "}
+          Avoid credentials and secrets. The content is stored and may be
+          retrieved into an assigned assistant’s prompt context.
+        </div>
+        {save.error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {(save.error as Error).message}
+          </p>
+        ) : null}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={!name.trim() || !content.trim() || save.isPending} onClick={() => save.mutate()}>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={!name.trim() || !content.trim() || save.isPending}
+            onClick={() => save.mutate()}
+          >
             {save.isPending ? "Saving…" : "Create source"}
           </Button>
         </DialogFooter>

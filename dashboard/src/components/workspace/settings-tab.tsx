@@ -1,24 +1,15 @@
 import { MCPHistorySettings } from "./mcp-history-settings";
 import { ModelConnections } from "./model-connections";
 import { workspaceModelChoices } from "./workspace-models";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker } from "@tanstack/react-router";
-import {
-  Check,
-  ImageOff,
-  LockKeyhole,
-  Save,
-  ShieldAlert,
-  Sparkles,
-} from "lucide-react";
+import { Check, Save } from "lucide-react";
 
-import { SectionHeader } from "@/components/card";
 import {
+  AdminPanel,
   FieldLabel,
-  SecurityNotice,
 } from "@/components/admin/admin-primitives";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -213,33 +204,63 @@ export function SettingsTab({
     onSuccess: async () => {
       const fresh = await workspaceApi.getSettings();
       qc.setQueryData(["workspace", "settings"], fresh);
-      qc.invalidateQueries({queryKey:["workspace","mcp-history-policy"]});
+      qc.invalidateQueries({ queryKey: ["workspace", "mcp-history-policy"] });
     },
   });
 
   if (settings.isLoading) return <SkeletonRows count={5} />;
   if (settings.error)
     return (
-      <SecurityNotice title="Settings could not be loaded" tone="warning">
+      <div
+        role="alert"
+        className="space-y-3 border-l-2 border-warn pl-3.5 text-xs text-muted-foreground"
+      >
+        <p className="font-medium text-foreground">
+          Settings could not be loaded
+        </p>
         <p>{settings.error.message}</p>
         <Button
+          type="button"
           variant="outline"
-          className="mt-3"
-          onClick={() => settings.refetch()}
+          size="sm"
+          className="h-8 text-xs"
+          onClick={() => void settings.refetch()}
         >
           Retry
         </Button>
-      </SecurityNotice>
+      </div>
     );
 
   const strictModelPolicy = allowedModels.length > 0;
+  const saveAction = (
+    <div className="flex items-center gap-2.5">
+      {!dirty && save.isSuccess ? (
+        <span
+          role="status"
+          className="inline-flex items-center gap-1.5 text-xs text-success"
+        >
+          <Check className="size-3.5" aria-hidden="true" /> Saved
+        </span>
+      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        className="h-8 text-xs"
+        disabled={!dirty || save.isPending}
+        onClick={() => save.mutate()}
+      >
+        <Save data-icon="inline-start" aria-hidden="true" />{" "}
+        {save.isPending ? "Saving…" : "Save AI settings"}
+      </Button>
+    </div>
+  );
 
   return (
     <div>
       <nav
         ref={sectionsNav}
         aria-label="Settings sections"
-        className="mb-5 flex gap-1 overflow-x-auto border-b border-border"
+        className="mb-6 flex gap-5 overflow-x-auto border-b border-border-subtle"
       >
         {(
           [
@@ -256,323 +277,322 @@ export function SettingsTab({
               "Usage limits and provider charges",
             ],
           ] as const
-        ).map(([id, label, description]) => (
-          <button
-            type="button"
-            key={id}
-            aria-current={section === id ? "page" : undefined}
-            title={description}
-            onClick={() => onSectionChange?.(id)}
-            className={cn(
-              "relative min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-t-lg px-4 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors",
-              section === id
-                ? "bg-muted text-foreground after:bg-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground after:bg-transparent hover:after:bg-border",
-            )}
-          >
-            {label}
-          </button>
-        ))}
+        ).map(([id, label, description]) => {
+          const active = section === id;
+          return (
+            <button
+              type="button"
+              key={id}
+              aria-current={active ? "page" : undefined}
+              title={description}
+              onClick={() => onSectionChange?.(id)}
+              className={cn(
+                "inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 pb-3 text-[12px] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                active
+                  ? "border-foreground/70 text-foreground"
+                  : "border-transparent text-muted-foreground",
+              )}
+            >
+              {label}
+            </button>
+          );
+        })}
       </nav>
+
       {ext.settingsSection ? (
-        <div className="mb-5">
+        <div className="mb-6">
           {ext.settingsSection(section, setCloudDirty)}
         </div>
       ) : null}
-      <SectionHeader
-        className="flex-wrap gap-3 [&>div:first-child]:basis-full sm:flex-nowrap sm:[&>div:first-child]:basis-auto"
-        title={
-          {
-            general: "Shared AI identity",
-            models: "Approved models",
-            privacy: "Conversation privacy",
-            usage: "Workspace spending limit",
-          }[section]
-        }
-        description="Changes apply across the employee workspace. Save before leaving this page."
-        action={
-          <div className="flex items-center gap-2">
-            {!dirty && save.isSuccess ? (
-              <span className="inline-flex items-center gap-1 text-xs text-success">
-                <Check className="h-3 w-3" /> Saved
-              </span>
-            ) : null}
-            <Button
-              size="sm"
-              disabled={!dirty || save.isPending}
-              onClick={() => save.mutate()}
-            >
-              <Save data-icon="inline-start" />{" "}
-              {save.isPending ? "Saving…" : "Save AI settings"}
-            </Button>
-          </div>
-        }
-      />
 
-      {section === "privacy" && <MCPHistorySettings />}
-      {section === "privacy" && (
-        <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-[13px] font-bold tracking-tight">
-            Conversation storage
-          </h2>
-          <label className="mt-3 flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={!storeContent}
-              onChange={(e) => setStoreContent(!e.target.checked)}
-            />{" "}
-            Do not store conversation content
-          </label>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            Temporary chats keep their content in the open browser tab. Leaving
-            chat, refreshing or closing it loses the conversation text. Bastio
-            retains usage, cost and security-decision metadata, without prompt
-            text, attachments or security snippets.
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            This applies to new conversation writes. Enabling it also deletes retained MCP payload history and disables new MCP capture. Previously saved conversation content and archives
-            remain. Knowledge documents are stored separately. Model providers
-            apply their own retention policies. Conversation content is not
-            collected for training.
-          </p>
-        </section>
-      )}
-      {section === "usage" && (
-        <section className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-[13px] font-bold tracking-tight">
-            Monthly Workspace spending limit
-          </h2>
-          <label className="mt-2 flex items-center gap-2 text-xs">
-            USD{" "}
-            <Input
-              aria-label="Monthly spending limit in USD"
-              type="number"
-              min="0"
-              step="0.01"
-              value={spendCap / 100}
-              onChange={(e) =>
-                setSpendCap(
-                  Math.max(0, Math.round(Number(e.target.value) * 100)),
-                )
-              }
-              className="max-w-32"
-            />
-          </label>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Zero removes the limit. Estimated model costs count across
-            employees; near-limit requests reserve their maximum allowance
-            before sending. Responses allow up to 8,192 output tokens. Resets
-            each calendar month in UTC.
-          </p>
-        </section>
-      )}
-      {section === "privacy" && (
-        <section className="mt-5 overflow-hidden rounded-xl border border-border/70 bg-card">
-          <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-                <ImageOff className="h-3.5 w-3.5" />
-              </div>
-              <div>
-                <h2 className="text-[13px] font-semibold text-foreground">
-                  Image attachment policy
-                </h2>
-                <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                  Block images in employee chat when every attachment must pass
-                  text extraction and security inspection.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={disableImageAttachments}
-              onClick={() => setDisableImageAttachments((current) => !current)}
-              className={cn(
-                "inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium transition-colors",
-                disableImageAttachments
-                  ? "border-success-border bg-success-bg text-success"
-                  : "border-border/70 bg-background text-muted-foreground hover:bg-muted/40",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full",
-                  disableImageAttachments
-                    ? "bg-success"
-                    : "bg-muted-foreground/50",
-                )}
+      {section === "general" && (
+        <AdminPanel
+          title="Shared AI identity"
+          description="A consistent persona layered onto every assistant. Changes apply across the employee workspace."
+          action={saveAction}
+        >
+          <div className="space-y-4 border-b border-border-subtle pb-4">
+            <div>
+              <FieldLabel optional htmlFor="persona-name">
+                Name
+              </FieldLabel>
+              <Input
+                id="persona-name"
+                value={personaName}
+                onChange={(event) => setPersonaName(event.target.value)}
+                placeholder="e.g. Bob"
+                maxLength={120}
               />
-              {disableImageAttachments ? "Images blocked" : "Images allowed"}
-            </button>
-          </div>
-          {!disableImageAttachments ? (
-            <div className="border-t border-border/60 px-4 py-3">
-              <SecurityNotice
-                title="Images bypass text-only inspection"
-                tone="warning"
-              >
-                Image uploads are rendered as visual context and are not
-                text-extracted. Disable them for regulated or high-assurance
-                workspaces.
-              </SecurityNotice>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Shown as the shared AI identity in the portal.
+              </p>
             </div>
-          ) : null}
-        </section>
+            <div>
+              <FieldLabel optional htmlFor="persona-personality">
+                Personality
+              </FieldLabel>
+              <Input
+                id="persona-personality"
+                value={personaPersonality}
+                onChange={(event) => setPersonaPersonality(event.target.value)}
+                placeholder="e.g. helpful, precise, concise"
+                maxLength={500}
+              />
+            </div>
+            <div>
+              <FieldLabel optional htmlFor="persona-tone">
+                Tone of voice
+              </FieldLabel>
+              <Input
+                id="persona-tone"
+                value={personaTone}
+                onChange={(event) => setPersonaTone(event.target.value)}
+                placeholder="e.g. professional and direct"
+                maxLength={200}
+              />
+            </div>
+            <div className="border-l-2 border-border-subtle pl-3.5 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Assistant instructions still apply.
+              </span>{" "}
+              Blank fields add no workspace-level persona. Each assistant’s own
+              system prompt remains the source of its role and boundaries.
+            </div>
+          </div>
+        </AdminPanel>
       )}
 
-      <div className="space-y-5">
-        {section === "general" && (
-          <section className="rounded-xl border border-border/70 bg-card">
-            <div className="border-b border-border/60 px-4 py-3.5">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-                  <Sparkles className="h-3.5 w-3.5" />
-                </div>
-                <div>
-                  <h2 className="text-[13px] font-semibold text-foreground">
-                    Shared AI identity
-                  </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    A consistent persona layered onto every assistant.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-4 p-4">
-              <div>
-                <FieldLabel optional htmlFor="persona-name">
-                  Name
-                </FieldLabel>
-                <Input
-                  id="persona-name"
-                  value={personaName}
-                  onChange={(event) => setPersonaName(event.target.value)}
-                  placeholder="e.g. Bob"
-                  maxLength={120}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Shown as the shared AI identity in the portal.
-                </p>
-              </div>
-              <div>
-                <FieldLabel optional htmlFor="persona-personality">
-                  Personality
-                </FieldLabel>
-                <Input
-                  id="persona-personality"
-                  value={personaPersonality}
-                  onChange={(event) =>
-                    setPersonaPersonality(event.target.value)
-                  }
-                  placeholder="e.g. helpful, precise, concise"
-                  maxLength={500}
-                />
-              </div>
-              <div>
-                <FieldLabel optional htmlFor="persona-tone">
-                  Tone of voice
-                </FieldLabel>
-                <Input
-                  id="persona-tone"
-                  value={personaTone}
-                  onChange={(event) => setPersonaTone(event.target.value)}
-                  placeholder="e.g. professional and direct"
-                  maxLength={200}
-                />
-              </div>
-              <SecurityNotice
-                title="Assistant instructions still apply"
-                tone="info"
-              >
-                Blank fields add no workspace-level persona. Each assistant’s
-                own system prompt remains the source of its role and boundaries.
-              </SecurityNotice>
-            </div>
-          </section>
-        )}
-
-        {section === "models" && (
-          <div className="space-y-4">
-            <ModelConnections />
-            <section className="rounded-xl border border-border/70 bg-card">
-              <div className="flex items-start justify-between gap-4 border-b border-border/60 px-4 py-3.5">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 bg-muted/30 text-muted-foreground">
-                    <LockKeyhole className="h-3.5 w-3.5" />
-                  </div>
-                  <div>
-                    <h2 className="text-[13px] font-semibold text-foreground">
-                      Choose models
-                    </h2>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Control the models employees can select at chat time.
-                    </p>
-                  </div>
-                </div>
-                <Badge variant={strictModelPolicy ? "success" : "warning"}>
+      {section === "models" && (
+        <div className="space-y-6">
+          <ModelConnections />
+          <AdminPanel
+            title="Approved models"
+            description="Control the models employees can select at chat time. Changes apply across the employee workspace."
+            action={
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      strictModelPolicy ? "bg-success" : "bg-warn",
+                    )}
+                  />
                   {strictModelPolicy ? "Restricted" : "Catalog default"}
-                </Badge>
+                </span>
+                {saveAction}
               </div>
-              <div className="space-y-4 p-4">
-                {!strictModelPolicy ? (
-                  <SecurityNotice
-                    title="Connected provider models are currently allowed"
-                    tone="warning"
-                  >
+            }
+          >
+            <div className="space-y-4 border-b border-border-subtle pb-4">
+              {!strictModelPolicy ? (
+                <div className="border-l-2 border-warn pl-3.5 text-xs leading-relaxed text-muted-foreground">
+                  <p className="font-medium text-foreground">
+                    Connected provider models are currently allowed
+                  </p>
+                  <p className="mt-0.5">
                     With no models selected, employees can choose models
                     reported by connected providers, or suggestions where
                     discovery is unavailable. Select approved models below to
                     enforce a strict allowlist in both the portal UI and chat
                     send path.
-                  </SecurityNotice>
-                ) : (
-                  <SecurityNotice
-                    title="Only approved models are available"
-                    tone="success"
-                  >
+                  </p>
+                </div>
+              ) : (
+                <div className="border-l-2 border-success/60 pl-3.5 text-xs leading-relaxed text-muted-foreground">
+                  <p className="font-medium text-foreground">
+                    Only approved models are available
+                  </p>
+                  <p className="mt-0.5">
                     Only the selected provider and model pairs are available to
                     employees. Bastio checks this policy on every chat request.
-                  </SecurityNotice>
-                )}
-                <ModelWhitelistEditor
-                  value={allowedModels}
-                  onChange={setAllowedModels}
-                />
+                  </p>
+                </div>
+              )}
+              <ModelWhitelistEditor
+                value={allowedModels}
+                onChange={setAllowedModels}
+              />
+            </div>
+          </AdminPanel>
+        </div>
+      )}
+
+      {section === "privacy" && (
+        <div className="space-y-6">
+          <AdminPanel
+            title="Conversation privacy"
+            description="Changes apply across the employee workspace. Save before leaving this page."
+            action={saveAction}
+            contentClassName="py-0"
+          >
+            <div className="divide-y divide-border-subtle border-b border-border-subtle">
+              <div className="py-4">
+                <h3 className="text-[13px] font-medium text-foreground">
+                  Conversation storage
+                </h3>
+                <label
+                  htmlFor="do-not-store-content"
+                  className="mt-3 flex cursor-pointer items-center gap-2.5 text-xs text-foreground"
+                >
+                  <input
+                    id="do-not-store-content"
+                    type="checkbox"
+                    className="accent-foreground"
+                    checked={!storeContent}
+                    onChange={(e) => setStoreContent(!e.target.checked)}
+                  />
+                  <span>Do not store conversation content</span>
+                </label>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Temporary chats keep their content in the open browser tab.
+                  Leaving chat, refreshing or closing it loses the conversation
+                  text. Bastio retains usage, cost and security-decision
+                  metadata, without prompt text, attachments or security
+                  snippets.
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  This applies to new conversation writes. Enabling it also
+                  deletes retained MCP payload history and disables new MCP
+                  capture. Previously saved conversation content and archives
+                  remain. Knowledge documents are stored separately. Model
+                  providers apply their own retention policies. Conversation
+                  content is not collected for training.
+                </p>
               </div>
-            </section>
+
+              <div className="py-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-[13px] font-medium text-foreground">
+                      Image attachment policy
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                      Block images in employee chat when every attachment must
+                      pass text extraction and security inspection.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={disableImageAttachments}
+                    onClick={() =>
+                      setDisableImageAttachments((current) => !current)
+                    }
+                    className={cn(
+                      "inline-flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      disableImageAttachments
+                        ? "border-border-subtle bg-surface-1/60 text-foreground"
+                        : "border-border-subtle bg-background text-muted-foreground hover:bg-surface-1/50 hover:text-foreground",
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        disableImageAttachments
+                          ? "bg-success"
+                          : "bg-muted-foreground/50",
+                      )}
+                    />
+                    {disableImageAttachments
+                      ? "Images blocked"
+                      : "Images allowed"}
+                  </button>
+                </div>
+                {!disableImageAttachments ? (
+                  <div className="mt-3 border-l-2 border-warn pl-3.5 text-xs leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      Images bypass text-only inspection.
+                    </span>{" "}
+                    Image uploads are rendered as visual context and are not
+                    text-extracted. Disable them for regulated or high-assurance
+                    workspaces.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </AdminPanel>
+
+          <MCPHistorySettings />
+        </div>
+      )}
+
+      {section === "usage" && (
+        <AdminPanel
+          title="Workspace spending limit"
+          description="Changes apply across the employee workspace. Save before leaving this page."
+          action={saveAction}
+        >
+          <div className="space-y-3 border-b border-border-subtle pb-4">
+            <FieldLabel htmlFor="workspace-spend-cap">
+              Monthly Workspace spending limit
+            </FieldLabel>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs text-muted-foreground">
+                USD
+              </span>
+              <Input
+                id="workspace-spend-cap"
+                aria-label="Monthly spending limit in USD"
+                type="number"
+                min="0"
+                step="0.01"
+                value={spendCap / 100}
+                onChange={(e) =>
+                  setSpendCap(
+                    Math.max(0, Math.round(Number(e.target.value) * 100)),
+                  )
+                }
+                className="max-w-36 font-mono tabular-nums"
+              />
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Zero removes the limit. Estimated model costs count across
+              employees; near-limit requests reserve their maximum allowance
+              before sending. Responses allow up to 8,192 output tokens. Resets
+              each calendar month in UTC.
+            </p>
           </div>
-        )}
-      </div>
+        </AdminPanel>
+      )}
 
       {save.error ? (
-        <SecurityNotice
-          className="mt-5"
-          title="Settings could not be saved"
-          tone="warning"
+        <div
+          role="alert"
+          className="mt-5 border-l-2 border-destructive pl-3.5 text-xs text-destructive"
         >
+          <span className="font-medium">Settings could not be saved:</span>{" "}
           {(save.error as Error).message}
-        </SecurityNotice>
+        </div>
       ) : null}
+
       {dirty ? (
-        <div className="sticky bottom-3 z-10 mt-5 flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-popover/95 px-4 py-3 shadow-lg backdrop-blur">
+        <div className="sticky bottom-3 z-10 mt-6 flex items-center justify-between gap-4 border-y border-border-subtle bg-background/95 py-3 backdrop-blur">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <ShieldAlert className="h-3.5 w-3.5" /> Unsaved policy changes
+            <span
+              aria-hidden="true"
+              className="size-1.5 shrink-0 rounded-full bg-warn"
+            />
+            <span>Unsaved policy changes</span>
           </div>
           <Button
+            type="button"
             size="sm"
+            className="h-8 text-xs"
             disabled={save.isPending}
             onClick={() => save.mutate()}
           >
-            <Save data-icon="inline-start" />{" "}
+            <Save data-icon="inline-start" aria-hidden="true" />{" "}
             {save.isPending ? "Saving…" : "Save policy"}
           </Button>
         </div>
       ) : null}
 
       {!ext.settingsSection && ext.settingsExtra ? (
-        <div className="mt-5">{ext.settingsExtra}</div>
+        <div className="mt-6">{ext.settingsExtra}</div>
       ) : null}
+
       <Dialog
         open={blocker.status === "blocked"}
         onOpenChange={(open) => {
@@ -588,10 +608,14 @@ export function SettingsTab({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => blocker.reset?.()}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => blocker.reset?.()}
+            >
               Keep editing
             </Button>
-            <Button onClick={() => blocker.proceed?.()}>
+            <Button type="button" onClick={() => blocker.proceed?.()}>
               Discard and leave
             </Button>
           </DialogFooter>
@@ -608,6 +632,7 @@ function ModelWhitelistEditor({
   value: AllowedModelEntry[];
   onChange: (next: AllowedModelEntry[]) => void;
 }) {
+  const editorId = useId();
   const [search, setSearch] = useState("");
   const inventory = useQuery({
     queryKey: ["workspace", "models", true],
@@ -648,114 +673,165 @@ function ModelWhitelistEditor({
     );
   };
 
+  const hasVisibleProviders = Object.entries(byProvider).some(
+    ([provider, models]) =>
+      models.some((model) =>
+        `${provider} ${model.label} ${model.model}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+  );
+
   return (
     <div className="space-y-3">
-      <Input
-        aria-label="Search models"
-        placeholder="Search models or providers…"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
-      <p className="text-xs text-muted-foreground">
+      <search aria-label="Filter models">
+        <label htmlFor={`${editorId}-search`} className="sr-only">
+          Search models
+        </label>
+        <Input
+          id={`${editorId}-search`}
+          aria-label="Search models"
+          placeholder="Search models or providers…"
+          value={search}
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </search>
+      <p className="font-mono text-xs tabular-nums text-muted-foreground">
         {value.length
           ? `${value.length} approved models selected`
           : "Connected provider models allowed"}
-        . Expand a provider to choose models.
+        <span className="font-sans">. Expand a provider to choose models.</span>
       </p>
-      {Object.entries(byProvider).map(([provider, models]) => {
-        const visible = models.filter((model) =>
-          `${provider} ${model.label} ${model.model}`
-            .toLowerCase()
-            .includes(search.toLowerCase()),
-        );
-        if (!visible.length) return null;
-        const selected = models.filter((model) =>
-          allowSet.has(`${provider}/${model.model}`),
-        );
-        const allOn = selected.length === models.length;
-        const someOn = selected.length > 0;
-        return (
-          <details
-            key={provider}
-            open={search.trim() ? true : undefined}
-            className="overflow-hidden rounded-lg border border-border/70"
-          >
-            <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-3 bg-muted/20 px-3 py-3 text-sm font-medium capitalize">
-              {provider}
-              <span className="text-xs font-normal normal-case text-muted-foreground">
-                {selected.length}/{models.length} selected · expand
-              </span>
-            </summary>
-            <label className="flex cursor-pointer items-center gap-3 border-b border-border/50 bg-muted/20 px-3 py-2.5">
-              <input
-                type="checkbox"
-                checked={allOn}
-                ref={(element) => {
-                  if (element) element.indeterminate = !allOn && someOn;
-                }}
-                onChange={() => toggleProvider(provider, models)}
-              />
-              <span className="text-[12px] font-medium capitalize text-foreground">
-                Select all {provider} models
-              </span>
-              <span className="ml-auto font-mono text-xs text-muted-foreground">
-                {selected.length}/{models.length} selected
-              </span>
-            </label>
-            <div className="grid sm:grid-cols-2">
-              {visible.map((model, index) => {
-                const selectedModel = allowSet.has(
-                  `${provider}/${model.model}`,
-                );
-                return (
-                  <label
-                    key={`${provider}/${model.model}`}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-muted/30",
-                      index > 0 && "border-t border-border/40 sm:border-t-0",
-                      index % 2 === 1 && "sm:border-l sm:border-border/40",
-                      index >= 2 && "sm:border-t sm:border-border/40",
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedModel}
-                      onChange={() => toggleModel(provider, model.model)}
+
+      {hasVisibleProviders ? (
+        <div className="divide-y divide-border-subtle border-y border-border-subtle">
+          {Object.entries(byProvider).map(([provider, models]) => {
+            const visible = models.filter((model) =>
+              `${provider} ${model.label} ${model.model}`
+                .toLowerCase()
+                .includes(search.toLowerCase()),
+            );
+            if (!visible.length) return null;
+            const selected = models.filter((model) =>
+              allowSet.has(`${provider}/${model.model}`),
+            );
+            const allOn = selected.length === models.length;
+            const someOn = selected.length > 0;
+            const selectAllId = `${editorId}-all-${provider}`;
+            return (
+              <details
+                key={provider}
+                open={search.trim() ? true : undefined}
+                className="group"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 text-[13px] font-medium capitalize text-foreground transition-colors hover:bg-surface-1/50 [&::-webkit-details-marker]:hidden">
+                  <span className="flex items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        someOn ? "bg-success" : "bg-muted-foreground/50",
+                      )}
                     />
-                    <div className="min-w-0">
-                      <p
+                    {provider}
+                  </span>
+                  <span className="font-mono text-[11px] font-normal normal-case tabular-nums text-muted-foreground">
+                    {selected.length}/{models.length} selected · expand
+                  </span>
+                </summary>
+                <label
+                  htmlFor={selectAllId}
+                  className="flex cursor-pointer items-center gap-3 border-t border-border-subtle bg-surface-1/30 px-2 py-2.5 transition-colors hover:bg-surface-1/50"
+                >
+                  <input
+                    id={selectAllId}
+                    type="checkbox"
+                    className="accent-foreground"
+                    checked={allOn}
+                    ref={(element) => {
+                      if (element) element.indeterminate = !allOn && someOn;
+                    }}
+                    onChange={() => toggleProvider(provider, models)}
+                  />
+                  <span className="text-xs font-medium capitalize text-foreground">
+                    Select all {provider} models
+                  </span>
+                  <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {selected.length}/{models.length} selected
+                  </span>
+                </label>
+                <div className="grid border-t border-border-subtle sm:grid-cols-2">
+                  {visible.map((model, index) => {
+                    const selectedModel = allowSet.has(
+                      `${provider}/${model.model}`,
+                    );
+                    const modelInputId = `${editorId}-${provider}-${index}`;
+                    return (
+                      <label
+                        key={`${provider}/${model.model}`}
+                        htmlFor={modelInputId}
                         className={cn(
-                          "truncate text-xs font-medium",
-                          selectedModel
-                            ? "text-foreground"
-                            : "text-muted-foreground",
+                          "flex cursor-pointer items-center gap-2.5 px-2.5 py-2.5 transition-colors hover:bg-surface-1/50",
+                          index > 0 &&
+                            "border-t border-border-subtle sm:border-t-0",
+                          index % 2 === 1 &&
+                            "sm:border-l sm:border-border-subtle",
+                          index >= 2 && "sm:border-t sm:border-border-subtle",
                         )}
                       >
-                        {model.label}
-                      </p>
-                      <p className="truncate font-mono text-[9px] text-muted-foreground">
-                        {model.model}
-                      </p>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </details>
-        );
-      })}
+                        <input
+                          id={modelInputId}
+                          type="checkbox"
+                          className="accent-foreground"
+                          checked={selectedModel}
+                          onChange={() => toggleModel(provider, model.model)}
+                        />
+                        <div className="min-w-0">
+                          <p
+                            className={cn(
+                              "truncate text-xs font-medium",
+                              selectedModel
+                                ? "text-foreground"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {model.label}
+                          </p>
+                          <p className="truncate font-mono text-[10px] text-muted-foreground">
+                            {model.model}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      ) : null}
+
       {search &&
         !catalog.some((model) =>
           `${model.provider} ${model.label} ${model.model}`
             .toLowerCase()
             .includes(search.toLowerCase()),
         ) && (
-          <p className="py-4 text-sm text-muted-foreground">
+          <p className="py-4 text-xs text-muted-foreground">
             No models match “{search}”.
           </p>
         )}
+
       {value.length > 0 ? (
-        <Button size="xs" variant="ghost" onClick={() => onChange([])}>
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          onClick={() => onChange([])}
+        >
           Allow connected provider models
         </Button>
       ) : null}

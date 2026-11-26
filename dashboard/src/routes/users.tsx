@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Clock, Search, Users as UsersIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Search, Users as UsersIcon } from "lucide-react";
 
 import { api } from "@/api/client";
 import type { UserAnalytics } from "@/api/client";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -15,29 +13,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { EmptyState } from "@/components/card";
-import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
+import {
+  AdminPageHeader,
+  AdminSummaryStrip,
+} from "@/components/admin/admin-primitives";
 import { SkeletonRows } from "@/components/skeleton";
-import { formatCost, formatDuration, formatNumber } from "@/lib/utils";
+import { cn, formatCost, formatDuration, formatNumber } from "@/lib/utils";
 
 type OrderBy = "cost" | "requests" | "threats" | "latency";
 
 export function UsersPage() {
-  const navigate = useNavigate();
   const [orderBy, setOrderBy] = useState<OrderBy>("cost");
   const [search, setSearch] = useState("");
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users", orderBy],
-    meta: { dashboardLive: true }, refetchOnWindowFocus: false,
+    meta: { dashboardLive: true },
+    refetchOnWindowFocus: false,
     queryFn: () => api.users.list({ limit: 200, order_by: orderBy }),
   });
 
@@ -45,34 +38,85 @@ export function UsersPage() {
   const visibleUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return users;
-    return users.filter((user) => user.end_user_id.toLowerCase().includes(query));
+    return users.filter((user) =>
+      user.end_user_id.toLowerCase().includes(query),
+    );
   }, [search, users]);
 
   return (
-    <>
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
       <AdminPageHeader
-        eyebrow="Identity telemetry"
+        eyebrow="Observe"
         title="End users"
         description="Investigate request volume, cost, latency, and security outcomes for every identity supplied through X-End-User-Id."
-        badge={<Badge variant="outline" className="font-mono text-[10px]">{formatNumber(users.length)} tracked</Badge>}
+        bordered={false}
+        className="mb-4"
+        badge={
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {formatNumber(users.length)} tracked
+          </span>
+        }
       />
 
-      <AdminSummaryStrip items={[
-        { label: "Tracked users", value: formatNumber(users.length), detail: "Distinct end-user identifiers" },
-        { label: "Requests", value: formatNumber(kpis.requests), detail: users.length ? `Average ${Math.round(kpis.requests / users.length)} per user` : "No activity" },
-        { label: "Attributed cost", value: formatCost(kpis.cost), detail: "Across tracked requests" },
-        { label: "Threat events", value: formatNumber(kpis.threats), detail: kpis.threats ? "Requires review" : "No detections", tone: kpis.threats ? "danger" : "success" },
-      ]} />
+      <AdminSummaryStrip
+        items={[
+          {
+            label: "Tracked users",
+            value: formatNumber(users.length),
+            detail: "Distinct end-user identifiers",
+          },
+          {
+            label: "Requests",
+            value: formatNumber(kpis.requests),
+            detail: users.length
+              ? `Average ${Math.round(kpis.requests / users.length)} per user`
+              : "No activity",
+          },
+          {
+            label: "Attributed cost",
+            value: formatCost(kpis.cost),
+            detail: "Across tracked requests",
+          },
+          {
+            label: "Threat events",
+            value: formatNumber(kpis.threats),
+            detail: kpis.threats ? "Requires review" : "No detections",
+            tone: kpis.threats ? "danger" : "success",
+          },
+        ]}
+      />
 
-      <Card className="mb-3 border-border/60">
-        <CardContent className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search end-user id…" className="h-8 pl-8 text-xs" />
-          </div>
-          <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Sort</span>
-          <Select value={orderBy} onValueChange={(v) => setOrderBy(v as OrderBy)}>
-            <SelectTrigger className="h-8 w-full text-xs sm:w-44">
+      <search className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:w-72">
+          <label htmlFor="end-users-search" className="sr-only">
+            Search end-user identifier
+          </label>
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            id="end-users-search"
+            type="search"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search end-user id…"
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+        <div className="flex items-center gap-2.5">
+          <span className="text-[11px] text-muted-foreground">Sort by</span>
+          <Select
+            value={orderBy}
+            onValueChange={(v) => setOrderBy(v as OrderBy)}
+          >
+            <SelectTrigger
+              aria-label="Sort end users"
+              className="h-8 w-full text-xs sm:w-44"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -82,91 +126,131 @@ export function UsersPage() {
               <SelectItem value="latency">Avg latency (desc)</SelectItem>
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
+        </div>
+      </search>
 
-      <Card className="border-border/50 overflow-hidden">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <SkeletonRows count={8} />
-          ) : !users.length ? (
-            <EmptyState
-              icon={<UsersIcon className="h-6 w-6" />}
-              title="No end-users yet"
-              description="Pass X-End-User-Id on gateway requests to track activity per user."
-            />
-          ) : !visibleUsers.length ? (
-            <EmptyState
-              icon={<Search className="h-6 w-6" />}
-              title="No matching end users"
-              description="Try a shorter identifier or clear the search field."
-            />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent border-border/50">
-                  <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    End user
-                  </TableHead>
-                  <TableHead className="h-10 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    Requests
-                  </TableHead>
-                  <TableHead className="h-10 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    Threats
-                  </TableHead>
-                  <TableHead className="h-10 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    Cost
-                  </TableHead>
-                  <TableHead className="h-10 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    Avg latency
-                  </TableHead>
-                  <TableHead className="h-10 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    Last seen
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visibleUsers.map((u: UserAnalytics) => (
-                  <TableRow
-                    key={u.end_user_id}
-                    className="cursor-pointer border-border/30 hover:bg-muted/30"
-                    onClick={() => navigate({ to: "/users/$id", params: { id: u.end_user_id } })}
+      <div className="border-y border-border-subtle">
+        {isLoading ? (
+          <div className="py-4">
+            <SkeletonRows count={6} />
+          </div>
+        ) : !users.length ? (
+          <EmptyState
+            icon={<UsersIcon className="size-5" />}
+            title="No end-users yet"
+            description="Pass X-End-User-Id on gateway requests to track activity per user."
+          />
+        ) : !visibleUsers.length ? (
+          <EmptyState
+            icon={<Search className="size-5" />}
+            title="No matching end users"
+            description="Try a shorter identifier or clear the search field."
+          />
+        ) : (
+          <div
+            className="overflow-x-auto"
+            tabIndex={0}
+            role="region"
+            aria-label="Tracked end users"
+          >
+            <table className="w-full min-w-[720px] text-left text-xs">
+              <thead className="border-b border-border-subtle text-[11px] text-muted-foreground">
+                <tr>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background py-2.5 pr-4 font-normal"
                   >
-                    <TableCell className="font-mono text-xs">{u.end_user_id}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs text-muted-foreground">
+                    End user
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 text-right font-normal"
+                  >
+                    Requests
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 font-normal"
+                  >
+                    Security
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 text-right font-normal"
+                  >
+                    Cost
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background px-4 py-2.5 text-right font-normal"
+                  >
+                    Avg latency
+                  </th>
+                  <th
+                    scope="col"
+                    className="sticky top-0 bg-background py-2.5 pl-4 text-right font-normal"
+                  >
+                    Last seen
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {visibleUsers.map((u: UserAnalytics) => (
+                  <tr
+                    key={u.end_user_id}
+                    className="transition-colors hover:bg-surface-1/60"
+                  >
+                    <td className="py-3 pr-4 font-mono text-xs">
+                      <Link
+                        to="/users/$id"
+                        params={{ id: u.end_user_id }}
+                        className="text-foreground underline decoration-border-default underline-offset-4 hover:decoration-foreground"
+                      >
+                        {u.end_user_id}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-muted-foreground">
                       {formatNumber(u.total_requests)}
-                    </TableCell>
-                    <TableCell>
-                      {u.total_threats ? (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                          <AlertTriangle className="h-3 w-3" /> {u.total_threats}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                          clean
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs text-muted-foreground">
-                      {formatCost(u.total_cost_cents)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatDuration(Math.round(u.avg_duration_ms))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5 text-xs">
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            u.total_threats ? "bg-destructive" : "bg-success",
+                          )}
+                        />
+                        <span
+                          className={
+                            u.total_threats
+                              ? "font-mono tabular-nums text-destructive"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {u.total_threats
+                            ? `${u.total_threats} ${u.total_threats === 1 ? "threat" : "threats"}`
+                            : "Clean"}
+                        </span>
                       </span>
-                    </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-muted-foreground">
+                      {formatCost(u.total_cost_cents)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-muted-foreground">
+                      {formatDuration(Math.round(u.avg_duration_ms))}
+                    </td>
+                    <td className="py-3 pl-4 text-right tabular-nums text-muted-foreground">
                       {new Date(u.last_request_at).toLocaleString()}
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

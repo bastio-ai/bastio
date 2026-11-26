@@ -53,7 +53,7 @@ export function ActionHelp({
     <div className="mt-2 space-y-2 text-[11px] leading-relaxed text-muted-foreground">
       <p>{help.description}</p>
       {pii && (action === "mask" || action === "tokenize") && (
-        <div className="rounded-md border border-border/60 bg-muted/20 p-2">
+        <div className="border-l-2 border-border-default pl-3">
           <p className="text-[10px] font-medium text-foreground">
             Example email
           </p>
@@ -74,20 +74,20 @@ export function ActionHelp({
 
 export function EnforcementGuide() {
   return (
-    <details className="rounded-lg border border-border/60 bg-card p-4">
-      <summary className="cursor-pointer text-xs font-medium">
+    <details className="border-b border-border-subtle pb-4">
+      <summary className="cursor-pointer text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
         What do the enforcement actions mean?
       </summary>
-      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-2.5 text-[11px] leading-relaxed text-muted-foreground">
         Choose what happens when an enabled detector finds matching content.
         Mask and Tokenize change what the model sees; Warn and Log only allow
         the original content through.
       </p>
-      <dl className="mt-3 space-y-3">
+      <dl className="mt-3 divide-y divide-border-subtle border-t border-border-subtle">
         {Object.entries(ACTION_HELP).map(([value, help]) => (
           <div
             key={value}
-            className="grid gap-1 sm:grid-cols-[120px_1fr] sm:gap-3"
+            className="grid gap-1 py-2.5 sm:grid-cols-[140px_1fr] sm:gap-4"
           >
             <dt className="text-[11px] font-medium text-foreground">
               {help.label} · {help.outcome}
@@ -98,7 +98,7 @@ export function EnforcementGuide() {
           </div>
         ))}
       </dl>
-      <p className="mt-3 border-t border-border/60 pt-3 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-3 border-t border-border-subtle pt-3 text-[11px] leading-relaxed text-muted-foreground">
         These actions control processing and forwarding. They do not delete
         previously stored conversations, original knowledge files or existing
         audit records. “Fail open” and “Fail closed” separately control what

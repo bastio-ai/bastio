@@ -1,5 +1,5 @@
 import { DashboardRefreshControl } from "./dashboard-refresh-control";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
@@ -17,6 +17,8 @@ import {
   Layers,
   LayoutDashboard,
   Menu,
+  PanelLeftClose,
+  SlidersHorizontal,
   MessagesSquare,
   Moon,
   Plus,
@@ -28,7 +30,9 @@ import {
   Sparkles,
   Sun,
   Terminal,
+  Compass,
   Users,
+  X,
   Zap,
 } from "lucide-react";
 
@@ -109,6 +113,7 @@ const navSections = [
     items: [
       { to: "/api-keys", label: "API Keys", icon: Key },
       { to: "/proxies", label: "LLM Gateways", icon: Server },
+      { to: "/connect", label: "Setup guides", icon: Compass },
     ],
   },
 ] as const;
@@ -132,6 +137,8 @@ function LayoutFrame({ children }: { children: ReactNode }) {
   const controls = useDashboardControls();
   const headerExtension = useHeaderExtension();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches);
+  const mobileNavigationRef = useRef<HTMLElement>(null);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
   const [workspaceError, setWorkspaceError] = useState("");
@@ -143,7 +150,7 @@ function LayoutFrame({ children }: { children: ReactNode }) {
   const [environmentError, setEnvironmentError] = useState("");
   const [creatingEnvironment, setCreatingEnvironment] = useState(false);
   const [connectCliOpen, setConnectCliOpen] = useState(false);
-  const [showGlobalNavigation, setShowGlobalNavigation] = useState(false);
+  const [showGlobalNavigation, setShowGlobalNavigation] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === "true";
@@ -169,8 +176,34 @@ function LayoutFrame({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setMobileOpen(false);
-    setShowGlobalNavigation(false);
+    setShowGlobalNavigation(true);
   }, [currentPath]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => { setIsMobile(media.matches); if (!media.matches) setMobileOpen(false); };
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!isMobile || !mobileOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const frame = window.requestAnimationFrame(() => mobileNavigationRef.current?.querySelector<HTMLButtonElement>("[aria-label='Close navigation']")?.focus());
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const panel = mobileNavigationRef.current;
+      // Nested dialogs and select popovers manage their own focus.
+      if (!panel || (!panel.contains(document.activeElement) && document.activeElement !== document.body)) return;
+      if (event.key === "Escape") { event.preventDefault(); setMobileOpen(false); }
+      if (event.key !== "Tab") return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex='0']"));
+      const first = items[0]; const last = items[items.length - 1];
+      if (document.activeElement === document.body) { event.preventDefault(); first?.focus(); }
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { window.cancelAnimationFrame(frame); document.removeEventListener("keydown", onKey); previous?.focus(); };
+  }, [isMobile, mobileOpen]);
   useEffect(() => {
     try {
       localStorage.setItem(SIDEBAR_KEY, String(sidebarCollapsed));
@@ -216,6 +249,14 @@ function LayoutFrame({ children }: { children: ReactNode }) {
     { value: "__create_environment__", label: "Create environment", detail: "Register a deployment boundary", action: true },
   ];
 
+  const navigationSections = consoleNavigation(navExt);
+  const activeSection = navigationSections.find((section) => section.items.some((item) =>
+    item.to === currentPath || (item.to !== "/" && currentPath.startsWith(`${item.to}/`)),
+  ));
+  const activeItem = activeSection?.items.find((item) =>
+    item.to === currentPath || (item.to !== "/" && currentPath.startsWith(`${item.to}/`)),
+  );
+
   const handleWorkspaceChange = (value: string) => {
     if (value === "__manage_workspaces__") {
       void navigate({ to: "/workspaces" });
@@ -243,73 +284,45 @@ function LayoutFrame({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <header className="hidden h-14 flex-shrink-0 items-center border-b border-border-default bg-surface-1/95 shadow-sm backdrop-blur-xl md:flex">
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed((value) => !value)}
-          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn(
-            "flex h-full flex-shrink-0 items-center border-r border-border-default px-4 text-left transition-[width] duration-200 hover:bg-surface-2",
-            sidebarCollapsed ? "w-14 justify-center px-0" : "w-[236px]",
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background">
+      <a href="#console-main" className="console-skip-link">Skip to main content</a>
+      <header className="hidden h-[54px] flex-shrink-0 items-center border-b border-border-subtle bg-background md:flex">
+        <div className={cn("flex h-full flex-shrink-0 items-center justify-between gap-2 border-r border-sidebar-border bg-sidebar px-5", sidebarCollapsed ? "w-14 justify-center px-0" : "w-[234px]")}>
+          {sidebarCollapsed ? (
+            <button type="button" onClick={() => setSidebarCollapsed(false)} aria-label="Expand sidebar" className="rounded-md p-2 text-muted-foreground hover:bg-sidebar-accent"><Menu className="h-4 w-4" /></button>
+          ) : (
+            <>
+              <Link to="/" aria-label="Bastio overview" className="text-foreground"><BastioWordmark height={22} /></Link>
+              <button type="button" onClick={() => setSidebarCollapsed(true)} aria-label="Collapse sidebar" className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent"><PanelLeftClose className="h-4 w-4" /></button>
+            </>
           )}
-        >
-          <BastioWordmark height={sidebarCollapsed ? 12 : 26} mark={sidebarCollapsed} />
-        </button>
-
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-3">
-          <button
-            type="button"
-            onClick={palette.toggle}
-            className="mx-auto flex h-9 min-w-[260px] max-w-[580px] flex-1 items-center gap-2 rounded-md border border-border-default bg-background px-3 text-[13px] text-muted-foreground shadow-sm transition-colors hover:border-border-strong hover:text-foreground"
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span>Search or run a command…</span>
-            <kbd className="ml-auto rounded-sm border border-border-default bg-surface-2 px-1.5 py-0.5 font-mono text-[10px]">⌘ K</kbd>
-          </button>
-
-          <HeaderSelect
-            className="hidden lg:flex"
-            ariaLabel="Change time window"
-            value={controls.range}
-            onChange={(value) => controls.setRange(value as DashboardRange)}
-            eyebrow="Time window"
-            displayValue={controls.rangeLabel}
-            items={[
-              { value: "1h", label: "Last hour" },
-              { value: "24h", label: "Last 24 hours" },
-              { value: "7d", label: "Last 7 days" },
-              { value: "30d", label: "Last 30 days" },
-            ]}
-          />
-          <div className="hidden xl:block"><DashboardRefreshControl /></div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setConnectCliOpen(true)}
-            className="hidden h-9 items-center gap-1.5 border-border-default bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:border-border-strong hover:bg-surface-2 sm:flex"
-          >
-            <Terminal className="size-3.5 text-warn" />
-            <span>Connect CLI &amp; MCP</span>
-          </Button>
-          <ConnectionStatus
-            health={health}
-            connected={connected}
-            mode={headerExtension.statusMode ?? "dependencies"}
-            statusPageURL={headerExtension.statusPageURL}
-          />
-          <Button variant="ghost" size="icon-sm" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-          </Button>
-          <UserProfileWidget {...profileExt.userWidget} variant="header" />
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-3 px-5">
+          <div className="flex min-w-0 items-center gap-2 text-xs">
+            <span className="hidden text-muted-foreground lg:inline">{currentPath === "/profile" ? "Account" : activeSection?.label ?? "Bastio"}</span>
+            <ChevronRight className="hidden h-3 w-3 text-muted-foreground/60 lg:block" />
+            <span className="truncate text-foreground">{currentPath === "/profile" ? "Profile & security" : currentPath === "/billing/usage" ? "Usage & overage" : activeItem?.label ?? "Console"}</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" onClick={palette.toggle} aria-label="Search or run a command" title="Search or run a command (⌘K)" className="flex h-8 items-center gap-2 rounded-md px-2 text-muted-foreground hover:bg-surface-2 hover:text-foreground"><Search className="h-3.5 w-3.5" /><kbd className="hidden font-mono text-[10px] xl:inline">⌘K</kbd></button>
+            {hasContextSidebar && !sidebarCollapsed ? <Button variant="ghost" size="icon-sm" title="Page views and filters" aria-label={showContextNavigation ? "Show platform navigation" : "Show page filters"} aria-pressed={showContextNavigation} onClick={() => setShowGlobalNavigation((value) => !value)}><SlidersHorizontal className="h-3.5 w-3.5" /></Button> : null}
+            <HeaderSelect ariaLabel="Filter by environment" value={controls.environment || "__all__"} onChange={handleEnvironmentChange} eyebrow="Environment" displayValue={controls.environment || "All environments"} items={environmentItems} />
+            <HeaderSelect className="hidden lg:flex" ariaLabel="Change time window" value={controls.range} onChange={(value) => controls.setRange(value as DashboardRange)} eyebrow="Time window" displayValue={controls.rangeLabel} items={[
+              { value: "1h", label: "Last hour" }, { value: "24h", label: "Last 24 hours" }, { value: "7d", label: "Last 7 days" }, { value: "30d", label: "Last 30 days" },
+            ]} />
+            <div className="hidden xl:block"><DashboardRefreshControl /></div>
+            <Button variant="ghost" size="sm" onClick={() => { if (headerExtension.connectPath) void navigate({ to: headerExtension.connectPath as never }); else setConnectCliOpen(true); }} className="hidden gap-1.5 text-xs text-muted-foreground xl:flex"><Terminal className="h-3.5 w-3.5" />Connect</Button>
+            <ConnectionStatus health={health} connected={connected} mode={headerExtension.statusMode ?? "dependencies"} statusPageURL={headerExtension.statusPageURL} />
+          </div>
         </div>
       </header>
 
-      <header className="flex h-13 flex-shrink-0 items-center gap-3 border-b border-border-default bg-surface-1 px-3 shadow-sm md:hidden">
+      <header inert={isMobile && mobileOpen ? true : undefined} className="flex h-13 flex-shrink-0 items-center gap-3 border-b border-border-default bg-background px-3 md:hidden">
         <button type="button" onClick={() => setMobileOpen(true)} aria-label="Open navigation" className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-2">
           <Menu className="h-4 w-4" />
         </button>
         <BastioWordmark height={20} mark />
+        {hasContextSidebar ? <Button variant="ghost" size="icon-sm" aria-label="Open page filters" onClick={() => { setSidebarCollapsed(false); setShowGlobalNavigation(false); setMobileOpen(true); }}><SlidersHorizontal className="h-4 w-4" /></Button> : null}
         <button type="button" onClick={palette.toggle} className="ml-auto flex h-8 items-center gap-2 rounded-md border border-border-subtle px-2.5 text-[11px] text-muted-foreground">
           <Search className="h-3.5 w-3.5" /> Search
         </button>
@@ -323,14 +336,20 @@ function LayoutFrame({ children }: { children: ReactNode }) {
         {mobileOpen ? <button type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-40 bg-black/60 md:hidden" /> : null}
 
         <aside
+          ref={mobileNavigationRef}
+          role={isMobile && mobileOpen ? "dialog" : undefined}
+          aria-modal={isMobile && mobileOpen ? true : undefined}
+          aria-label="Platform navigation"
+          aria-hidden={isMobile && !mobileOpen ? true : undefined}
+          inert={isMobile && !mobileOpen ? true : undefined}
           className={cn(
-            "flex flex-shrink-0 flex-col border-r border-border-default bg-surface-1 transition-[width,transform] duration-200",
-            sidebarCollapsed ? "w-14" : "w-[236px]",
+            "flex flex-shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width,transform] duration-200",
+            sidebarCollapsed ? "w-14" : "w-[234px]",
             "fixed inset-y-0 left-0 z-50 md:static",
             mobileOpen ? "translate-x-0 w-[260px]" : "-translate-x-full md:translate-x-0",
           )}
         >
-          <div className="px-3 pb-2 pt-3 md:hidden"><BastioWordmark height={28} /></div>
+          <div className="flex items-center justify-between px-4 pb-2 pt-3 md:hidden"><BastioWordmark height={24} /><Button variant="ghost" size="icon-sm" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></Button></div>
           <SidebarContextSelect
             value={activeWorkspaceID}
             onChange={handleWorkspaceChange}
@@ -359,30 +378,24 @@ function LayoutFrame({ children }: { children: ReactNode }) {
             ) : (
               <GlobalNavigation
                 currentPath={currentPath}
-                collapsed={sidebarCollapsed}
+                collapsed={sidebarCollapsed && !mobileOpen}
                 navExt={navExt}
                 onExpand={() => setSidebarCollapsed(false)}
                 theme={theme}
                 toggleTheme={toggleTheme}
-                onNavigate={() => setShowGlobalNavigation(false)}
+                onNavigate={() => { setShowGlobalNavigation(true); setMobileOpen(false); }}
               />
             )}
           </div>
-          <SidebarContextSelect
-            value={controls.environment || "__all__"}
-            onChange={handleEnvironmentChange}
-            ariaLabel="Filter by environment"
-            eyebrow="Environment"
-            displayValue={controls.environment || "All environments"}
-            icon={<GitBranch className="h-4 w-4" />}
-            status
-            items={environmentItems}
-            collapsed={sidebarCollapsed && !mobileOpen}
-            placement="bottom"
-          />
+          <div className="md:hidden">
+            <SidebarContextSelect value={controls.environment || "__all__"} onChange={handleEnvironmentChange} ariaLabel="Filter by environment" eyebrow="Environment" displayValue={controls.environment || "All environments"} icon={<GitBranch className="h-4 w-4" />} items={environmentItems} collapsed={false} placement="bottom" />
+          </div>
+          <div className={cn("border-t border-sidebar-border p-2", sidebarCollapsed && !mobileOpen && "flex justify-center")}>
+            <UserProfileWidget {...profileExt.userWidget} variant="sidebar" compact={sidebarCollapsed && !mobileOpen} />
+          </div>
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <main id="console-main" inert={isMobile && mobileOpen ? true : undefined} tabIndex={-1} className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background outline-none">
           <div className={cn("min-h-0 flex-1 overflow-auto", isFocusedWorkspace ? "p-0" : "px-4 py-5 md:px-6")}>
             <div className={cn(isFocusedWorkspace ? "h-full min-h-0" : "mx-auto max-w-[1400px]")}>{children}</div>
           </div>
@@ -542,7 +555,7 @@ function SidebarContextSelect({
     <div
       className={cn(
         "flex flex-shrink-0 items-center transition-[padding] duration-200",
-        placement === "top" ? "border-b border-border-default py-2" : "border-t border-border-default bg-background/45 py-2",
+        placement === "top" ? "pb-3 pt-2" : "border-t border-sidebar-border py-2",
         collapsed ? "justify-center px-2" : "px-2",
       )}
     >
@@ -564,7 +577,7 @@ function SidebarContextSelect({
             </span>
           ) : (
             <span className="flex min-w-0 flex-1 items-center gap-2.5">
-              <span className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted-foreground">
+              <span className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-muted-foreground">
                 {icon}
                 {status ? <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-background bg-success" /> : null}
               </span>
@@ -616,10 +629,10 @@ function HeaderSelect({
 }) {
   return (
     <Select value={value} onValueChange={(next) => next && onChange(next)} disabled={disabled}>
-      <SelectTrigger aria-label={ariaLabel} className={cn("h-9 min-w-[132px] max-w-[190px] rounded-md border-border-default bg-background px-2.5 py-0 text-left shadow-sm hover:border-border-strong", className)}>
+      <SelectTrigger aria-label={ariaLabel} className={cn("h-8 min-w-[112px] max-w-[170px] rounded-md border-transparent bg-transparent px-2 py-0 text-left shadow-none hover:bg-surface-2", className)}>
         {status ? <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-success" /> : null}
         <span className="min-w-0 flex-1">
-          <span className="block text-[10px] leading-3 text-muted-foreground">{eyebrow}</span>
+          <span className="sr-only">{eyebrow}</span>
           <span className="block truncate text-xs font-medium leading-4 text-foreground">{displayValue}</span>
         </span>
       </SelectTrigger>
@@ -677,7 +690,7 @@ function ConnectionStatus({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex h-9 items-center gap-2 rounded-md border border-border-default bg-background px-3 text-xs shadow-sm transition-colors hover:border-border-strong"
+        className="flex h-8 items-center gap-2 rounded-md px-2 text-[11px] text-muted-foreground transition-colors hover:bg-surface-2"
       >
         <span className={cn("h-1.5 w-1.5 rounded-full", unavailable ? "bg-danger" : connected ? "bg-success" : "bg-warn")} />
         <span>{label}</span>
@@ -733,6 +746,7 @@ function GlobalNavigation({
   toggleTheme: () => void;
   onNavigate?: () => void;
 }) {
+  const sections = consoleNavigation(navExt);
   return (
     <>
       {collapsed ? (
@@ -741,9 +755,9 @@ function GlobalNavigation({
             <ChevronRight className="h-4 w-4" />
           </button>
           <nav className="flex flex-1 flex-col items-center gap-1 overflow-y-auto">
-            {navSections.map((section) =>
+            {sections.map((section) =>
               section.items.map(({ to, label, icon: Icon }) => {
-                const active = currentPath === to;
+                const active = currentPath === to || (to !== "/" && currentPath.startsWith(`${to}/`));
                 return (
                   <Link key={to} to={to as never} title={label} onClick={onNavigate} className={cn("flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground", active && "bg-surface-2 text-foreground")}>
                     <Icon className="h-4 w-4" />
@@ -758,29 +772,12 @@ function GlobalNavigation({
         </div>
       ) : (
         <>
-          <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-            {navSections.map((section) => (
-              <Fragment key={section.label}>
-                <div>
-                  <p className="mb-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground">{section.label}</p>
-                  <div className="space-y-0.5">
-                    {section.items.map(({ to, label, icon: Icon }) => {
-                      const active = currentPath === to;
-                      return (
-                        <Link key={to} to={to as never} onClick={onNavigate} className={cn("flex min-h-9 items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition-colors", active ? "bg-surface-2 font-medium text-foreground shadow-[inset_2px_0_0_var(--warn)]" : "text-muted-foreground hover:bg-surface-2/80 hover:text-foreground")}>
-                          <Icon className="h-4 w-4 flex-shrink-0" /> {label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-                {(navExt.sectionsAfter?.[section.label.toLowerCase()] ?? []).map((item) => renderExtSection(item, currentPath))}
-              </Fragment>
-            ))}
-            {navExt.sections?.map((section) => renderExtSection(section, currentPath))}
+          <nav className="flex-1 space-y-5 overflow-y-auto px-2.5 pb-4 pt-1">
+            {sections.map((section) => renderExtSection(section, currentPath, onNavigate))}
           </nav>
           <Separator className="opacity-50" />
           <div className="flex items-center justify-between px-5 py-2.5">
+            <Link to="/settings" onClick={onNavigate} aria-label="Settings" title="Settings" className="text-muted-foreground hover:text-foreground"><Settings2 className="h-3.5 w-3.5" /></Link>
             <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
               <BookOpen className="h-3 w-3" /> Docs
               <ExternalLink className="h-2.5 w-2.5 opacity-50 transition-opacity group-hover:opacity-100" aria-hidden="true" />
@@ -804,15 +801,25 @@ function guessEnvironmentKind(name: string): "production" | "staging" | "develop
   return "custom";
 }
 
-function renderExtSection(section: LayoutNavSection, currentPath: string) {
+function consoleNavigation(extension: ReturnType<typeof useLayoutNav>): LayoutNavSection[] {
+  return [
+    ...navSections.flatMap((section) => [
+      { label: section.label, items: [...section.items] },
+      ...(extension.sectionsAfter?.[section.label.toLowerCase()] ?? []),
+    ]),
+    ...(extension.sections ?? []),
+  ];
+}
+
+function renderExtSection(section: LayoutNavSection, currentPath: string, onNavigate?: () => void) {
   return (
     <div key={`ext:${section.label}`}>
-      <p className="mb-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground">{section.label}</p>
+      <p className="mb-1.5 px-2.5 text-[10px] font-normal text-muted-foreground">{section.label}</p>
       <div className="space-y-0.5">
         {section.items.map(({ to, label, icon: Icon }) => {
-          const active = currentPath === to;
+          const active = currentPath === to || (to !== "/" && currentPath.startsWith(`${to}/`));
           return (
-            <Link key={to} to={to as never} className={cn("flex min-h-9 items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition-colors", active ? "bg-surface-2 font-medium text-foreground shadow-[inset_2px_0_0_var(--warn)]" : "text-muted-foreground hover:bg-surface-2/80 hover:text-foreground")}>
+            <Link key={to} to={to as never} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("flex min-h-[34px] items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[12px] transition-colors", active ? "bg-sidebar-accent font-normal text-foreground" : "text-muted-foreground hover:bg-surface-2/80 hover:text-foreground")}>
               <Icon className="h-4 w-4 flex-shrink-0" /> {label}
             </Link>
           );

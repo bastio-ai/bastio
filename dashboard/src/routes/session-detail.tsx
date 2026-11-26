@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 import { api } from "@/api/client";
 import type { Observation, Trace, TraceDetail, TraceThreatDetection } from "@/api/client";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { AdminPageHeader, AdminSummaryStrip } from "@/components/admin/admin-primitives";
 import { ResizablePanels } from "@/components/observe/resizable-panels";
 import { SpanDetailTabs } from "@/components/observe/span-detail-tabs";
@@ -25,16 +23,14 @@ export function SessionDetailPage() {
   }
   if (error || !data?.session) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-[1180px] space-y-4 pb-10 pt-2 md:pt-4">
         <BackLink />
-        <Card className="border-border/50">
-          <CardContent className="py-12 text-center">
-            <p className="text-sm font-medium">Session not found</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              This session id has no traces, or is outside your tenant.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="border-y border-border-subtle py-12 text-center">
+          <p className="text-[13px] font-medium text-foreground">Session not found</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This session id has no traces, or is outside your tenant.
+          </p>
+        </div>
       </div>
     );
   }
@@ -49,27 +45,54 @@ export function SessionDetailPage() {
         eyebrow="Session investigation"
         title={<span className="font-mono">{session.id}</span>}
         description={`${session.trace_count} related traces · ${session.end_user_id || "unknown end-user"}`}
-        badge={session.threat_count ? (
-            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-              <AlertTriangle className="h-3 w-3" /> {session.threat_count} threats
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-              clean
-            </Badge>
-          )}
-        actions={<BackLink />}
+        bordered={false}
         className="mb-0"
+        badge={
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 rounded-full",
+                session.threat_count ? "bg-destructive" : "bg-success",
+              )}
+            />
+            {session.threat_count
+              ? `${session.threat_count} ${session.threat_count === 1 ? "threat" : "threats"}`
+              : "Clean"}
+          </span>
+        }
+        actions={<BackLink />}
       />
 
-      <AdminSummaryStrip items={[
-        { label: "Traces", value: String(session.trace_count), detail: `${session.error_count ?? 0} errors` },
-        { label: "Tokens", value: formatNumber(session.total_tokens ?? 0), detail: `${formatNumber(session.input_tokens ?? 0)} in · ${formatNumber(session.output_tokens ?? 0)} out` },
-        { label: "Cost", value: formatCost(session.total_cost_cents ?? 0), detail: "Session total" },
-        { label: "Wall clock", value: formatDuration(session.wall_clock_ms ?? 0), detail: `${session.blocked_count ?? 0} blocked`, tone: session.blocked_count ? "danger" : "default" },
-      ]} />
+      <div className="shrink-0 [&>section]:mb-0">
+        <AdminSummaryStrip
+          items={[
+            {
+              label: "Traces",
+              value: String(session.trace_count),
+              detail: `${session.error_count ?? 0} errors`,
+            },
+            {
+              label: "Tokens",
+              value: formatNumber(session.total_tokens ?? 0),
+              detail: `${formatNumber(session.input_tokens ?? 0)} in · ${formatNumber(session.output_tokens ?? 0)} out`,
+            },
+            {
+              label: "Cost",
+              value: formatCost(session.total_cost_cents ?? 0),
+              detail: "Session total",
+            },
+            {
+              label: "Wall clock",
+              value: formatDuration(session.wall_clock_ms ?? 0),
+              detail: `${session.blocked_count ?? 0} blocked`,
+              tone: session.blocked_count ? "danger" : "default",
+            },
+          ]}
+        />
+      </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/70 bg-card">
+      <div className="min-h-0 flex-1 overflow-hidden border border-border-subtle bg-background">
         <SessionSplit traces={traces} initialTraceId={firstTrace?.id ?? null} />
       </div>
     </div>
@@ -94,53 +117,71 @@ function SessionSplit({
       defaultLeftPct={28}
       minLeftPx={240}
       left={
-        <div className="h-full">
-          <div className="border-b border-border/40 bg-muted/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-            Traces in session ({traces.length})
+        <div className="flex h-full min-h-0 flex-col bg-background">
+          <div className="flex shrink-0 items-center justify-between border-b border-border-subtle px-3.5 py-2.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Traces in session
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+              {traces.length}
+            </span>
           </div>
-          <div className="divide-y divide-border/20">
-            {traces.map((t, idx) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setActiveTraceId(t.id)}
-                className={cn(
-                  "flex w-full flex-col gap-1 px-3 py-2 text-left text-xs hover:bg-muted/30",
-                  t.id === activeTraceId ? "bg-muted/40" : "",
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-muted-foreground tabular-nums">
-                    #{idx + 1}
-                  </span>
-                  <Badge
-                    variant={
-                      t.status === "ok"
-                        ? "success"
-                        : t.status === "blocked"
-                        ? "destructive"
-                        : "warning"
-                    }
-                    className="text-[10px] px-1.5 py-0"
-                  >
-                    {t.status}
-                  </Badge>
-                  {t.threat_detected ? (
-                    <AlertTriangle className="h-3 w-3 text-destructive" />
-                  ) : null}
-                  <span className="ml-auto font-mono text-muted-foreground tabular-nums">
-                    {formatDuration(t.duration_ms)}
-                  </span>
-                </div>
-                <div className="truncate font-mono text-[11px] text-foreground/80">
-                  {t.path}
-                </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>{t.model}</span>
-                  <span>{new Date(t.started_at).toLocaleTimeString()}</span>
-                </div>
-              </button>
-            ))}
+          <div className="min-h-0 flex-1 divide-y divide-border-subtle overflow-y-auto">
+            {traces.map((t, idx) => {
+              const active = t.id === activeTraceId;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  aria-current={active ? "true" : undefined}
+                  onClick={() => setActiveTraceId(t.id)}
+                  className={cn(
+                    "flex w-full cursor-pointer flex-col gap-1 border-l-2 px-3.5 py-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    active
+                      ? "border-l-foreground bg-surface-1/80"
+                      : "border-l-transparent hover:bg-surface-1/50",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                      #{idx + 1}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-foreground">
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "size-1.5 rounded-full",
+                          t.status === "ok"
+                            ? "bg-success"
+                            : t.status === "blocked"
+                              ? "bg-destructive"
+                              : "bg-warn",
+                        )}
+                      />
+                      {t.status}
+                    </span>
+                    {t.threat_detected ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-destructive">
+                        <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
+                        <span>threat</span>
+                      </span>
+                    ) : null}
+                    <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {formatDuration(t.duration_ms)}
+                    </span>
+                  </div>
+                  <div className="truncate font-mono text-[11px] text-foreground">
+                    {t.path || t.trace_name || t.method}
+                  </div>
+                  <div className="flex justify-between gap-2 text-[11px] text-muted-foreground">
+                    <span className="truncate">{t.model || "—"}</span>
+                    <span className="shrink-0 font-mono tabular-nums">
+                      {new Date(t.started_at).toLocaleTimeString()}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       }
@@ -214,18 +255,25 @@ function EmbeddedTrace({ traceId }: { traceId: string }) {
       storageKey="session-trace-split"
       defaultLeftPct={42}
       left={
-        <div className="h-full overflow-auto">
-          <div className="border-b border-border/40 bg-muted/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-            Spans ({allSpans.length})
+        <div className="flex h-full min-h-0 flex-col bg-background">
+          <div className="flex shrink-0 items-center justify-between border-b border-border-subtle px-3.5 py-2.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Spans
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+              {allSpans.length}
+            </span>
           </div>
-          <SpanTree
-            spans={allSpans}
-            traceStartMs={new Date(trace.started_at ?? "").getTime() || 0}
-            traceDurationMs={trace.duration_ms ?? 1}
-            selectedSpanId={currentId}
-            onSelect={(s) => setSelectedId(s.id)}
-            threats={threats}
-          />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <SpanTree
+              spans={allSpans}
+              traceStartMs={new Date(trace.started_at ?? "").getTime() || 0}
+              traceDurationMs={trace.duration_ms ?? 1}
+              selectedSpanId={currentId}
+              onSelect={(s) => setSelectedId(s.id)}
+              threats={threats}
+            />
+          </div>
         </div>
       }
       right={
@@ -246,19 +294,21 @@ function BackLink() {
   return (
     <Link
       to="/sessions"
-      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
     >
-      <ArrowLeft className="h-3.5 w-3.5" /> Back to sessions
+      <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" /> Back to sessions
     </Link>
   );
 }
 
 function LoadingBlock() {
   return (
-    <div className="flex items-center justify-center py-16">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-        Loading session…
+    <div className="mx-auto max-w-[1180px] pb-10 pt-2 md:pt-4">
+      <div className="flex items-center justify-center border-y border-border-subtle py-16">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+          Loading session…
+        </div>
       </div>
     </div>
   );

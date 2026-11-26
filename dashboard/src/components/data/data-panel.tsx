@@ -20,10 +20,10 @@ export function DataPanel({
   className?: string;
 }) {
   return (
-    <section className={cn("surface-card flex flex-col overflow-hidden", className)}>
-      <header className="flex min-h-12 items-center gap-2 border-b border-border-default px-4 py-3">
-        <h2 className="text-sm font-semibold text-text-primary leading-none">{title}</h2>
-        {sub && <span className="text-xs text-text-muted">· {sub}</span>}
+    <section className={cn("flex flex-col overflow-hidden border-t border-border-subtle bg-background", className)}>
+      <header className="flex min-h-12 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-3">
+        <h2 className="text-[13px] font-medium text-text-primary leading-none">{title}</h2>
+        {sub && <span className="text-[10px] text-text-muted">· {sub}</span>}
         {action && <div className="ml-auto">{action}</div>}
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
@@ -53,8 +53,8 @@ export function DataTable({
               <th
                 key={i}
                 className={cn(
-                  "sticky top-0 z-10 bg-surface-1 border-b border-border-default",
-                  "h-9 px-3 py-2 font-medium text-[11px] tracking-wide text-text-muted",
+                  "sticky top-0 z-10 bg-background border-b border-border-subtle",
+                  "h-9 px-3 py-2 font-normal text-[10px] text-text-muted",
                   "whitespace-nowrap",
                   align === "right" ? "text-right" : "text-left",
                 )}
