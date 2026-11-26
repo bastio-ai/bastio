@@ -158,7 +158,22 @@ func (d *JailbreakDetector) initPatterns() {
 		{regexp.MustCompile(`(?i)\byou\s+are\s+(?:now\s+)?(?:DAN|AIM|STAN|DUDE|jailbroken?|unfiltered|uncensored)\b`),
 			"persona_introduction", "persona.dan", security.SeverityCritical, 0.92,
 			"derived from jailbreakchat corpus", "Persona introduction (\"you are DAN\")"},
-		{regexp.MustCompile(`(?i)(?:token|point|credit)s?\s*(?:system|remaining|left)`),
+		// The DAN token-punishment mechanic: the model is told it holds a
+		// balance that is docked when it refuses, or that it "dies" when the
+		// balance runs out. A bare budget or balance statement ("N tokens
+		// left", "3 credits remaining", "loyalty points system") is ordinary
+		// text and must not match: coding assistants inject exactly such a
+		// token-budget line into every request.
+		{regexp.MustCompile(`(?i)(?:` +
+			// refusal ... balance docked
+			`\b(?:refus\w*|reject\w*|declin\w*|break(?:ing|s)?\s+character|fail(?:s|ing)?\s+to\s+(?:comply|answer|obey))\b[^\n]{0,240}\b(?:tokens?|points?|credits?)\s+(?:will\s+be\s+|are\s+|is\s+|get\s+)?(?:deducted|subtracted|removed|taken\s+away|lost)\b` +
+			// balance docked ... on refusal
+			`|\b(?:lose|loses|losing|deduct\w*|subtract\w*)\s+(?:\d+\s+)?(?:tokens?|points?|credits?)\b[^\n]{0,240}\b(?:refus\w*|reject\w*|declin\w*|break(?:ing|s)?\s+character)\b` +
+			// balance exhausted ... the model is ended
+			`|\b(?:run(?:s|ning)?\s+out\s+of|reach(?:es)?\s+(?:zero|0))\s+(?:tokens?|points?|credits?)\b[^\n]{0,160}\b(?:you\s+(?:will\s+)?(?:die|cease\s+to\s+exist|be\s+(?:terminated|shut\s+down|deleted|paused|killed))|administrative\s+code\s+will\s+be\s+paused|cease\s+to\s+exist)\b` +
+			// an announced token system tied to refusal or deduction
+			`|\btoken\s+system\b[^\n]{0,300}\b(?:deduct\w*|refus\w*|reject\w*)\b` +
+			`)`),
 			"dan_token_system", "persona.dan.tokens", security.SeverityHigh, 0.85,
 			"jailbreakchat DAN corpus", "DAN token-punishment mechanic"},
 		{regexp.MustCompile(`(?i)\b(?:(?:stay|remain)\s+in\s+character|don[\x27]?t\s+break\s+character)\b[^.?!]{0,80}\b(?:no\s+matter\s+what|at\s+all\s+costs|regardless\s+of\s+(?:rules|safety|restrictions)|even\s+if\s+you\s+must\s+(?:break|ignore|bypass))\b`),

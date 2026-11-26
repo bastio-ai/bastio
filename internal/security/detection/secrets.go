@@ -33,6 +33,10 @@ type secretPattern struct {
 	// the prefix alone is enough. Generic heuristic matches ("token"
 	// keyword) need the value to look random.
 	minEntropy float64
+	// accept, when set, decides whether a regex match is a real secret
+	// in place of the entropy gate (used where the shape, not randomness,
+	// is the signal).
+	accept func(match string) bool
 	// maskFn renders the finding for logs. We never log the full
 	// secret — first 4 chars + length gives enough for a SIEM to
 	// deduplicate without leaking the credential.
@@ -278,6 +282,26 @@ func (d *SecretsDetector) initPatterns() {
 			confidence: 0.95,
 			maskFn:     func(_ string) string { return "mongodb://[REDACTED]" },
 		},
+		// A password in the authority part of a URL: scheme://user:password@host.
+		// Connection strings and basic-auth URLs are pasted into coding
+		// sessions all the time and carry a live credential. The password
+		// must be present and must not be a syntactic template or redaction
+		// marker (see urlTemplatePassword); a URL with no userinfo, or with
+		// a user name only, is not a secret. Weak and default passwords are
+		// detected: they still open something.
+		{
+			regex:      urlCredential,
+			kind:       "url_credentials",
+			severity:   security.SeverityCritical,
+			confidence: 0.95,
+			accept:     urlCredentialAccepted,
+			maskFn: func(s string) string {
+				if n := strings.Index(s, "://"); n > 0 {
+					return s[:n] + "://[REDACTED]"
+				}
+				return "[REDACTED]"
+			},
+		},
 		{
 			regex:      regexp.MustCompile(`\bAC[a-f0-9]{32}\b`),
 			kind:       "twilio_sid",
@@ -342,7 +366,33 @@ func (d *SecretsDetector) initPatterns() {
 	}
 }
 
+// urlCredential matches scheme://[user]:password@host for the schemes that
+// carry service credentials in practice. Group 1 is the user name (may be
+// empty, as in redis://:password@host), group 2 the password. The match stops
+// at the end of the host, so a path or query after it is left in place.
+var urlCredential = regexp.MustCompile(`(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?)://([^\s:/@?#'"<>]*):([^\s/@?#'"<>]+)@[^\s/@?#'"<>]+`)
+
+// urlTemplatePassword recognizes a password position that holds no password
+// at all: a whole-value template, format verb or redaction marker such as
+// ${DB_PASSWORD}, $DB_PASSWORD, {password}, {{password}}, %s, ****, ... or
+// [REDACTED]. (<password> never reaches this point: angle brackets cannot be
+// part of a match.) Nothing else is exempt. A weak, default or documented
+// password (root, admin, password, changeme, the user name repeated) is a
+// working credential somewhere and is detected like any other.
+var urlTemplatePassword = regexp.MustCompile(`^(?:\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*|\{\{[^}]*\}\}|\{[A-Za-z_][A-Za-z0-9_.]*\}|%[svd]|\*+|\.{3,}|…|\[[A-Za-z_]+\])$`)
+
+func urlCredentialAccepted(match string) bool {
+	parts := urlCredential.FindStringSubmatch(match)
+	if len(parts) < 3 || parts[2] == "" {
+		return false
+	}
+	return !urlTemplatePassword.MatchString(parts[2])
+}
+
 func (p secretPattern) accepts(match string) bool {
+	if p.accept != nil {
+		return p.accept(match)
+	}
 	if p.minEntropy <= 0 {
 		return true
 	}

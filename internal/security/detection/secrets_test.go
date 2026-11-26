@@ -153,3 +153,104 @@ func TestSecretsDetector_AnthropicNotClassifiedAsOpenAI(t *testing.T) {
 		t.Fatalf("expected anthropic_api_key, got %+v", findings)
 	}
 }
+
+// Passwords are split from their URLs so source-level secret scanners do not
+// flag this file; runtime values are whole.
+const urlTestPassword = "S3cr3t" + "Passw0rd!"
+
+func TestSecretsDetector_URLCredentials(t *testing.T) {
+	d := NewSecretsDetector()
+	positives := map[string]string{
+		"postgres":             "Connect with postgres://svc:" + urlTestPassword + "@db.internal:5432/prod today.",
+		"postgresql":           "DATABASE_URL=postgresql://svc:" + urlTestPassword + "@db.internal/prod?sslmode=require",
+		"mysql":                "mysql://app:" + urlTestPassword + "@10.0.0.5:3306/shop",
+		"mongodb":              "mongodb://app:" + urlTestPassword + "@mongo.internal:27017/shop",
+		"mongodb+srv":          "mongodb+srv://app:" + urlTestPassword + "@cluster0.example.net/shop",
+		"redis empty user":     "redis://:" + urlTestPassword + "@cache.internal:6379/0",
+		"rediss":               "rediss://default:" + urlTestPassword + "@cache.internal:6380",
+		"amqp":                 "amqp://worker:" + urlTestPassword + "@queue.internal:5672/vhost",
+		"amqps":                "amqps://worker:" + urlTestPassword + "@queue.internal",
+		"https basic auth":     "git clone https://deploy:" + urlTestPassword + "@git.internal/team/repo.git",
+		"http basic auth":      "curl http://admin:" + urlTestPassword + "@10.0.0.9:8080/metrics",
+		"upper-case scheme":    "POSTGRES://svc:" + urlTestPassword + "@db.internal/prod",
+		"percent-encoded pass": "postgres://svc:p%40ss%21w0rd%2Fx9@db.internal:5432/prod",
+		"quoted in config":     `url = "postgres://svc:` + urlTestPassword + `@db.internal/prod"`,
+		// Weak, default and documented passwords are still credentials.
+		"literal password": "postgres://user:password@localhost:5432/app",
+		"default postgres": "postgres://postgres:postgres@localhost:5432/app",
+		"default guest":    "amqp://guest:guest@localhost:5672",
+		"same as user":     "mysql://shop:shop@localhost/shop",
+		"root":             "mysql://root:root@10.0.0.5:3306/shop",
+		"admin":            "http://admin:admin@10.0.0.9:8080/metrics",
+		"changeme":         "redis://:changeme@cache.internal:6379",
+		"short word":       "postgres://svc:foo@db.internal/prod",
+		"all x":            "postgres://svc:xxxx@db.internal/prod",
+		"dollar inside":    "postgres://svc:Pa$$w0rd9@db.internal/prod",
+		"braces inside":    "postgres://svc:ab{c}d9@db.internal/prod",
+		"percent inside":   "postgres://svc:100%sure9@db.internal/prod",
+	}
+	for name, text := range positives {
+		t.Run("positive/"+name, func(t *testing.T) {
+			findings, _ := d.Detect(context.Background(), text)
+			found := false
+			for _, f := range findings {
+				if f.MatchedPattern == "url_credentials" {
+					found = true
+					if strings.Contains(f.MatchedContent, "Passw0rd") || strings.Contains(f.MatchedContent, "w0rd") {
+						t.Errorf("finding carries the password: %q", f.MatchedContent)
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("no url_credentials finding")
+			}
+			masked := d.Mask(text)
+			if strings.Contains(masked, "Passw0rd") || strings.Contains(masked, "p%40ss") || strings.Contains(masked, "@") {
+				t.Errorf("mask kept the password: %q", masked)
+			}
+			for _, span := range d.RewriteSpans(context.Background(), text) {
+				if span.Start < 0 || span.End > len(text) || span.Start >= span.End {
+					t.Errorf("invalid rewrite span %+v", span)
+				}
+			}
+		})
+	}
+	negatives := map[string]string{
+		"no userinfo":           "postgres://db.internal:5432/prod",
+		"host and port only":    "http://localhost:3000/health and https://example.com:8443/path",
+		"user name only":        "postgres://svc@db.internal:5432/prod and https://deploy@git.internal/repo.git",
+		"empty password":        "postgres://svc:@db.internal/prod",
+		"shell variable":        "postgres://svc:${DB_PASSWORD}@db.internal/prod and redis://:$REDIS_PASSWORD@cache:6379",
+		"brace template":        "postgres://svc:{password}@db.internal/prod",
+		"double-brace template": "postgres://svc:{{password}}@db.internal/prod and postgres://svc:{{.Values.db.password}}@db/prod",
+		"redaction marker":      "postgres://svc:[REDACTED]@db.internal/prod",
+		"unicode ellipsis":      "postgres://svc:…@db.internal/prod",
+		"format verb":           "postgres://%s:%s@%s:%d/%s",
+		"angle placeholder":     "postgres://<user>:<password>@<host>/<db>",
+		"starred":               "postgres://svc:****@db.internal/prod",
+		"elided":                "postgres://svc:...@db.internal/prod",
+		"at sign in path":       "https://example.com/users/@alice and https://example.com/a:b@c",
+		"at sign in query":      "https://example.com/search?q=a:b@c",
+		"ipv6 literal":          "http://[::1]:8080/metrics",
+		"email and time":        "Mail alice at 10:30 about https://example.com",
+		"unsupported scheme":    "ftp://svc:" + urlTestPassword + "@files.internal/pub",
+		"scp-style git":         "git@github.com:org/repo.git",
+		"malformed":             "postgres:/svc:secretvalue@host and postgres//svc:x@host and ://a:b@c",
+		"prose with colon":      "Use the format scheme://user:password@host for connection strings.",
+	}
+	for name, text := range negatives {
+		t.Run("negative/"+name, func(t *testing.T) {
+			findings, _ := d.Detect(context.Background(), text)
+			for _, f := range findings {
+				if f.MatchedPattern == "url_credentials" {
+					t.Fatalf("false positive on %q", text)
+				}
+			}
+		})
+	}
+	// The path and the surrounding text survive a mask; only scheme through host is replaced.
+	masked := d.Mask("see postgres://svc:" + urlTestPassword + "@db.internal:5432/prod?sslmode=require for details")
+	if masked != "see [REDACTED_URL_CREDENTIALS]/prod?sslmode=require for details" {
+		t.Errorf("unexpected mask result %q", masked)
+	}
+}

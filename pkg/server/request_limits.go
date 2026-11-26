@@ -18,7 +18,7 @@ func gatewayTimeout(configured time.Duration) time.Duration {
 // Native SDK resource APIs include slow reasoning calls and multipart uploads.
 // Management requests keep their shorter timeout and smaller body limit.
 func isProviderAPIPath(path string) bool {
-	for _, prefix := range []string{"/v1/typesafe/", "/v1/openrouter/", "/v1/openai/", "/v1/anthropic/", "/v1/xai/", "/v1/google/", "/v1/gemini/"} {
+	for _, prefix := range []string{"/v1/typesafe/", "/v1/openrouter/", "/v1/openai/", "/v1/anthropic/", "/v1/xai/", "/v1/google/", "/v1/gemini/", "/v1/employee-gateway/anthropic/"} {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}
